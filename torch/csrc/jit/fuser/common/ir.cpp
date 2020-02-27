@@ -1,6 +1,7 @@
 #include <torch/csrc/jit/fuser/common/fusion.h>
 #include <torch/csrc/jit/fuser/common/ir.h>
 #include <torch/csrc/jit/fuser/common/iter_visitor.h>
+#include <torch/csrc/jit/fuser/common/ir_printer.h>
 #include <torch/csrc/jit/fuser/common/mutator.h>
 #include <torch/csrc/jit/fuser/common/tensor.h>
 #include <torch/csrc/jit/ir.h>
