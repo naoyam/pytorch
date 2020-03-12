@@ -131,6 +131,7 @@ protected:
     // Register parse-function for each JIT operator;
     // This is a one-time look up, our hash registry indexes on the pointer in
     // OperatorRegistry.
+/*
     const char* BinaryOpWithAlpha[4] = {
         "aten::add(Tensor self, Tensor other, *, Scalar alpha) -> Tensor",
         "aten::add(Tensor self, Scalar other, Scalar alpha) -> Tensor",
@@ -142,7 +143,6 @@ protected:
       //assert(registerParseRule(ptr_op, &parseBinaryOpWithAlpha));
     }
 
-/*
     const char* BinaryOp[4] = {
         "aten::div(Tensor self, Tensor other) -> Tensor",
         "aten::div(Tensor self, Scalar other) -> Tensor",
