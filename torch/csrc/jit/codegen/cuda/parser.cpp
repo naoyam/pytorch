@@ -24,6 +24,7 @@ typedef Expr CgOp;
 
 typedef void (*ParseFuncPtr)(const Node* const, std::unordered_map<size_t, CgValue*>&);
 
+// TODO: add a mutex to make it thread safe.
 class IrParser {
 public:
   IrParser(std::shared_ptr<Graph> graph, Fusion& fusion)
@@ -40,7 +41,8 @@ public:
     auto block = graph_->block();
 
     // register all inputs;
-
+    // shape propagation during parsing is effctively done in parsing rules, as we 
+    // only explicitly register inputs in the graph.
     for (auto val : block->inputs()) {
       TORCH_CHECK(registerValue(val));
       fusion_->addInput(value_maps_[val->unique()]);
@@ -231,7 +233,7 @@ protected:
 
   // maps from JitValue::unique() to fusion Val;
   std::unordered_map<size_t, CgValue*> value_maps_;
-
+  // parsing rule registry.
   static std::unordered_map<Symbol, std::vector<std::pair<std::shared_ptr<Operator>, ParseFuncPtr>>> jit_operator_registry_;
   static bool init_registry_;
 };
