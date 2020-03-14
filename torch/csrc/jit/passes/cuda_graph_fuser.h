@@ -13,7 +13,7 @@ TORCH_API void CudaFuseGraph(std::shared_ptr<Graph>& graph);
 
 // Register CudaFuseGraph in custom passes
 struct TORCH_API RegisterCudaFuseGraph : public PassManager{
-  void registerPass(){
+  static void registerPass(){
     PassManager::registerPass(CudaFuseGraph);
   }
 };
