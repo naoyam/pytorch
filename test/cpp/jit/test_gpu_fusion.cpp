@@ -945,7 +945,5 @@ void testGPU_FusionForLoop() {
   
 }
 
-void testGPU_Fusion() {}
-
 } // namespace jit
 } // namespace torch

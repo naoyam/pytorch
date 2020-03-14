@@ -7,7 +7,6 @@
 #include <torch/csrc/jit/codegen/cuda/manager.h>
 #include <torch/csrc/jit/runtime/operator.h>
 #include <torch/csrc/jit/ir/alias_analysis.h>
-#include <torch/csrc/jit/passes/pass_manager.h>
 #include <torch/csrc/jit/passes/common_subexpression_elimination.h>
 #include <torch/csrc/jit/passes/constant_pooling.h>
 #include <torch/csrc/jit/passes/dead_code_elimination.h>
@@ -919,14 +918,5 @@ void CudaFuseGraph(std::shared_ptr<Graph>& graph) {
   compileFusionRecursive(graph->block());
 }
 
-void registerCudaFuseGraph() {
-  static bool not_registered = true;
-  if (not_registered) {
-    RegisterPostFusionPass pass(CudaFuseGraph);
-    not_registered = false;
-  }
-}
-
 } // namespace jit
-
 } // namespace torch
