@@ -17,9 +17,13 @@ struct Expr;
 struct UnaryOp;
 struct BinaryOp;
 
+struct ForLoop;
+struct IfThenElse;
+
 struct TensorDomain;
 struct TensorView;
 struct IterDomain;
+struct TensorIndex;
 
 struct TensorContiguity;
 
@@ -67,6 +71,7 @@ public:
   virtual void handle(const TensorDomain* const);
   virtual void handle(const TensorView* const);
   virtual void handle(const IterDomain* const);
+  virtual void handle(const TensorIndex* const);
   virtual void handle(const TensorContiguity* const);
 
   virtual void handle(const Float* const);
@@ -74,6 +79,9 @@ public:
 
   virtual void handle(const UnaryOp* const);
   virtual void handle(const BinaryOp* const);
+
+  virtual void handle(const ForLoop* const);
+  virtual void handle(const IfThenElse* const);
 
   virtual void handle(const Split* const);
   virtual void handle(const Merge* const);
