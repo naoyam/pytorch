@@ -417,6 +417,13 @@ void CodeWrite::setupOverrides() {
 // Print the header for the kernel, the inputs/outputs
 // TODO: Push this out to another class so we don't need dispatch implemented here
 void CodeWrite::header() {
+  // ceilDiv Helper funtion
+  os
+  << "__device__ int ceilDiv(const int a, const int b) {\n"
+  << "  return (a + b - 1) / b;\n"
+  << "}\n\n"
+  ;
+
   os << "__global__ void " << kernel_name_ << "(";
 
   std::deque<Val*> vals;

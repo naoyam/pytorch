@@ -549,6 +549,10 @@ void testGPU_FusionParser() {
   
   std::stringstream ref;
   ref
+    << "__device__ int ceilDiv(const int a, const int b) {\n"
+    << "  return (a + b - 1) / b;\n"
+    << "}\n"
+    << "\n"
     << "__global__ void kernel(Tensor<float> T0, Tensor<float> T1, Tensor<float> T3){\n"
     << "  float T2[1];\n"
     << "  if( ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) / T1.size[1] ) < T1.size[0] ) && ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) % T1.size[1] ) < T1.size[1] ) && ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T1.size[2] ) < T1.size[2] ) ) {\n"
@@ -653,7 +657,7 @@ void testGPU_FusionCodeGen() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  TensorView* tv0 = makeDummyTensor(4);
+  TensorView* tv0 = makeDummyTensor(3);
 
   new BinaryOp(BinaryOpType::Add, tv0, new Float(0.0), new Float(1.0));
   TensorView* tv1 = static_cast<TensorView*>(add(tv0, new Float(2.0)));
@@ -670,45 +674,35 @@ void testGPU_FusionCodeGen() {
   //[I0i{4}*I1, I0o, I2i{2}, I2o]
   fusion.addOutput(tv2);
 
-  tv0->computeAt(tv2, 1);
-  
+  tv0->computeAt(tv2, -1);
+
   std::stringstream ref;
   ref
+  << "__device__ int ceilDiv(const int a, const int b) {\n"
+  << "  return (a + b - 1) / b;\n"
+  << "}\n"
+  << "\n"
   << "__global__ void kernel(Tensor<float> T2){\n"
-  << "  float T0[( ( ( 1 * ( ceilDiv(T2.size[0], 4) ) ) * T2.size[2] ) * T2.size[3] )];\n"
-  << "  for( size_t i27 = 0; i27 < ( 4 * T2.size[1] ); ++i27 ) {\n"
-  << "    for( size_t i29 = 0; i29 < ( ceilDiv(T2.size[0], 4) ); ++i29 ) {\n"
-  << "      for( size_t i31 = 0; i31 < T2.size[2]; ++i31 ) {\n"
-  << "        for( size_t i33 = 0; i33 < T2.size[3]; ++i33 ) {\n"
-  << "          if( ( ( ( i29 * 4 ) + ( i27 / T2.size[1] ) ) < T2.size[0] ) && ( ( i27 % T2.size[1] ) < T2.size[1] ) ) {\n"
-  << "            T0[i29 * T2.size[2] * T2.size[3] + i31 * T2.size[3] + i33]\n"
+  << "  float T0[1];\n"
+  << "  for( size_t i29 = 0; i29 < ( 4 * T2.size[1] ); ++i29 ) {\n"
+  << "    for( size_t i31 = 0; i31 < ( ceilDiv(T2.size[0], 4) ); ++i31 ) {\n"
+  << "      for( size_t i33 = 0; i33 < 2; ++i33 ) {\n"
+  << "        for( size_t i35 = 0; i35 < ( ceilDiv(T2.size[2], 2) ); ++i35 ) {\n"
+  << "          if( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) {\n"
+  << "            T0[0]\n"
   << "              = float(0)\n"
   << "              + float(1);\n"
   << "          }\n"
-  << "        }\n"
-  << "      }\n"
-  << "    }\n"
-  << "    float T1[( ( ( 1 * ( ceilDiv(T2.size[0], 4) ) ) * T2.size[2] ) * T2.size[3] )];\n"
-  << "    for( size_t i55 = 0; i55 < ( ceilDiv(T2.size[0], 4) ); ++i55 ) {\n"
-  << "      for( size_t i57 = 0; i57 < T2.size[2]; ++i57 ) {\n"
-  << "        for( size_t i59 = 0; i59 < T2.size[3]; ++i59 ) {\n"
-  << "          if( ( ( ( i55 * 4 ) + ( i27 / T2.size[1] ) ) < T2.size[0] ) && ( ( i27 % T2.size[1] ) < T2.size[1] ) ) {\n"
-  << "            T1[i55 * T2.size[2] * T2.size[3] + i57 * T2.size[3] + i59]\n"
-  << "              = T0[i55 * T2.size[2] * T2.size[3] + i57 * T2.size[3] + i59]\n"
+  << "          float T1[1];\n"
+  << "          if( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) {\n"
+  << "            T1[0]\n"
+  << "              = T0[0]\n"
   << "              + float(2);\n"
   << "          }\n"
-  << "        }\n"
-  << "      }\n"
-  << "    }\n"
-  << "    for( size_t i85 = 0; i85 < ( ceilDiv(T2.size[0], 4) ); ++i85 ) {\n"
-  << "      for( size_t i87 = 0; i87 < ( ceilDiv(T2.size[3], 2) ); ++i87 ) {\n"
-  << "        for( size_t i89 = 0; i89 < T2.size[2]; ++i89 ) {\n"
-  << "          for( size_t i91 = 0; i91 < 2; ++i91 ) {\n"
-  << "            if( ( ( ( i85 * 4 ) + ( i27 / T2.size[1] ) ) < T2.size[0] ) && ( ( i27 % T2.size[1] ) < T2.size[1] ) && ( ( ( i87 * 2 ) + i91 ) < T2.size[3] ) ) {\n"
-  << "              T2[( ( i85 * 4 ) + ( i27 / T2.size[1] ) ) * T2.stride[0] + ( i27 % T2.size[1] ) * T2.stride[1] + i89 * T2.stride[2] + ( ( i87 * 2 ) + i91 ) * T2.stride[3]]\n"
-  << "                = T1[i85 * ( ceilDiv(T2.size[3], 2) ) * T2.size[2] * 2 + i87 * T2.size[2] * 2 + i89 * 2 + i91]\n"
-  << "                + float(3);\n"
-  << "            }\n"
+  << "          if( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) {\n"
+  << "            T2[( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) * T2.stride[0] + ( i29 % T2.size[1] ) * T2.stride[1] + ( ( i35 * 2 ) + i33 ) * T2.stride[2]]\n"
+  << "              = T1[0]\n"
+  << "              + float(3);\n"
   << "          }\n"
   << "        }\n"
   << "      }\n"
@@ -730,6 +724,28 @@ void testGPU_FusionCodeGen() {
     TORCH_CHECK(false);
   }
 
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.device_ = 0;
+  // These can be set to anything as there are no bindings!
+  // All CTAS and threads execute the same thing.
+  prog.grid(4);
+  prog.block(32);
+
+  auto options =
+  at::TensorOptions()
+    .dtype(at::kFloat)
+    .device(at::kCUDA, 0);
+
+  at::Tensor output = at::empty({16,8,8}, options);
+  std::vector<at::Tensor> outputs{{output}};
+
+  torch::jit::fuser::cuda::compileKernel(fusion, prog);
+  torch::jit::fuser::cuda::runTestKernel(prog, {}, outputs);
+
+  at::Tensor output_ref = at::zeros_like(output, options);
+  output_ref = output_ref + 0.0 + 1.0 + 2.0 + 3.0; 
+
+  TORCH_CHECK(output_ref.equal(output));
 }
 
 void testGPU_FusionCodeGen2() {
@@ -756,12 +772,16 @@ void testGPU_FusionCodeGen2() {
 
   tv0->computeAt(tv3, -1);
   tv1->computeAt(tv3, -1);
-  
+
   tv3->axis(0)->parallelize(ParallelType::BIDx);
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
-  
+
   std::stringstream ref;
   ref
+  << "__device__ int ceilDiv(const int a, const int b) {\n"
+  << "  return (a + b - 1) / b;\n"
+  << "}\n"
+  << "\n"
   << "__global__ void kernel(Tensor<float> T0, Tensor<float> T1, Tensor<float> T3){\n"
   << "  float T2[1];\n"
   << "  for( size_t i15 = 0; i15 < 4; ++i15 ) {\n"
@@ -779,8 +799,9 @@ void testGPU_FusionCodeGen2() {
   << "    }\n"
   << "  }\n"
   << "}\n"
- ; 
- std::stringstream cdg;
+  ;
+
+  std::stringstream cdg;
   CodeWrite cw(cdg);
   cw.traverse(&fusion);
 
@@ -811,7 +832,7 @@ void testGPU_FusionCodeGen2() {
 
   torch::jit::fuser::cuda::compileKernel(fusion, prog);
   torch::jit::fuser::cuda::runTestKernel(prog, inputs, outputs);
-  
+
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
 
