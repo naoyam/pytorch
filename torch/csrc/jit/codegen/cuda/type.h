@@ -32,6 +32,7 @@ enum class TORCH_API ExprType {
   , BinaryOp
   , ForLoop
   , IfThenElse
+  , Allocate
   , Split
   , Merge
   , Reorder

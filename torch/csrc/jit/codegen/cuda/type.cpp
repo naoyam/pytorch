@@ -44,6 +44,7 @@ static std::unordered_map<ExprType, std::string> expr_type_string_map {
   , {ExprType::BinaryOp,   "BinaryOp"}
   , {ExprType::ForLoop,    "ForLoop"}
   , {ExprType::IfThenElse, "IfThenElse"}
+  , {ExprType::Allocate,   "Allocate"}
   , {ExprType::Split,      "Split"}
   , {ExprType::Merge,      "Merge"}
   , {ExprType::Reorder,    "Reorder"}

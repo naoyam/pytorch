@@ -396,5 +396,38 @@ struct TORCH_API TensorIndex : public Val {
   std::vector<Int*> indices_;
 };
 
+/*
+ * Allocate is a lower level Node that describes a buffer of memory that
+ * is required as an intermediate within a kernel.  The extent is the expression
+ * of the size of the buffer that is generated from the TensorView that describes
+ * the output of an operation.
+ *
+ * TODO:
+ * 1.) Should extent_ be an Expr vs a Val?  The Val is currently used to print
+ *     the Expr of the size().
+ * 2.) The components of Allocate like Type and Name could be separated from the
+ *     the assocated TensorView.  Perhaps that is more appropriate?
+ */
+struct TORCH_API Allocate : public Expr {
+  ~Allocate() = default;
+  Allocate(TensorView* _tv);
+
+  Allocate(const Allocate& other) = delete;
+  Allocate& operator=(const Allocate& other) = delete;
+
+  Allocate(Allocate&& other) = delete;
+  Allocate& operator=(Allocate&& other) = delete;
+
+  DataType buf_type() const noexcept;
+  StmtNameType buf_name() const noexcept;
+  const Val* extent() const noexcept;
+
+  bool sameAs(const Allocate* other) const;
+
+ private:
+  const TensorView* const buffer_;
+  const Val* extent_;
+};
+
 }}}
 
