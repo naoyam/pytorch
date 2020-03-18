@@ -33,6 +33,7 @@ enum class TORCH_CUDA_API ExprType {
   , BinaryOp
   , ForLoop
   , IfThenElse
+  , Allocate
   , Split
   , Merge
   , Reorder

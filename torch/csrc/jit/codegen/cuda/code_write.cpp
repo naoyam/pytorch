@@ -320,14 +320,11 @@ void CodeWrite::printAlloc(TensorView* tv) {
       FusionGuard::getCurFusion()->hasOutput(tv))
     return;
 
-  Int* size = new Int(1);
-  for (decltype(tv->nDims()) i = tv->getComputeAtAxis(); i < tv->nDims(); i++) {
-    size = static_cast<Int*>(mul(size, tv->axis(i)->size()));
-  }
+  Allocate* alloc = new Allocate(tv);
 
   indent();
-  os << tv->getDataType().value() << " T" << tv->name() << "[";
-  print_inline(size);
+  os << alloc->buf_type() << " T" << alloc->buf_name() << "[";
+  print_inline(alloc->extent());
   os << "];" << std::endl;
 }
 

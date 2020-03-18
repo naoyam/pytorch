@@ -1,6 +1,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/tensor.h>
+#include <torch/csrc/jit/codegen/cuda/arith.h>
 
 namespace torch {
 namespace jit {
@@ -238,6 +239,40 @@ Int* TensorIndex::axis(int i) const {
     i += size();
   assert(i >= 0 && i < size());
   return indices_[i];
+}
+
+Allocate::Allocate(TensorView* _tv)
+    : Expr(ExprType::Allocate),
+      buffer_(_tv),
+      extent_{nullptr} {
+  Val* size = new Int(1);
+  for (auto i = _tv->getComputeAtAxis(); i < _tv->nDims(); i++) {
+    size = mul(size, _tv->axis(i)->size());
+  }
+  extent_ = size;
+
+  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+}
+
+DataType Allocate::buf_type() const noexcept {
+  return buffer_->getDataType().value();
+}
+StmtNameType Allocate::buf_name() const noexcept {
+  return buffer_->name();
+}
+const Val* Allocate::extent() const noexcept {
+  return extent_;
+}
+
+bool Allocate::sameAs(const Allocate* other) const {
+  if(this->type() != other->type())
+    return false;
+  if(this->buf_name() != other->buf_name())
+    return false;
+  if(!this->extent()->sameAs(other->extent()))
+    return false;
+
+  return true;
 }
 
 } // namespace fuser
