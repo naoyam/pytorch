@@ -54,6 +54,7 @@ enum class TORCH_CUDA_API BinaryOpType {
   , Mod
   , LT
   , CeilDiv
+  , And
 };
 
 enum class TORCH_CUDA_API ParallelType {
