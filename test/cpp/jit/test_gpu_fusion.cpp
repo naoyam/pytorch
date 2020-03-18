@@ -546,7 +546,7 @@ void testGPU_FusionParser() {
   Fusion fusion;
   FusionGuard fg(&fusion);
   fuser::cuda::parseJitIR(g, fusion);
-  
+
   std::stringstream ref;
   ref
     << "__device__ int ceilDiv(const int a, const int b) {\n"
@@ -555,12 +555,12 @@ void testGPU_FusionParser() {
     << "\n"
     << "__global__ void kernel(Tensor<float> T0, Tensor<float> T1, Tensor<float> T3){\n"
     << "  float T2[1];\n"
-    << "  if( ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) / T1.size[1] ) < T1.size[0] ) && ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) % T1.size[1] ) < T1.size[1] ) && ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T1.size[2] ) < T1.size[2] ) ) {\n"
+    << "  if( ( ( ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) / T1.size[1] ) < T1.size[0] ) && ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) % T1.size[1] ) < T1.size[1] ) ) && ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T1.size[2] ) < T1.size[2] ) ) ) {\n"
     << "    T2[0]\n"
     << "      = T0[( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) / T0.size[1] ) * T0.stride[0] + ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) % T0.size[1] ) * T0.stride[1] + ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T0.size[2] ) * T0.stride[2]]\n"
     << "      * T1[( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) / T1.size[1] ) * T1.stride[0] + ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) % T1.size[1] ) * T1.stride[1] + ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T1.size[2] ) * T1.stride[2]];\n"
     << "  }\n"
-    << "  if( ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) / T0.size[1] ) < T0.size[0] ) && ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) % T0.size[1] ) < T0.size[1] ) && ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T0.size[2] ) < T0.size[2] ) ) {\n"
+    << "  if( ( ( ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) / T0.size[1] ) < T0.size[0] ) && ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) % T0.size[1] ) < T0.size[1] ) ) && ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T0.size[2] ) < T0.size[2] ) ) ) {\n"
     << "    T3[( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) / T0.size[1] ) * T3.stride[0] + ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) % T0.size[1] ) * T3.stride[1] + ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T0.size[2] ) * T3.stride[2]]\n"
     << "      = T2[0]\n"
     << "      * T0[( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) / T0.size[1] ) * T0.stride[0] + ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T0.size[2] ) % T0.size[1] ) * T0.stride[1] + ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T0.size[2] ) * T0.stride[2]];\n"
@@ -688,18 +688,18 @@ void testGPU_FusionCodeGen() {
   << "    for( size_t i31 = 0; i31 < ( ceilDiv(T2.size[0], 4) ); ++i31 ) {\n"
   << "      for( size_t i33 = 0; i33 < 2; ++i33 ) {\n"
   << "        for( size_t i35 = 0; i35 < ( ceilDiv(T2.size[2], 2) ); ++i35 ) {\n"
-  << "          if( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) {\n"
+  << "          if( ( ( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) ) {\n"
   << "            T0[0]\n"
   << "              = float(0)\n"
   << "              + float(1);\n"
   << "          }\n"
   << "          float T1[1];\n"
-  << "          if( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) {\n"
+  << "          if( ( ( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) ) {\n"
   << "            T1[0]\n"
   << "              = T0[0]\n"
   << "              + float(2);\n"
   << "          }\n"
-  << "          if( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) {\n"
+  << "          if( ( ( ( ( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) < T2.size[0] ) && ( ( i29 % T2.size[1] ) < T2.size[1] ) ) && ( ( ( i35 * 2 ) + i33 ) < T2.size[2] ) ) ) {\n"
   << "            T2[( ( i31 * 4 ) + ( i29 / T2.size[1] ) ) * T2.stride[0] + ( i29 % T2.size[1] ) * T2.stride[1] + ( ( i35 * 2 ) + i33 ) * T2.stride[2]]\n"
   << "              = T1[0]\n"
   << "              + float(3);\n"

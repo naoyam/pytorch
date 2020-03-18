@@ -53,6 +53,7 @@ enum class TORCH_API BinaryOpType {
   , Mod
   , LT
   , CeilDiv
+  , And
 };
 
 enum class ParallelType {

@@ -130,16 +130,19 @@ bool CodeWrite::print_predicate(const TensorView* const pred_tv) {
 
   bool first_pred = true;
   os << "if( ";
+  Val* cond = nullptr;
   for (decltype(preds.size()) i{0}; i < preds.size(); i++) {
     if (preds[i]->sameAs(new Int(1.0)))
       continue;
     if (!first_pred)
-      os << " && ";
-
-    print_inline(preds[i]);
+      cond = andOp(cond, preds[i]);
+    else
+      cond = preds[i];
 
     first_pred = false;
   }
+  new IfThenElse(cond, {});
+  print_inline(cond);
   os << " ) {\n";
   ++indent_size;
   indent();
