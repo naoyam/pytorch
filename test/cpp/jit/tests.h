@@ -119,6 +119,15 @@ namespace jit {
   _(GPU_FusionSimplePWise)      \
   _(GPU_FusionExecKernel)       \
   _(GPU_FusionForLoop)
+#else
+#define TH_FORALL_TESTS_CUDA(_) \
+  _(ArgumentSpec)               \
+  _(CompleteArgumentSpec)       \
+  _(Fusion)                     \
+  _(GraphExecutor)              \
+  _(ModuleConversion)           \
+  _(Interp)
+#endif
 
 #define DECLARE_JIT_TEST(name) void test##name();
 TH_FORALL_TESTS(DECLARE_JIT_TEST)
