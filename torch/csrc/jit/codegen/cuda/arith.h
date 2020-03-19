@@ -25,14 +25,14 @@ TORCH_CUDA_API Val* promoteNew(Val* v1, Val* v2);
 TORCH_CUDA_API Val* castOp(DataType dtype, Val* v1);
 
 // Perform unary op type and return the output
-TORCH_CUDA_API Val* unaryOp(UnaryOpType type, Val* v1);
+Val* unaryOp(UnaryOpType type, Val* v1);
 
 // Perform binary op type on v1 and v2 and return a type promoted output.
 // Mod, CeilDiv, and LT are considered Int only output operations for now.
-TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2);
+Val* binaryOp(BinaryOpType type, Val* v1, Val* v2);
 
+// BINARY OPERATIONS
 TORCH_CUDA_API Val* add(Val* v1, Val* v2);
-TORCH_CUDA_API Val* SomeCrazyName(Val* v1, Val* v2);
 TORCH_CUDA_API Val* sub(Val* v1, Val* v2);
 TORCH_CUDA_API Val* mul(Val* v1, Val* v2);
 TORCH_CUDA_API Val* div(Val* v1, Val* v2);

@@ -73,13 +73,13 @@ TORCH_CUDA_API Val* castOp(DataType dtype, Val* v1) {
   return out;
 }
 
-TORCH_CUDA_API Val* unaryOp(UnaryOpType type, Val* v1) {
+Val* unaryOp(UnaryOpType type, Val* v1) {
   Val* out = newValLike(v1);
   Statement* expr = new UnaryOp(type, out, v1);
   return out;
 }
 
-TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
+Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
   Val* out = promoteNew(v1, v2);
   if (type >= BinaryOpType::Mod) {
     if (out->getDataType().value() != DataType::Int)
@@ -89,6 +89,7 @@ TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
   return out;
 }
 
+// BINARY OPERATIONS
 TORCH_CUDA_API Val* add(Val* v1, Val* v2) {
   return binaryOp(BinaryOpType::Add, v1, v2);
 }

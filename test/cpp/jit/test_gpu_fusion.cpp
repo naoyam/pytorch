@@ -57,7 +57,6 @@ void testGPU_FusionSimpleArith() {
 
   Float* f1 = new Float(1.f);
   Float* f2 = new Float{2.f};
-  Float* f3 = new Float();
 
   //Disrupt the fusion to make sure guard works well
   {
@@ -70,7 +69,7 @@ void testGPU_FusionSimpleArith() {
     ss2 << fusion2;
   }
 
-  new BinaryOp(BinaryOpType::Add, f3, f1, f2);
+  Val* f3 = add(f1, f2);
   ss1 << fusion;
 
   TORCH_CHECK(ss1.str().compare(ss2.str()) == 0,
@@ -132,8 +131,8 @@ void testGPU_FusionRegister() {
   FusionGuard fg(&fusion);
   Float* v1 = new Float{1.f};
   Float* v2 = new Float{2.f};
-  Val* v3 = binaryOp(BinaryOpType::Add, v1, v2);
-  Val* v4 = binaryOp(BinaryOpType::Add, v1, v2);
+  Val* v3 = add(v1, v2);
+  Val* v4 = add(v1, v2);
   TORCH_CHECK(v1->name() + 1 == v2->name());
   TORCH_CHECK(v2->name() + 1 == v3->name());
   TORCH_CHECK(v3->name() + 1 == v4->name());
