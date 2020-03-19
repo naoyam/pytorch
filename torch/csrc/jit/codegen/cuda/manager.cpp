@@ -6,6 +6,7 @@
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/utils.h>
 #include <torch/csrc/jit/passes/canonicalize.h>
+#include <torch/csrc/jit/passes/shape_analysis.h>
 
 #include <unordered_map>
 
@@ -122,17 +123,54 @@ void runCudaFusionGroup(const Node* const fusion_node, Stack& stack) {
   int32_t kernel_id = fusion_node->i(attr::cache_id);
 
   // Currently we just construct I/O tensors for static graph;
-  const std::shared_ptr<Graph> graph = fusion_node->g(attr::Subgraph);
+  std::shared_ptr<Graph> graph = fusion_node->g(attr::Subgraph);
   const auto nInputs = graph->inputs().size();
   at::ArrayRef<IValue> inputs = last(stack, nInputs);
 
   // we need to construct outputs;
   std::vector<at::Tensor> outputs;
+
+  bool matched_static_inputs = true;
+  for (int i = 0; i < nInputs; i++) {
+    auto& static_input = graph->inputs()[i];
+    auto& dynamic_input = inputs[i]; // this is FILO stack
+    if ((*dynamic_input.type()) != (*static_input->type())) {
+      matched_static_inputs  = false;
+      break;
+    }
+    if (dynamic_input.isTensor()) {
+      // TODO: we could relax on a bunch of checks here, like strides & gradient
+      at::Tensor inp_tensor = dynamic_input.toTensor();
+      if (!static_input->type()->cast<TensorType>()
+          ->isCompatibleWithInCurrentExecutionContext(inp_tensor)) {
+        matched_static_inputs  = false;
+        break;
+      }
+    }
+  }
+
+  // TODO: expose the API to populate shape inference. This allows separate CI
+  // tests
+  // matched_static_inputs = false;
+  if (!matched_static_inputs) {
+    // update shape information per the new inputs;
+    // shape inference done through PyTorch JIT shape propagation;
+    EraseShapeInformation(graph);
+    for (int i = 0; i < nInputs; i++) {
+      graph->inputs()[i]->setType(inputs[i].type());
+    }
+    // shape inference
+    PropagateInputShapes(graph);
+  }
+
   for (const auto* const output : graph->outputs()) {
     auto type = output->type()->expect<TensorType>();
+    
     // Expect output to be tensor;
+    // we don't use type->isComplete() because strides technically should not be 
+    // populated during shape inference;
     TORCH_CHECK(
-        type && type->isComplete(),
+        type && type->device() && type->sizes().isComplete() && type->scalarType(),
         "Complete TensorType for output is expected.");
 
     const auto device = *(type->device());

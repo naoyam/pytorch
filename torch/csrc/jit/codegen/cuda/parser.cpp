@@ -234,11 +234,17 @@ protected:
   // maps from JitValue::unique() to fusion Val;
   std::unordered_map<size_t, CgValue*> value_maps_;
   // parsing rule registry.
-  static std::unordered_map<Symbol, std::vector<std::pair<std::shared_ptr<Operator>, ParseFuncPtr>>> jit_operator_registry_;
+  static std::unordered_map<
+      Symbol,
+      std::vector<std::pair<std::shared_ptr<Operator>, ParseFuncPtr>>
+      > jit_operator_registry_;
   static bool init_registry_;
 };
 
-std::unordered_map<Symbol, std::vector<std::pair<std::shared_ptr<Operator>, ParseFuncPtr>>> IrParser::jit_operator_registry_;
+std::unordered_map<
+    Symbol, 
+    std::vector<std::pair<std::shared_ptr<Operator>, ParseFuncPtr>>
+    > IrParser::jit_operator_registry_;
 bool IrParser::init_registry_ = true;
 
 } // namespace
