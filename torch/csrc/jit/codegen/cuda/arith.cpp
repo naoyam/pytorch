@@ -117,7 +117,7 @@ TORCH_CUDA_API Val* ceilDiv(Val* v1, Val* v2) {
   return binaryOp(BinaryOpType::CeilDiv, v1, v2);
 }
 
-TORCH_API Val* andOp(Val* v1, Val* v2) {
+TORCH_CUDA_API Val* andOp(Val* v1, Val* v2) {
   return binaryOp(BinaryOpType::And, v1, v2);
 }
 
