@@ -41,6 +41,34 @@ Expr* Val::getOrigin() {
   return (fusion_->origin(this));
 }
 
+
+struct IsConstScalar : public OptInConstDispatch{
+
+private:
+virtual void handle(const Float* const f){
+  isConst = f->isConst();
+}
+
+virtual void handle(const Int* const i) {
+  isConst = i->isConst();
+}
+
+bool isConst = false;
+
+public:
+static bool check(const Val* const val){
+  IsConstScalar ics;
+  static_cast<OptInConstDispatch*>(&ics)->handle(val);
+  return ics.isConst;
+}
+
+};
+
+bool Val::isConstScalar() const {
+  return IsConstScalar::check(this);
+}
+
+
 bool IRInputOutput::hasInput(const Val* const input) const {
   for (auto val : inputs_)
     if (val == input)

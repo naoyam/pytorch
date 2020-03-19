@@ -996,7 +996,19 @@ void testGPU_FusionForLoop() {
 
 }
 
-void testGPU_Fusion() {}
+void testGPU_FusionConstCheck() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+  
+  Val* cInt = new Int(2);
+  Val* sInt = new Int();
+  Val* cFloat = new Float(2.0);
+  Val* sFloat = new Float();
+  TORCH_CHECK(cInt->isConstScalar());
+  TORCH_CHECK(cFloat->isConstScalar());
+  TORCH_CHECK(!sInt->isConstScalar());
+  TORCH_CHECK(!sFloat->isConstScalar());
+}
 
 } // namespace jit
 } // namespace torch
