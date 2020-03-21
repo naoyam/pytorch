@@ -63,6 +63,7 @@ struct Merge;
 struct Reorder;
 struct UnaryOp;
 struct BinaryOp;
+struct ReductionOp;
 struct ForLoop;
 struct IfThenElse;
 
@@ -98,6 +99,7 @@ struct TORCH_CUDA_API OptOutDispatch {
   virtual void handle(Reorder*) {}
   virtual void handle(UnaryOp*) {}
   virtual void handle(BinaryOp*) {}
+  virtual void handle(ReductionOp*) {}
   virtual void handle(ForLoop*) {}
   virtual void handle(IfThenElse*) {}
 };
@@ -149,6 +151,9 @@ struct TORCH_CUDA_API OptInConstDispatch {
   }
   virtual void handle(const BinaryOp* const) {
     AT_ERROR("Handle not overriden for BinaryOp.");
+  }
+  virtual void handle(const ReductionOp* const) {
+    AT_ERROR("Handle not overriden for ReductionOp.");
   }
   virtual void handle(const ForLoop* const) {
     AT_ERROR("Handle not overriden for ForLoop.");
@@ -206,6 +211,9 @@ struct TORCH_CUDA_API OptInDispatch {
   virtual void handle(BinaryOp*) {
     AT_ERROR("Handle not overriden for BinaryOp.");
   }
+  virtual void handle(ReductionOp*) {
+    AT_ERROR("Handle not overriden for ReductionOp.");
+  }
   virtual void handle(ForLoop*) {
     AT_ERROR("Handle not overriden for ForLoop.");
   }
@@ -245,6 +253,7 @@ struct TORCH_CUDA_API OptOutMutator {
   virtual Statement* mutate(Reorder*);
   virtual Statement* mutate(UnaryOp*);
   virtual Statement* mutate(BinaryOp*);
+  virtual Statement* mutate(ReductionOp*);
   virtual Statement* mutate(ForLoop*);
   virtual Statement* mutate(IfThenElse*);
 };
@@ -296,6 +305,9 @@ struct TORCH_CUDA_API OptInMutator {
   }
   virtual Statement* mutate(BinaryOp*) {
     AT_ERROR("Mutate not overriden for BinaryOp.");
+  }
+  virtual Statement* mutate(ReductionOp*) {
+    AT_ERROR("Mutate not overriden for ReductionOp.");
   }
   virtual Statement* mutate(ForLoop*) {
     AT_ERROR("Mutate not overriden for ForLoop.");

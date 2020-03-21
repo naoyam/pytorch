@@ -31,14 +31,13 @@ enum class TORCH_CUDA_API DataType {
 enum class TORCH_CUDA_API ExprType {
     UnaryOp
   , BinaryOp
+  , ReductionOp
   , ForLoop
   , IfThenElse
   , Allocate
   , Split
   , Merge
   , Reorder
-// , Swap
-// , Index
 };
 
 enum class TORCH_CUDA_API UnaryOpType {
@@ -51,7 +50,8 @@ enum class TORCH_CUDA_API BinaryOpType {
   , Sub
   , Mul
   , Div
-  //Int operations, leave position oif Mod we depend on its location of first Int op
+  // Int operations, leave Mod as the first int operator 
+  // as we we depend on its location
   , Mod
   , LT
   , CeilDiv

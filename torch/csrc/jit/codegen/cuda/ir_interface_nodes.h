@@ -110,6 +110,10 @@ struct TORCH_CUDA_API TensorView : public Val {
   // (minus reduction IterDomains).
   TensorView* newForOutput(DataType dtype) const;
 
+  // Make a new tensor with the given dtype, same domain as this tensor, minus
+  // reduction IterDomains, with new reduced axes marked as so.
+  TensorView* newForReduction(std::vector<unsigned int> axes) const;
+
   // Make an exact copy of this tensor with the same dtype and same domain
   TensorView* clone() const;
 

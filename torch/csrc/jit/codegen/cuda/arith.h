@@ -41,6 +41,9 @@ TORCH_CUDA_API Val* lt(Val* v1, Val* v2);
 TORCH_CUDA_API Val* ceilDiv(Val* v1, Val* v2);
 TORCH_CUDA_API Val* andOp(Val* v1, Val* v2);
 
+// REDUCTION OPERATIONS
+TORCH_CUDA_API Val* sum(Val* v1, std::vector<int> reduction_axes);
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch

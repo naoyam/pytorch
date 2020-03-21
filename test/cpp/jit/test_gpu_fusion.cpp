@@ -1009,5 +1009,16 @@ void testGPU_FusionConstCheck() {
   TORCH_CHECK(!sFloat->isConstScalar());
 }
 
+void testGPU_FusionReductionInternals() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+  
+  TensorView* tv1 = makeDummyTensor(3);
+  TensorView* tv2 = static_cast<TensorView*>(sum(tv1, {0, 1}));
+  std::cout << fusion << std::endl;
+  
+}
+
+
 } // namespace jit
 } // namespace torch

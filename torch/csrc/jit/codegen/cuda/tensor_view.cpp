@@ -226,6 +226,33 @@ TensorView* TensorView::newForOutput(DataType dtype) const {
   return new TensorView(td, dtype);
 };
 
+TensorView* TensorView::newForReduction(std::vector<unsigned int> axes) const {
+  std::vector<IterDomain*> domain_copy;
+  int ref_dim = 0;
+  for (decltype(this->nDims()) orig_dim = 0; orig_dim < this->nDims(); orig_dim++) {
+    // If reduction axis, don't copy it over. Reduction axes are owned by
+    // consumers and we're copying over a producer.
+    if (this->axis(orig_dim)->isReduction())
+      continue;
+
+    //Check if this dim should be reduced based on axes
+    bool isReduction = false;
+    for(decltype(axes.size()) i{0}; i<axes.size(); i++){
+      if(axes[i] == ref_dim){
+        isReduction = true;
+        break;
+      }
+    }
+
+    domain_copy.push_back(new IterDomain(this->axis(orig_dim)->size(), ParallelType::Serial, isReduction));
+    ref_dim++;
+
+  }
+
+  TensorDomain* td = new TensorDomain(domain_copy);
+  return new TensorView(td, this->getDataType().value());
+};
+
 TensorDomain* TensorView::getRootDomain() const {
   return TransformIter::getRoot(this->domain());
 };

@@ -36,11 +36,12 @@ bool UnaryOp::sameAs(const UnaryOp* const other) const {
 
 
 BinaryOp::BinaryOp(BinaryOpType _type, Val* _out, Val* _lhs, Val* _rhs)
-    : Expr(ExprType::BinaryOp),
-      binary_op_type_{_type},
-      out_{_out},
-      lhs_{_lhs},
-      rhs_{_rhs} {
+    : Expr(ExprType::BinaryOp)
+    , binary_op_type_{_type}
+    , out_{_out}
+    , lhs_{_lhs}
+    , rhs_{_rhs}
+  {
   addOutput(_out);
   addInput(_lhs);
   addInput(_rhs);
@@ -53,6 +54,28 @@ bool BinaryOp::sameAs(const BinaryOp* other) const {
   if(!(lhs()->sameAs(other->lhs()) && rhs()->sameAs(other->rhs())))
     return false;
   return true;
+}
+
+
+ReductionOp::ReductionOp(BinaryOpType _reduction_op_type, Val* _init, Val* _out, Val* _in)
+    : Expr(ExprType::ReductionOp)
+    , reduction_op_type_(_reduction_op_type)
+    , init_(_init)
+    , out_{_out}
+    , in_{_in}
+{
+  TORCH_INTERNAL_ASSERT(_init->isConstScalar());
+  addOutput(_out);
+  addInput(_in);
+  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+}
+
+bool ReductionOp::sameAs(const ReductionOp* other) const {
+  return (
+       this->in()->sameAs(other->in())
+    && this->getReductionOpType() == other->getReductionOpType()
+    && this->init()->sameAs(other->init())
+  );
 }
 
 

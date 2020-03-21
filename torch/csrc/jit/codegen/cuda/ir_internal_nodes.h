@@ -84,6 +84,39 @@ struct TORCH_CUDA_API BinaryOp : public Expr {
 };
 
 /*
+ * A specialization for Unary operations. Unary operations take in a single
+ * input and produce a single output. Examples include:
+ *   1) Casting operation i.e. float(a_val)
+ *   2) Negation i.e. val * -1
+ *   3) Reduction across a dimension i.e. val.sum(axis=2)
+ *   4) split/merge/reorder
+ */
+struct TORCH_CUDA_API ReductionOp : public Expr {
+  ~ReductionOp() = default;
+  ReductionOp(BinaryOpType _reduction_op_type, Val* _init, Val* _out, Val* _in);
+
+  ReductionOp(const ReductionOp& other) = delete;
+  ReductionOp& operator=(const ReductionOp& other) = delete;
+
+  ReductionOp(ReductionOp&& other) = delete;
+  ReductionOp& operator=(ReductionOp&& other) = delete;
+
+  Val* out() const noexcept { return out_; }
+  Val* in() const noexcept { return in_; }
+  Val* init() const noexcept { return init_; }
+
+  BinaryOpType getReductionOpType() const noexcept { return reduction_op_type_; }
+
+  bool sameAs(const ReductionOp* const other) const;
+
+ private:
+  const BinaryOpType reduction_op_type_;
+  Val* const init_;
+  Val* const out_;
+  Val* const in_;
+};
+
+/*
  * Simply a representation of an iterable from 0 to size. TensorDomains which
  * represent how to iterate over a tensor is made up of IterDomains. We directly
  * set parallization strategies on IterDomains.

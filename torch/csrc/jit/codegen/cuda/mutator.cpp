@@ -119,9 +119,27 @@ Statement* OptOutMutator::mutate(BinaryOp* bop) {
   Val* out = static_cast<Val*>(mutate(bop->out()));
   Val* lhs = static_cast<Val*>(mutate(bop->lhs()));
   Val* rhs = static_cast<Val*>(mutate(bop->rhs()));
-  if (!(out != bop->out() && lhs != bop->lhs() && rhs != bop->rhs()))
+  if (!(
+       out->sameAs(bop->out())
+    && lhs->sameAs(bop->lhs())
+    && rhs->sameAs(bop->rhs())
+  ))
     return new BinaryOp(bop->getBinaryOpType(), out, lhs, rhs);
   return bop;
+}
+
+Statement* OptOutMutator::mutate(ReductionOp* rop) {
+  Val* out = static_cast<Val*>(mutate(rop->out()));
+  Val* in = static_cast<Val*>(mutate(rop->in()));
+  Val* init = rop->init();
+  if(!(
+       out->sameAs(rop->out())
+    && in->sameAs(rop->in())
+    && init->sameAs(rop->init())
+  ))
+    return new ReductionOp(rop->getReductionOpType(), init, out, in);
+
+  return rop;
 }
 
 Statement* OptOutMutator::mutate(ForLoop* n) {

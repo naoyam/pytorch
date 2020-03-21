@@ -157,6 +157,12 @@ void IRPrinter::handle(const BinaryOp* const bop) {
     os<<"\n";
 }
 
+void IRPrinter::handle(const ReductionOp* const rop) {
+  os << rop->out() << " = reduction( " << rop->in()
+     << ", op = " << rop->getReductionOpType()
+     << ", initial value = " << rop->init() << ")\n";
+}
+
 void IRPrinter::handle(const ForLoop* const fl) {
   os <<"for(size_t " << fl->index() << "{0}; "
   << fl->index() << " < " << fl->range() << "; "

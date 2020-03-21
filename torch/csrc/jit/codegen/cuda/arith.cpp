@@ -2,8 +2,7 @@
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/tensor.h>
-
-#include <sstream>
+#include <torch/csrc/jit/codegen/cuda/iriostream.h>
 
 namespace torch {
 namespace jit {
@@ -27,11 +26,11 @@ TORCH_CUDA_API Val* newValLike(const Val* const val, DataType dtype) {
     default:
       break;
   }
-  std::stringstream err_msg;
-  err_msg << "Could not generate a new value of type "
-          << val->getValType().value() << " with data type "
-          << val->getDataType().value() << std::endl;
-  TORCH_CHECK(false, err_msg.str());
+  TORCH_INTERNAL_ASSERT(false
+    , "Could not generate a new value of type "
+    , val->getValType().value() , " with data type "
+    , val->getDataType().value()
+  )
 }
 
 TORCH_CUDA_API Val* newValLike(const Val* const val) {
@@ -62,10 +61,11 @@ TORCH_CUDA_API Val* castOp(DataType dtype, Val* v1) {
     return v1;
 
   if (!is_cast_legal(v1->getDataType().value(), dtype)) {
-    std::stringstream err;
-    err << "Illegal Cast value from  DataType: " << v1->getDataType().value()
-        << " to DataType: " << dtype;
-    TORCH_CHECK(false, err.str());
+    TORCH_CHECK(false
+      ,  "Illegal Cast value from  DataType: " 
+      ,  v1->getDataType().value()
+      ,  " to DataType: " 
+      ,  dtype);
   }
 
   Val* out = newValLike(v1, dtype);
@@ -121,6 +121,75 @@ TORCH_CUDA_API Val* ceilDiv(Val* v1, Val* v2) {
 TORCH_CUDA_API Val* andOp(Val* v1, Val* v2) {
   return binaryOp(BinaryOpType::And, v1, v2);
 }
+
+
+// REDUCTION OPERATIONS
+
+Val* reductionOp(BinaryOpType reduction_op_type, std::vector<int> axes, Val* init, Val* v1){
+  TORCH_CHECK(v1->getValType().value() == ValType::TensorView,
+    "Cannot reduce on values that are not TensorViews, but recieved type ", v1->getValType().value());
+  TensorView* tv = static_cast<TensorView*>(v1);
+
+  std::vector<unsigned int> uint_axes;
+  for(int axis : axes){
+    
+    if(axis < 0)
+      axis += int(tv->nDims());
+
+    TORCH_CHECK(
+        axis >= 0 && axis < tv->nDims()
+      , "Reduction on invalid axis, recieved: "
+      , axis
+      , " however tensor view only has "
+      , tv->nDims()
+      , " dims.");
+
+    uint_axes.push_back((unsigned int)axis);
+  }
+
+  Val* out = tv->newForReduction(uint_axes);
+  new ReductionOp(reduction_op_type, init, out, v1);
+
+  return out;
+}
+
+Val* newConstScalar(DataType dtype, long int val) {
+  switch (dtype) {
+    case (DataType::Int):
+      return new Int( (int) val);
+    default:
+      break;
+    }
+  TORCH_CHECK(false
+    , "Could not generate a new Scalar with data type "       
+    , dtype 
+    , "and constant value: " 
+    , val);
+}
+
+Val* newConstScalar(DataType dtype, double val) {
+  switch (dtype) {
+    case (DataType::Float):
+      return new Float(val);
+    default:
+      break;
+    }
+  TORCH_CHECK(false
+    , "Could not generate a new Scalar with data type "       
+    , dtype 
+    , "and constant value: " 
+    , val);
+}
+
+TORCH_CUDA_API Val* sum(Val* v1, std::vector<int> axes){
+
+  return reductionOp(
+      BinaryOpType::Add
+    , axes
+    , newConstScalar(v1->getDataType().value(), 0.0)
+    , v1);
+}
+
 
 } // namespace fuser
 } // namespace jit
