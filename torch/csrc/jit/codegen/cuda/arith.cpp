@@ -26,11 +26,12 @@ TORCH_CUDA_API Val* newValLike(const Val* const val, DataType dtype) {
     default:
       break;
   }
+
   TORCH_INTERNAL_ASSERT(false
     , "Could not generate a new value of type "
     , val->getValType().value() , " with data type "
     , val->getDataType().value()
-  )
+  );
 }
 
 TORCH_CUDA_API Val* newValLike(const Val* const val) {
