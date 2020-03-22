@@ -69,7 +69,8 @@ struct TORCH_CUDA_API CodeWrite : public IRPrinter {
   void handle(const Val* const);
   void handle(const UnaryOp* const);
   void handle(const BinaryOp* const);
-
+  void handle(const ReductionOp* const);
+  
   /****END CODE PRINTING FUNCTIONS****/
 
   // Ignore split/merge/reorder operations,

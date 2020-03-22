@@ -222,6 +222,7 @@ TensorView* TransformReplay::runReplay(
     TensorView* replay_ref,
     TensorView* replay_target,
     int compute_at_axis) {
+
   if (compute_at_axis < 0)
     compute_at_axis += int(replay_ref->nDims()) + 1;
 
@@ -231,6 +232,13 @@ TensorView* TransformReplay::runReplay(
       "Transform replay cannot be performed as the compute_at_axis is not in the valid range.");
 
   this->compute_at_axis = compute_at_axis;
+
+  // If this is a reduction operation, we may call transform_replay on the same
+  // tensor view. When this happens, just return thet target view.
+  if(  replay_ref->getRootDomain()->sameAs(replay_target->getRootDomain())
+    && replay_ref->getComputeAtView()->sameAs(replay_target->getComputeAtView())
+    && replay_ref->getComputeAtAxis() == replay_target->getComputeAtAxis())
+      return replay_target;
 
   /* STEP 1 */
   // Reset the tensor domain of the target, this is the only way we can be
@@ -249,8 +257,8 @@ TensorView* TransformReplay::runReplay(
   // used during replay to forward propagate influence.
   std::vector<bool> root_influence_vector = influence;
 
-  // Remove isReduction from the axis_map of a producer
-  // isReduction is only impactful when its on a consumer
+  // Remove isReduction from the axis_map of a producer isReduction is only
+  // impactful when its on a consumer.
   auto init_size = replay_target->nDims();
   for (decltype(init_size) i = 0; i < init_size; i++)
     if (!replay_target->axis(i)->isReduction())

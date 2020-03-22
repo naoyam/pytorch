@@ -1016,7 +1016,14 @@ void testGPU_FusionReductionInternals() {
   TensorView* tv1 = makeDummyTensor(3);
   TensorView* tv2 = static_cast<TensorView*>(sum(tv1, {0, 1}));
   std::cout << fusion << std::endl;
+
+  fusion.addInput(tv1);
+  fusion.addOutput(tv2);
   
+  CodeWrite cw(std::cout);
+  cw.traverse(&fusion);
+
+
 }
 
 

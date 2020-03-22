@@ -200,6 +200,45 @@ void CodeWrite::handle(const UnaryOp* const uop) {
   }
 }
 
+// The UnaryOps captured here will have a TensorView as an output
+void CodeWrite::handle(const ReductionOp* const rop) {
+  TORCH_INTERNAL_ASSERT(isTVOp(rop),
+  "Recieved a reduction operation that is not on a TensorView: ", rop);
+
+  bool predicated = printConsumer(static_cast<TensorView*>(rop->out()));
+  os << rop->init() <<" ;\n";
+
+  printConsumer(static_cast<TensorView*>(rop->out()));
+
+  if (auto inline_rop = inline_op_str(rop->getReductionOpType())) {
+    handle(rop->out());
+    os << "\n";
+    indent();
+    os << "  ";
+    os << inline_rop.value() << " ";
+    handle(rop->in());
+  } else {
+    os << rop->getReductionOpType() << "(";
+    handle(rop->out());
+    os << "\n";
+    indent();
+    os << ", ";
+    handle(rop->in());
+    os << ")";
+  }
+
+  consumer = nullptr;
+  producer = false;
+
+  os << ";\n";
+
+  if (predicated) {
+    --indent_size;
+    indent();
+    os << "}\n";
+  }
+}
+
 // The BinaryOps captured here will have a TensorView as an output
 void CodeWrite::handle(const BinaryOp* const bop) {
   if (!isTVOp(bop)) {
@@ -379,8 +418,9 @@ void CodeWrite::updateView(TensorView* tv) {
 bool CodeWrite::isTVOp(const Expr* expr) {
   if (expr->nOutputs() == 1 &&
       expr->output(0)->getValType().value() == ValType::TensorView)
-    if (expr->getExprType().value() == ExprType::BinaryOp ||
-        expr->getExprType().value() == ExprType::UnaryOp)
+    if ( expr->getExprType().value() == ExprType::BinaryOp
+      || expr->getExprType().value() == ExprType::UnaryOp
+      || expr->getExprType().value() == ExprType::ReductionOp)
       return true;
   return false;
 }
