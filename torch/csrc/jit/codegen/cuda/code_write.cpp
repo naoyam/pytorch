@@ -427,19 +427,23 @@ void CodeWrite::header() {
   for (Val* val : vals) {
     switch (val->getValType().value()) {
       case (ValType::TensorView):
+        {
         switch (val->getDataType().value()) {
           case (DataType::Float):
-            os << "Tensor<float> T";
+            os << "Tensor<float, ";
             break;
           case (DataType::Int):
-            os << "Tensor<int> T";
+            os << "Tensor<int, ";
             break;
           default:
             TORCH_CHECK(
                 false,
                 "CodeWrite::header() found an input to the fusion of unexpected val type.");
         }
+
+        os << static_cast<const TensorView*>(val)->getRootDomain()->size() << "> T";
         break;
+        }
       case (ValType::Scalar):
         switch (val->getDataType().value()) {
           case (DataType::Float):

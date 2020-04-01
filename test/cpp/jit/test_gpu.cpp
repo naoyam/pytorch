@@ -552,7 +552,7 @@ void testGPU_FusionParser() {
   fuser::cuda::parseJitIR(g, fusion);
 
   std::stringstream ref;
-  ref << "__global__ void kernel(Tensor<float> T0, Tensor<float> T1, Tensor<float> T3){\n"
+  ref << "__global__ void kernel(Tensor<float, 3> T0, Tensor<float, 3> T1, Tensor<float, 3> T3){\n"
       << "  float T2[1];\n"
       << "  if( ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) / T1.size[1] ) < T1.size[0] ) && ( ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) / T1.size[2] ) % T1.size[1] ) < T1.size[1] ) && ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) % T1.size[2] ) < T1.size[2] ) ) {\n"
       << "    T2[0]\n"
@@ -675,7 +675,7 @@ void testGPU_FusionCodeGen() {
   tv0->computeAt(tv2, 1);
 
   std::stringstream ref;
-  ref << "__global__ void kernel(Tensor<float> T2){\n"
+  ref << "__global__ void kernel(Tensor<float, 4> T2){\n"
       << "  float T0[( ( ( 1 * ( ceilDiv(T2.size[0], 4) ) ) * T2.size[2] ) * T2.size[3] )];\n"
       << "  for( size_t i27 = 0; i27 < ( 4 * T2.size[1] ); ++i27 ) {\n"
       << "    for( size_t i29 = 0; i29 < ( ceilDiv(T2.size[0], 4) ); ++i29 ) {\n"
@@ -760,7 +760,7 @@ void testGPU_FusionCodeGen2() {
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
 
   std::stringstream ref;
-  ref << "__global__ void kernel(Tensor<float> T0, Tensor<float> T1, Tensor<float> T3){\n"
+  ref << "__global__ void kernel(Tensor<float, 3> T0, Tensor<float, 3> T1, Tensor<float, 3> T3){\n"
       << "  float T2[1];\n"
       << "  for( size_t i15 = 0; i15 < 4; ++i15 ) {\n"
       << "    for( size_t i17 = 0; i17 < T1.size[1]; ++i17 ) {\n"
@@ -805,7 +805,7 @@ void testGPU_FusionCodeGen2() {
   std::vector<at::Tensor> inputs{{input1, input2}};
   std::vector<at::Tensor> outputs{{output}};
 
-  torch::jit::fuser::cuda::compileKernel(fusion, prog);
+  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
   torch::jit::fuser::cuda::runTestKernel(prog, inputs, outputs);
 
   at::Tensor tv2_ref = input2 + 2.0;
@@ -874,7 +874,7 @@ void testGPU_FusionSimplePWise() {
   std::vector<at::Tensor> inputs{{input1, input2}};
   std::vector<at::Tensor> outputs{{output}};
 
-  torch::jit::fuser::cuda::compileKernel(fusion, prog);
+  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
   torch::jit::fuser::cuda::runTestKernel(prog, inputs, outputs);
 
   at::Tensor tv2_ref = input2 + 2.0;
@@ -926,7 +926,7 @@ void testGPU_FusionExecKernel() {
   std::vector<at::Tensor> inputs{{input1, input2}};
   std::vector<at::Tensor> outputs{{output}};
 
-  torch::jit::fuser::cuda::compileKernel(fusion, prog);
+  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
   torch::jit::fuser::cuda::runTestKernel(prog, inputs, outputs);
 
   at::Tensor check = at::full({1, 128}, 4, options);
