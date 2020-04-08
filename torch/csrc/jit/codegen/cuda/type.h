@@ -64,7 +64,8 @@ enum class UnaryOpType {
   Floor,
   Round,
   Trunc,
-  Frac
+  Frac,
+  Reciprocal
 };
 
 enum class BinaryOpType {
