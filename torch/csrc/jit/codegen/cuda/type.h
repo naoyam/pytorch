@@ -36,7 +36,36 @@ enum class ExprType {
   Reorder
 };
 
-enum class UnaryOpType { Neg, Cast };
+enum class UnaryOpType {
+  Neg,
+  Cast,
+  Abs,
+  Log,
+  Log10,
+  Log1p,
+  Log2,
+  Lgamma,
+  Exp,
+  Expm1,
+  Erf,
+  Erfc,
+  Cos,
+  Acos,
+  Cosh,
+  Sin,
+  Asin,
+  Sinh,
+  Tan,
+  Atan,
+  Atanh,
+  Sqrt,
+  Rsqrt,
+  Ceil,
+  Floor,
+  Round,
+  Trunc,
+  Frac
+};
 
 enum class BinaryOpType {
   Add,
@@ -47,7 +76,10 @@ enum class BinaryOpType {
   Mod,
   LT,
   CeilDiv,
-  And
+  And,
+  Atan2,
+  Min,
+  Max
 };
 
 enum class ParallelType {

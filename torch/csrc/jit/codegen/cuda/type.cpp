@@ -68,10 +68,36 @@ static _enum_unordered_map<ExprType, std::string> expr_type_string_map{
     {ExprType::Merge, "Merge"},
     {ExprType::Reorder, "Reorder"}};
 static _enum_unordered_map<UnaryOpType, std::string> unary_op_type_string_map{
-    {UnaryOpType::Neg, "Neg"},
-    {UnaryOpType::Cast, "Cast"}};
+    {UnaryOpType::Neg,      "neg"},
+    {UnaryOpType::Cast,     "cast"},
+    {UnaryOpType::Abs,      "fabs"},
+    {UnaryOpType::Log,      "logf"},
+    {UnaryOpType::Log10,    "log10f"},
+    {UnaryOpType::Log1p,    "log1pf"},
+    {UnaryOpType::Log2,     "log2f"},
+    {UnaryOpType::Lgamma,   "lgammaf"},
+    {UnaryOpType::Exp,      "expf"},
+    {UnaryOpType::Expm1,    "expm1f"},
+    {UnaryOpType::Erf,      "erff"},
+    {UnaryOpType::Erfc,     "erfcf"},
+    {UnaryOpType::Cos,      "cosf"},
+    {UnaryOpType::Acos,     "acosf"},
+    {UnaryOpType::Cosh,     "coshf"},
+    {UnaryOpType::Sin,      "sinf"},
+    {UnaryOpType::Asin,     "asinf"},
+    {UnaryOpType::Sinh,     "sinhf"},
+    {UnaryOpType::Tan,      "tanf"},
+    {UnaryOpType::Atan,     "atanf"},
+    {UnaryOpType::Atanh,    "atanhf"},
+    {UnaryOpType::Sqrt,     "sqrtf"},
+    {UnaryOpType::Rsqrt,    "rsqrtf"},
+    {UnaryOpType::Ceil,     "ceilf"},
+    {UnaryOpType::Floor,    "floorf"},
+    {UnaryOpType::Round,    "roundf"},
+    {UnaryOpType::Trunc,    "truncf"},
+    {UnaryOpType::Frac,     "fracf"}};
 static _enum_unordered_map<UnaryOpType, std::string>
-    unary_op_type_inline_op_string_map{{UnaryOpType::Neg, "~"}};
+    unary_op_type_inline_op_string_map{{UnaryOpType::Neg, "-"}};
 static _enum_unordered_map<BinaryOpType, std::string> binary_op_type_string_map{
     {BinaryOpType::Add, "Add"},
     {BinaryOpType::Sub, "Sub"},
@@ -80,7 +106,10 @@ static _enum_unordered_map<BinaryOpType, std::string> binary_op_type_string_map{
     {BinaryOpType::Mod, "Mod"},
     {BinaryOpType::LT, "LessThan"},
     {BinaryOpType::CeilDiv, "ceilDiv"},
-    {BinaryOpType::And, "And"}};
+    {BinaryOpType::And, "And"},
+    {BinaryOpType::Atan2,   "atan2f"},
+    {BinaryOpType::Min,     "fminf"},
+    {BinaryOpType::Max,     "fmaxf"}};
 static _enum_unordered_map<BinaryOpType, std::string>
     binary_op_type_inline_op_string_map{{BinaryOpType::Add, "+"},
                                         {BinaryOpType::Sub, "-"},
