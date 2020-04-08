@@ -99,7 +99,7 @@ static _enum_unordered_map<UnaryOpType, std::string> unary_op_type_string_map{
     {UnaryOpType::Reciprocal, "reciprocal"}};
 static _enum_unordered_map<UnaryOpType, std::string>
     unary_op_type_inline_op_string_map{{UnaryOpType::Neg,        "-"},
-    unary_op_type_inline_op_string_map{{UnaryOpType::Reciprocal, "1.f/"}};
+                                       {UnaryOpType::Reciprocal, "1.f/"}};
 static _enum_unordered_map<BinaryOpType, std::string> binary_op_type_string_map{
     {BinaryOpType::Add,       "add"},
     {BinaryOpType::Sub,       "sub"},
