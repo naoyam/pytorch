@@ -65,7 +65,10 @@ enum class UnaryOpType {
   Round,
   Trunc,
   Frac,
-  Reciprocal
+  Reciprocal,
+  Relu,
+  //Threshold,
+  Sigmoid
 };
 
 enum class BinaryOpType {
@@ -75,12 +78,19 @@ enum class BinaryOpType {
   Div,
   // Int operations, leave position oif Mod we depend on its location of first
   Mod,
-  LT,
   CeilDiv,
   And,
   Atan2,
   Min,
-  Max
+  Max,
+  Pow,
+  Rem,
+  LT,
+  LE,
+  GT,
+  GE,
+  NE,
+  Eq
 };
 
 enum class ParallelType {
@@ -113,6 +123,8 @@ std::string stringifyThreadSize(const ParallelType);
 
 TORCH_CUDA_API c10::optional<std::string> inline_op_str(const UnaryOpType);
 TORCH_CUDA_API c10::optional<std::string> inline_op_str(const BinaryOpType);
+
+TORCH_CUDA_API c10::optional<std::function<void(std::ostream&, const std::string&)>> func_str(const UnaryOpType);
 
 } // namespace fuser
 } // namespace jit
