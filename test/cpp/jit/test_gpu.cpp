@@ -1000,6 +1000,72 @@ void testGPU_FusionForLoop() {
   }
 }
 
+void testGPU_FusionUnaryOps() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  std::vector<UnaryOpType> uop_types = {
+    UnaryOpType::Neg,
+    UnaryOpType::Abs,
+    UnaryOpType::Log,
+    UnaryOpType::Log10,
+    UnaryOpType::Log1p,
+    UnaryOpType::Log2,
+    UnaryOpType::Lgamma,
+    UnaryOpType::Exp,
+    UnaryOpType::Expm1,
+    UnaryOpType::Erf,
+    UnaryOpType::Erfc,
+    UnaryOpType::Cos,
+    UnaryOpType::Acos,
+    UnaryOpType::Cosh,
+    UnaryOpType::Sin,
+    UnaryOpType::Asin,
+    UnaryOpType::Sinh,
+    UnaryOpType::Tan,
+    UnaryOpType::Atan,
+    UnaryOpType::Atanh,
+    UnaryOpType::Sqrt,
+    UnaryOpType::Rsqrt,
+    UnaryOpType::Ceil,
+    UnaryOpType::Floor,
+    UnaryOpType::Round,
+    UnaryOpType::Trunc,
+    //UnaryOpType::Frac,
+    UnaryOpType::Reciprocal,
+    UnaryOpType::Relu,
+    UnaryOpType::Sigmoid
+  };
+
+  std::vector<IterDomain*> dom;
+  for (int i = 0; i < 2; i++)
+    dom.push_back(new IterDomain(new Int()));
+
+  TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
+
+  std::vector<Val*> tvs;
+
+  TensorView* tv1 = tv0;
+  for(auto uop_type : uop_types) {
+    tvs.push_back(unaryOp(uop_type, tv1));
+    tv1 = static_cast<TensorView*>(tvs.back());
+  }
+
+  fusion.addInput(tv0);
+  fusion.addOutput(tv1);
+  tv0->computeAt(tv1, -1);
+
+  tv1->axis(0)->parallelize(ParallelType::BIDx);
+  tv1->axis(-1)->parallelize(ParallelType::TIDx);
+
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.device_ = 0;
+  prog.grid(64);
+  prog.block(32);
+
+  torch::jit::fuser::cuda::compileKernel(fusion, prog);
+}
+
 void testGPU_Fusion() {}
 
 } // namespace jit

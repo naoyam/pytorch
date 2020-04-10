@@ -177,14 +177,22 @@ void CodeWrite::handle(const UnaryOp* const uop) {
   if (auto inline_uop = inline_op_str(uop->getUnaryOpType())) {
     os << inline_uop.value();
     handle(uop->in());
-  } else if(auto uop_func = func_str(uop->getUnaryOpType())) {
-	std::ostringstream oss;
-    oss << uop->in();
-    uop_func.value()(os, oss.str());
   } else {
-    os << uop->getUnaryOpType() << "(";
-    handle(uop->in());
-    os << ")";
+    switch(uop->getUnaryOpType()) {
+      case UnaryOpType::Reciprocal :
+        os << "1.f / "; handle(uop->in());
+        break;
+      case UnaryOpType::Relu :
+        handle(uop->in()); os  << " < 0.f ? 0.f : "; handle(uop->in());
+        break;
+      case UnaryOpType::Sigmoid :
+        os << "1.f / (1.f + expf(-"; handle(uop->in()); os << "))";
+        break;
+      default :
+        os << uop->getUnaryOpType() << "(";
+        handle(uop->in());
+        os << ")";
+    }
   }
 
   consumer = nullptr;

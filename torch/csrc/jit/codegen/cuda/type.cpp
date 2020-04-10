@@ -102,12 +102,6 @@ static _enum_unordered_map<UnaryOpType, std::string> unary_op_type_string_map{
     {UnaryOpType::Sigmoid,    "sigmoid"}};
 static _enum_unordered_map<UnaryOpType, std::string>
     unary_op_type_inline_op_string_map{{UnaryOpType::Neg,        "-"}};
-static _enum_unordered_map<UnaryOpType, std::function<void(std::ostream&, const std::string&)>>
-    unary_op_type_func_string_map{
-                                   {UnaryOpType::Reciprocal, [](std::ostream& out, const std::string& in) { out <<  "1.f / " << in; }},
-                                   {UnaryOpType::Relu,       [](std::ostream& out, const std::string& in) { out << in <<  " < 0.f ? 0.f : " << in; }},
-                                   {UnaryOpType::Sigmoid,    [](std::ostream& out, const std::string& in) { out << "1.f / (1.f + expf(-" << in << "))"; }},
- 								 };
 static _enum_unordered_map<BinaryOpType, std::string> binary_op_type_string_map{
     {BinaryOpType::Add,       "add"},
     {BinaryOpType::Sub,       "sub"},
@@ -247,7 +241,6 @@ TORCH_CUDA_API c10::optional<std::string> inline_op_str(
   }
 }
 
-<<<<<<< HEAD
 std::string stringifyThreadSize(const ParallelType ptype) {
   TORCH_INTERNAL_ASSERT(
       thread_size_string_map.find(ptype) != thread_size_string_map.end(),
@@ -255,18 +248,7 @@ std::string stringifyThreadSize(const ParallelType ptype) {
       ptype);
   return thread_size_string_map[ptype];
 }
-=======
-TORCH_CUDA_API c10::optional<std::function<void(std::ostream&, const std::string&)>> func_str(
-    const UnaryOpType uotype) {
-  if (unary_op_type_func_string_map.find(uotype) ==
-      unary_op_type_func_string_map.end()) {
-    return c10::nullopt;
-  } else {
-    return unary_op_type_func_string_map[uotype];
-  }
-}
 
->>>>>>> Added a mapping of Unary Types to Functions that generate strings for operations like Relu and Sigmoid.
 } // namespace fuser
 } // namespace jit
 } // namespace torch
