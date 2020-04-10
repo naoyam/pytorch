@@ -808,7 +808,7 @@ void testGPU_FusionCodeGen2() {
         << cdg.str() << "\n=================" << std::endl;
     TORCH_CHECK(false);
   }
-  
+
   torch::jit::fuser::cuda::CudaKernel prog;
   prog.device_ = 0;
   prog.grid(4);
@@ -1036,7 +1036,7 @@ void testGPU_FusionLoopUnroll() {
 
   torch::jit::fuser::cuda::CudaKernel prog;
   prog.device_ = 0;
-  prog.grid( ( inp_size + 63 ) / 64);
+  prog.grid((inp_size + 63) / 64);
   prog.block(block_size);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
