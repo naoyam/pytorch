@@ -1,4 +1,4 @@
-// #if defined(USE_CUDA)
+#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -1029,8 +1029,8 @@ void testGPU_FusionLoopUnroll() {
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
   tv3->axis(0)->parallelize(ParallelType::BIDx);
 
-  GPULower lower(&fusion);
-  lower.printKernel(std::cout);
+  // GPULower lower(&fusion);
+  // lower.printKernel(std::cout);
 
   int inp_size = 129;
 
@@ -1058,4 +1058,4 @@ void testGPU_FusionLoopUnroll() {
 
 } // namespace jit
 } // namespace torch
-// #endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)
