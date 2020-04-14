@@ -98,7 +98,6 @@ static _enum_unordered_map<UnaryOpType, std::string> unary_op_type_string_map{
     {UnaryOpType::Frac,       "fracf"},
     {UnaryOpType::Reciprocal, "reciprocal"},
     {UnaryOpType::Relu,       "relu"},
-    //{UnaryOpType::Threshold,  "threshold"}, // TODO: This is not really a Unary op.
     {UnaryOpType::Sigmoid,    "sigmoid"}};
 static _enum_unordered_map<UnaryOpType, std::string>
     unary_op_type_inline_op_string_map{{UnaryOpType::Neg,        "-"}};
@@ -115,6 +114,7 @@ static _enum_unordered_map<BinaryOpType, std::string> binary_op_type_string_map{
     {BinaryOpType::Max,       "fmaxf"},
     {BinaryOpType::Pow,       "powf"},
     {BinaryOpType::Rem,       "remainderf"},
+    {BinaryOpType::Fmod,      "fmodf"},
     {BinaryOpType::LT,        "lessThan"},
     {BinaryOpType::LE,        "lessThanOrEqual"},
     {BinaryOpType::GT,        "greaterThan"},

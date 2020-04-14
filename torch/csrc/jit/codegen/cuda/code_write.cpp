@@ -179,6 +179,9 @@ void CodeWrite::handle(const UnaryOp* const uop) {
     handle(uop->in());
   } else {
     switch(uop->getUnaryOpType()) {
+      case UnaryOpType::Frac :
+        handle(uop->in()); os << " - truncf("; handle(uop->in()); os << ")";
+        break;
       case UnaryOpType::Reciprocal :
         os << "1.f / "; handle(uop->in());
         break;

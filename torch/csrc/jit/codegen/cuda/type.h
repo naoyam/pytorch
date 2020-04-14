@@ -67,7 +67,6 @@ enum class UnaryOpType {
   Frac,
   Reciprocal,
   Relu,
-  //Threshold,
   Sigmoid
 };
 
@@ -85,6 +84,7 @@ enum class BinaryOpType {
   Max,
   Pow,
   Rem,
+  Fmod,
   LT,
   LE,
   GT,

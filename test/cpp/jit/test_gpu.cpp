@@ -1031,7 +1031,7 @@ void testGPU_FusionUnaryOps() {
     UnaryOpType::Floor,
     UnaryOpType::Round,
     UnaryOpType::Trunc,
-    //UnaryOpType::Frac,
+    UnaryOpType::Frac,
     UnaryOpType::Reciprocal,
     UnaryOpType::Relu,
     UnaryOpType::Sigmoid
@@ -1057,6 +1057,121 @@ void testGPU_FusionUnaryOps() {
 
   tv1->axis(0)->parallelize(ParallelType::BIDx);
   tv1->axis(-1)->parallelize(ParallelType::TIDx);
+
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.device_ = 0;
+  prog.grid(64);
+  prog.block(32);
+
+  torch::jit::fuser::cuda::compileKernel(fusion, prog);
+}
+
+void testGPU_FusionBinaryOps() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  std::vector<BinaryOpType> bop_types = {
+    BinaryOpType::Add,
+    BinaryOpType::Sub,
+    BinaryOpType::Mul,
+    BinaryOpType::Div,
+    //BinaryOpType::Mod,
+    //BinaryOpType::CeilDiv,
+    BinaryOpType::Atan2,
+    BinaryOpType::Min,
+    BinaryOpType::Max,
+    BinaryOpType::Pow,
+    BinaryOpType::Rem,
+    BinaryOpType::Fmod,
+    BinaryOpType::LT,
+    BinaryOpType::LE,
+    BinaryOpType::GT,
+    BinaryOpType::GE,
+    BinaryOpType::NE,
+    BinaryOpType::Eq
+  };
+
+  std::vector<IterDomain*> dom;
+  for (int i = 0; i < 2; i++)
+    dom.push_back(new IterDomain(new Int()));
+
+  TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
+  TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
+
+  std::vector<Val*> tvs;
+
+  TensorView* tv2 = tv0;
+  for(auto bop_type : bop_types) {
+    tvs.push_back(binaryOp(bop_type, tv1, tv2));
+    tv2 = static_cast<TensorView*>(tvs.back());
+  }
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv2);
+  tv0->computeAt(tv2, -1);
+  tv1->computeAt(tv2, -1);
+
+  tv2->axis(0)->parallelize(ParallelType::BIDx);
+  tv2->axis(-1)->parallelize(ParallelType::TIDx);
+
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.device_ = 0;
+  prog.grid(64);
+  prog.block(32);
+
+  torch::jit::fuser::cuda::compileKernel(fusion, prog);
+}
+
+void testGPU_FusionMultiInputOps() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  std::vector<BinaryOpType> bop_types = {
+    BinaryOpType::Add,
+    BinaryOpType::Sub,
+    BinaryOpType::Mul,
+    BinaryOpType::Div,
+    //BinaryOpType::Mod,
+    //BinaryOpType::CeilDiv,
+    BinaryOpType::Atan2,
+    BinaryOpType::Min,
+    BinaryOpType::Max,
+    BinaryOpType::Pow,
+    BinaryOpType::Rem,
+    BinaryOpType::Fmod,
+    BinaryOpType::LT,
+    BinaryOpType::LE,
+    BinaryOpType::GT,
+    BinaryOpType::GE,
+    BinaryOpType::NE,
+    BinaryOpType::Eq
+  };
+
+  std::vector<IterDomain*> dom;
+  for (int i = 0; i < 2; i++)
+    dom.push_back(new IterDomain(new Int()));
+
+  TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
+  TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
+  Float* f1         = new Float(1.f);
+
+
+  std::vector<Val*> tvs;
+
+  Val* intrm1 = add_alpha(tv0,    tv1, f1);
+  Val* intrm2 = sub_alpha(intrm1, tv1, f1);
+  Val* intrm3 = lerp(     intrm2, tv0, tv1);
+  TensorView* out    = static_cast<TensorView*>(addcmul(  intrm3, tv0, tv1, f1));
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(out);
+  tv0->computeAt(out, -1);
+  tv1->computeAt(out, -1);
+
+  out->axis(0)->parallelize(ParallelType::BIDx);
+  out->axis(-1)->parallelize(ParallelType::TIDx);
 
   torch::jit::fuser::cuda::CudaKernel prog;
   prog.device_ = 0;
