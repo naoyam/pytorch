@@ -44,7 +44,21 @@ enum class BinaryOpType {
   Mul,
   Div,
   // Int operations, leave position oif Mod we depend on its location of first
+  Mul,
+  Pow,
+  Remainder,
+  Sub,
+  //TypeAs,
+
+  // Logical Ops
+  // Int operations, leave position oif Mod we depend on its location of first
   Mod,
+  CeilDiv,
+  And,
+  Eq,
+  GE,
+  GT,
+  LE,
   LT,
   CeilDiv,
   And
