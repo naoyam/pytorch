@@ -63,6 +63,37 @@ TensorView* TensorView::newForOutput(DataType dtype) const {
   return new TensorView(td, dtype);
 };
 
+TensorView* TensorView::newForReduction(std::vector<unsigned int> axes) const {
+  TensorDomain* orig_domain = this->getRootDomain()->noReductions();
+  std::set<unsigned int> axes_set(axes.begin(), axes.end());
+
+  std::vector<IterDomain*> new_domain;
+
+  TORCH_INTERNAL_ASSERT(
+      (*axes_set.end()) < orig_domain->nDims(),
+      "Error setting up reduction, reduction axis is outside nDims. Keep in mind reductions are relative to root domains, not modified views.");
+
+  for (decltype(orig_domain->nDims()) dim = 0; dim < orig_domain->nDims();
+       dim++) {
+    IterDomain* orig_dom = orig_domain->axis(dim);
+
+    bool isReduction = false;
+    if ((*axes_set.begin()) == dim) {
+      isReduction = true;
+      axes_set.erase(axes_set.begin());
+    }
+
+    new_domain.push_back(new IterDomain(
+        orig_dom->start(),
+        orig_dom->extent(),
+        ParallelType::Serial,
+        isReduction));
+  }
+
+  TensorDomain* td = new TensorDomain(new_domain);
+  return new TensorView(td, this->getDataType().value());
+};
+
 TensorDomain* TensorView::getRootDomain() const {
   return TransformIter::getRoot(this->domain());
 };

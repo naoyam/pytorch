@@ -261,6 +261,12 @@ void IRPrinter::handle(const BinaryOp* const bop) {
     os << ";\n";
 }
 
+void IRPrinter::handle(const ReductionOp* const rop) {
+  os << rop->out() << " = reduction( " << rop->in()
+     << ", op = " << rop->getReductionOpType()
+     << ", initial value = " << rop->init() << ")\n";
+}
+
 void IRPrinter::handle(const ForLoop* const fl) {
   if (fl->iter_domain()->isThread()) {
     for (auto& expr : fl->constBody().exprs())

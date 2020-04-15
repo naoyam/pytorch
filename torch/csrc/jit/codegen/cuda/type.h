@@ -28,6 +28,7 @@ enum class DataType { Float, Int, Null };
 enum class ExprType {
   UnaryOp,
   BinaryOp,
+  ReductionOp,
   ForLoop,
   IfThenElse,
   Allocate,
@@ -36,7 +37,7 @@ enum class ExprType {
   Reorder
 };
 
-enum class UnaryOpType { Neg, Cast };
+enum class UnaryOpType { Neg, Cast, Set };
 
 enum class BinaryOpType {
   Add,

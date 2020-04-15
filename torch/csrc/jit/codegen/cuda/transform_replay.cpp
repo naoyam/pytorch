@@ -319,6 +319,11 @@ TensorView* TransformReplay::runReplay(
     TensorView* replay_ref,
     TensorView* replay_target,
     int compute_at_axis) {
+  // If this is a reduction operation, we may call transform_replay on the same
+  // tensor view. When this happens, just return thet target view.
+  if (replay_ref == replay_target)
+    return replay_target;
+
   TensorDomain* td =
       runReplay(replay_ref->domain(), replay_target->domain(), compute_at_axis);
   replay_target->setDomain(td);

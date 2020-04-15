@@ -70,6 +70,7 @@ struct Merge;
 struct Reorder;
 struct UnaryOp;
 struct BinaryOp;
+struct ReductionOp;
 struct ForLoop;
 struct IfThenElse;
 struct Allocate;
@@ -108,6 +109,7 @@ struct TORCH_CUDA_API OptOutConstDispatch {
   virtual void handle(const Reorder* const) {}
   virtual void handle(const UnaryOp* const) {}
   virtual void handle(const BinaryOp* const) {}
+  virtual void handle(const ReductionOp* const) {}
   virtual void handle(const ForLoop* const) {}
   virtual void handle(const IfThenElse* const) {}
   virtual void handle(const Allocate* const) {}
@@ -143,6 +145,7 @@ struct TORCH_CUDA_API OptOutDispatch {
   virtual void handle(Reorder*) {}
   virtual void handle(UnaryOp*) {}
   virtual void handle(BinaryOp*) {}
+  virtual void handle(ReductionOp*) {}
   virtual void handle(ForLoop*) {}
   virtual void handle(IfThenElse*) {}
   virtual void handle(Allocate*) {}
@@ -201,6 +204,9 @@ struct TORCH_CUDA_API OptInConstDispatch {
   }
   virtual void handle(const BinaryOp* const) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for BinaryOp.");
+  }
+  virtual void handle(const ReductionOp* const) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for ReductionOp.");
   }
   virtual void handle(const ForLoop* const) {
     AT_ERROR("Handle not overriden for ForLoop.");
@@ -267,6 +273,9 @@ struct TORCH_CUDA_API OptInDispatch {
   virtual void handle(BinaryOp*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for BinaryOp.");
   }
+  virtual void handle(ReductionOp*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for ReductionOp.");
+  }
   virtual void handle(ForLoop*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for ForLoop.");
   }
@@ -332,6 +341,7 @@ struct TORCH_CUDA_API OptOutMutator {
   virtual Statement* mutate(Reorder*);
   virtual Statement* mutate(UnaryOp*);
   virtual Statement* mutate(BinaryOp*);
+  virtual Statement* mutate(ReductionOp*);
   virtual Statement* mutate(ForLoop*);
   virtual Statement* mutate(IfThenElse*);
   virtual Statement* mutate(Allocate*);
@@ -400,6 +410,9 @@ struct TORCH_CUDA_API OptInMutator {
   }
   virtual Statement* mutate(BinaryOp*) {
     TORCH_INTERNAL_ASSERT(false, "Mutate not overriden for BinaryOp.");
+  }
+  virtual Statement* mutate(ReductionOp*) {
+    TORCH_INTERNAL_ASSERT(false, "Mutate not overriden for ReductionOp.");
   }
   virtual Statement* mutate(ForLoop*) {
     TORCH_INTERNAL_ASSERT(false, "Mutate not overriden for ForLoop.");

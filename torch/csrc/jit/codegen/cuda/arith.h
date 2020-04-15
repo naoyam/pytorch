@@ -32,6 +32,7 @@ TORCH_CUDA_API Val* unaryOp(UnaryOpType type, Val* v1);
 // Mod, CeilDiv, and LT are considered Int only output operations for now.
 TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2);
 
+// Binary operations
 TORCH_CUDA_API Val* add(Val* v1, Val* v2);
 TORCH_CUDA_API Val* sub(Val* v1, Val* v2);
 TORCH_CUDA_API Val* mul(Val* v1, Val* v2);
@@ -40,7 +41,13 @@ TORCH_CUDA_API Val* mod(Val* v1, Val* v2);
 TORCH_CUDA_API Val* lt(Val* v1, Val* v2);
 TORCH_CUDA_API Val* ceilDiv(Val* v1, Val* v2);
 TORCH_CUDA_API Val* andOp(Val* v1, Val* v2);
-
+TORCH_CUDA_API Val* reductionOp(
+    BinaryOpType reduction_op_type,
+    std::vector<int> axes,
+    Val* init,
+    Val* v1);
+// REDUCTION OPERATIONS
+TORCH_CUDA_API Val* sum(Val* v1, std::vector<int> reduction_axes);
 } // namespace fuser
 } // namespace jit
 } // namespace torch
