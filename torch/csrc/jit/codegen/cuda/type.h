@@ -40,10 +40,11 @@ enum class UnaryOpType { Neg, Cast };
 
 enum class BinaryOpType {
   Add,
-  Sub,
-  Mul,
+  Atan2,
   Div,
-  // Int operations, leave position oif Mod we depend on its location of first
+  Fmod,
+  Max,
+  Min,
   Mul,
   Pow,
   Remainder,
