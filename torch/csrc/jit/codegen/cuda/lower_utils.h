@@ -39,7 +39,8 @@ Expr* closeScope(Expr* scope);
 // Clear all expressions from the scope
 Expr* clearScope(Expr* scope);
 
-// Provide a new for loop matching the one provided
+// Provide a new for loop matching the one provided, sets parent_scope as
+// parent_scope, but does not insert into parent scope.
 ForLoop* cloneLoopNest(ForLoop* to_clone, Expr* parent_scope);
 
 // Run through a scope and replace expressions inside with replacement_map

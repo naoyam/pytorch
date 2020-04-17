@@ -85,6 +85,7 @@ struct TORCH_CUDA_API Int : public Val {
 struct TransformReplay;
 struct TransformIter;
 struct OptOutMutator;
+struct LoopNestGenerator;
 struct GPULower;
 /*
  * TensorView is our primitive Tensor Type used in code generation. It can be
@@ -132,6 +133,8 @@ struct TORCH_CUDA_API TensorView : public Val {
   TensorDomain* domain() const noexcept {
     return domain_;
   }
+
+  bool hasReduction() const;
 
   // Is there an active computeAt TensorView/Axis
   bool hasComputeAt() const {
@@ -181,8 +184,18 @@ struct TORCH_CUDA_API TensorView : public Val {
   friend TORCH_CUDA_API TransformIter;
   friend TORCH_CUDA_API OptOutMutator;
   friend TORCH_CUDA_API GPULower;
+  friend TORCH_CUDA_API LoopNestGenerator;
 
  protected:
+  // Make an exact copy of this tensor (similar to clone()), however, also grabs
+  // the same name. Current use of this is for initialization of reductions.
+  // This will break our dependency chain as it is a literal clone of a
+  // TensorView but it has a different dependency chain. We need to improve our
+  // dependency model to allow for initailziation of reduction buffers. The only
+  // reason we can get away with this for now is because we don't use dependency
+  // analysis for the IR after we call this.
+  TensorView* unsafeClone() const;
+
   void setDomain(TensorDomain* td) {
     domain_ = td;
   }
@@ -192,10 +205,25 @@ struct TORCH_CUDA_API TensorView : public Val {
     compute_at_axis_ = axis;
   }
 
+  void setMemoryType(MemoryType mt){
+    memory_type_ = mt;
+    bool is_inp_or_out = this->fusion()->hasInput(this) || this->fusion()->hasOutput(this);
+    if(is_inp_or_out)
+      TORCH_INTERNAL_ASSERT(
+        mt == MemoryType::Global,
+        "Tried to set an input or output to the fusion to a non-global memory type."
+      );
+  }
+
+  MemoryType getMemoryType(){
+    return memory_type_;
+  }
+
  private:
   TensorDomain* domain_;
   TensorView* compute_at_view_ = nullptr;
   unsigned int compute_at_axis_ = 0;
+  MemoryType memory_type_ = MemoryType::Global;
 
   // Make a copy of the domain (used for Tensor based constructor), likely to be
   // removed soon.

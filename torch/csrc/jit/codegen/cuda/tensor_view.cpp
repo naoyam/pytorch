@@ -49,6 +49,9 @@ TensorView* TensorView::clone() const {
   return new_view;
 }
 
+
+bool TensorView::hasReduction() const { return domain()->hasReduction(); }
+
 TensorView* TensorView::newForOutput(DataType dtype) const {
   std::vector<IterDomain*> domain_copy;
   for (decltype(this->nDims()) i = 0; i < this->nDims(); i++) {
@@ -118,6 +121,17 @@ IterDomain* TensorView::axis(int pos) const {
       " in domain: ",
       domain());
   return domain()->axis(pos);
+}
+
+TensorView* TensorView::unsafeClone() const {
+  TensorView* new_view = new TensorView(domain_, getDataType().value());
+  new_view->compute_at_view_ = compute_at_view_;
+  new_view->compute_at_axis_ = compute_at_axis_;
+  new_view->setMemoryType(memory_type_);
+  new_view->name_ = name();
+  MemoryType memory_type_ = MemoryType::Global;
+
+  return new_view;
 }
 
 void TensorView::copyDomain(const TensorDomain* td) {

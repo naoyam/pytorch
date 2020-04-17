@@ -264,7 +264,7 @@ void IRPrinter::handle(const BinaryOp* const bop) {
 void IRPrinter::handle(const ReductionOp* const rop) {
   os << rop->out() << " = reduction( " << rop->in()
      << ", op = " << rop->getReductionOpType()
-     << ", initial value = " << rop->init() << ")\n";
+     << ", initial value = " << rop->init() << " )\n";
 }
 
 void IRPrinter::handle(const ForLoop* const fl) {

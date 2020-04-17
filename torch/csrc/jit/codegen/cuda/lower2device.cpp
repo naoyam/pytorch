@@ -31,6 +31,10 @@ void GPULower::setActiveView(const TensorView* const tv) {
 TensorIndex* GPULower::getGlobalProducerIndex(
     TensorView* producer,
     TensorView* consumer) {
+  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and consumer could be the same
+  if(consumer == producer)
+    return getGlobalConsumerIndex(consumer);
+
   // Get new reference so replay inline doesn't change the original.
   TensorView* cloned_tv = producer->clone();
   // This replay will ignore reduction dimensions on the producer
@@ -61,6 +65,51 @@ TensorIndex* GPULower::getGlobalProducerIndex(
   return new TensorIndex(producer, strided_inds);
 }
 
+
+TensorIndex* GPULower::getSharedProducerIndex(
+    TensorView* producer,
+    TensorView* consumer) {
+  TORCH_INTERNAL_ASSERT(
+      scope_utils::computeForDepth(active_scope) == producer->nDims(),
+      "Expected a tensor with ",
+      scope_utils::computeForDepth(active_scope),
+      " dimensions but got one with ",
+      producer->nDims());
+
+  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and consumer could be the same
+  if(consumer == producer)
+    return getSharedConsumerIndex(consumer);
+
+  std::vector<Val*> loopInds = scope_utils::getLoopIndices(active_scope);
+  std::vector<IterDomain*> ranges =
+      scope_utils::getLoopIterDomains(active_scope);
+  std::vector<Val*> computed_inds;
+  std::vector<IterDomain*> used_ranges;
+  bool unrolled = false;
+  for (decltype(loopInds.size()) i{0}; i < loopInds.size(); i++) {
+    if (ranges[i]->parallel_method() == ParallelType::Unroll)
+      unrolled = true;
+    if (!unrolled && producer->hasComputeAt() &&
+        i < producer->getComputeAtAxis())
+      continue;
+    if (ranges[i]->isBlockDim()) // Only real diff with local function
+      continue;
+    computed_inds.push_back(loopInds[i]);
+    used_ranges.push_back(ranges[i]);
+  }
+
+  for (decltype(computed_inds.size()) i{0}; i < computed_inds.size(); i++) {
+    Val* ind = computed_inds[i];
+    for (decltype(used_ranges.size()) j{i + 1}; j < used_ranges.size(); j++)
+      ind = mul(ind, used_ranges[i]->extent());
+    computed_inds[i] = ind;
+  }
+  if (computed_inds.size() == 0)
+    computed_inds.push_back(new Int(0));
+
+  return new TensorIndex(producer, computed_inds);
+}
+
 TensorIndex* GPULower::getLocalProducerIndex(
     TensorView* producer,
     TensorView* consumer) {
@@ -70,6 +119,10 @@ TensorIndex* GPULower::getLocalProducerIndex(
       scope_utils::computeForDepth(active_scope),
       " dimensions but got one with ",
       producer->nDims());
+
+  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and consumer could be the same
+  if(consumer == producer)
+    return getLocalConsumerIndex(consumer);
 
   std::vector<Val*> loopInds = scope_utils::getLoopIndices(active_scope);
   std::vector<IterDomain*> ranges =
@@ -105,9 +158,18 @@ TensorIndex* GPULower::getLocalProducerIndex(
 TensorIndex* GPULower::getProducerIndex(
     TensorView* producer,
     TensorView* consumer) {
-  if (fusion_->hasInput(producer) || fusion_->hasOutput(producer))
-    return getGlobalProducerIndex(producer, consumer);
-  return getLocalProducerIndex(producer, consumer);
+  switch(producer->getMemoryType()){
+    case(MemoryType::Global):
+      return getGlobalProducerIndex(producer, consumer);
+    case(MemoryType::Shared):
+      return getSharedProducerIndex(producer, consumer);
+    case(MemoryType::Local):
+      return getLocalProducerIndex(producer, consumer);
+  }
+  TORCH_INTERNAL_ASSERT(
+      false,
+      "getProducerIndex did not recognize the memory type of ",
+      producer);
 }
 
 TensorIndex* GPULower::getGlobalConsumerIndex(TensorView* consumer) {
@@ -135,6 +197,45 @@ TensorIndex* GPULower::getGlobalConsumerIndex(TensorView* consumer) {
     strided_inds.push_back(new Int(0));
 
   return new TensorIndex(consumer, strided_inds);
+}
+
+TensorIndex* GPULower::getSharedConsumerIndex(TensorView* consumer) {
+  TORCH_INTERNAL_ASSERT(
+      scope_utils::computeForDepth(active_scope) == consumer->nDims(),
+      "Expected a tensor with ",
+      scope_utils::computeForDepth(active_scope),
+      " dimensions but got one with ",
+      consumer->nDims());
+
+  std::vector<Val*> loopInds = scope_utils::getLoopIndices(active_scope);
+  std::vector<IterDomain*> ranges =
+      scope_utils::getLoopIterDomains(active_scope);
+  std::vector<Val*> computed_inds;
+  std::vector<IterDomain*> used_ranges;
+  bool unrolled = false;
+  for (decltype(loopInds.size()) i{0}; i < loopInds.size(); i++) {
+    if (ranges[i]->parallel_method() == ParallelType::Unroll)
+      unrolled = true;
+    if (!unrolled && consumer->hasComputeAt() &&
+        i < consumer->getComputeAtAxis())
+      continue;
+    if (ranges[i]->isBlockDim())
+      continue;
+    computed_inds.push_back(loopInds[i]);
+    used_ranges.push_back(ranges[i]);
+  }
+
+  for (decltype(computed_inds.size()) i{0}; i < computed_inds.size(); i++) {
+    Val* ind = computed_inds[i];
+    for (decltype(used_ranges.size()) j{i + 1}; j < used_ranges.size(); j++)
+      ind = mul(ind, used_ranges[i]->extent());
+    computed_inds[i] = ind;
+  }
+
+  if (computed_inds.size() == 0)
+    computed_inds.push_back(new Int(0));
+
+  return new TensorIndex(consumer, computed_inds);
 }
 
 TensorIndex* GPULower::getLocalConsumerIndex(TensorView* consumer) {
@@ -179,10 +280,18 @@ TensorIndex* GPULower::getLocalConsumerIndex(TensorView* consumer) {
 // Consumer is the output of an expression
 TensorIndex* GPULower::getConsumerIndex(TensorView* consumer) {
   // GLOBAL MEMORY HANDLING
-  if (FusionGuard::getCurFusion()->hasInput(consumer) ||
-      FusionGuard::getCurFusion()->hasOutput(consumer))
-    return getGlobalConsumerIndex(consumer);
-  return getLocalConsumerIndex(consumer);
+  switch(consumer->getMemoryType()){
+    case(MemoryType::Global):
+      return getGlobalConsumerIndex(consumer);
+    case(MemoryType::Shared):
+      return getSharedConsumerIndex(consumer);
+    case(MemoryType::Local):
+      return getLocalConsumerIndex(consumer);
+  }
+  TORCH_INTERNAL_ASSERT(
+      false,
+      "getConsumerIndex did not recognize the memory type of ",
+      consumer);
 }
 
 void GPULower::pushBack(Expr* expr) {
@@ -282,6 +391,7 @@ Statement* GPULower::mutate(BinaryOp* bop) {
     return OptOutMutator::mutate(bop);
 
   TensorIndex* out = getConsumerIndex(ir_utils::asTV(bop->out()));
+
   Val* lhs = bop->lhs();
   Val* rhs = bop->rhs();
 
@@ -292,6 +402,19 @@ Statement* GPULower::mutate(BinaryOp* bop) {
     rhs = getProducerIndex(ir_utils::asTV(rhs), ir_utils::asTV(bop->out()));
 
   Expr* new_op = new BinaryOp(bop->getBinaryOpType(), out, lhs, rhs);
+
+  return new_op;
+}
+
+Statement* GPULower::mutate(ReductionOp* rop) {
+  if (!ir_utils::isTVOp(rop))
+    return OptOutMutator::mutate(rop);
+  TensorIndex* out = getConsumerIndex(ir_utils::asTV(rop->out()));
+  Val* in = rop->in();
+  if (ir_utils::isTV(in))
+    in = getProducerIndex(ir_utils::asTV(in), ir_utils::asTV(rop->out()));
+
+  Expr* new_op = new BinaryOp(rop->getReductionOpType(), out, out, in);
 
   return new_op;
 }
@@ -357,6 +480,7 @@ void GPULower::replaceSizes() {
   if (size_map.size() == 0)
     return;
 
+  // Set domains to be based on symbolic sizes (i.e. Ti.size[...])
   for (TensorView* tv : all_tvs) {
     std::vector<IterDomain*> new_domain_iters;
     TensorDomain* root_td = tv->getRootDomain();
@@ -387,6 +511,20 @@ void GPULower::replaceSizes() {
       new_domain->axis(i)->parallelize(old_domain->axis(i)->parallel_method());
 
     tv->setDomain(new_domain);
+  }
+
+  // Adjust memory types to make sure they are valid
+  for (TensorView* tv : all_tvs) {
+    if(fusion->hasInput(tv) || fusion->hasOutput(tv)){
+      tv->setMemoryType(MemoryType::Global);
+    }else{
+      if(tv->getMemoryType() == MemoryType::Global)
+        tv->setMemoryType(MemoryType::Local);
+      for(decltype(tv->nDims()) i{tv->getComputeAtAxis()}; i<tv->nDims(); i++)
+        TORCH_INTERNAL_ASSERT(tv->axis(i)->extent()->isConstScalar(),
+          "Local and shared memory are currently only supported on compile-time known sizes.");
+    }
+
   }
 }
 

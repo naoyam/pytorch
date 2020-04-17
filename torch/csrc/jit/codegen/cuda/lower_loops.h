@@ -58,6 +58,7 @@ struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
 
   // Clear out the last recorded computeAtView
   void clearActiveView();
+
   // Set active views from computeAtView
   void setActiveView(const TensorView* const);
 
@@ -68,8 +69,14 @@ struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // straight to lower_exprs
   void pushBack(Expr*);
 
+  // Update for loop structure based on this TensorView to its compute at point
+  void updateToComputeAt(TensorView*);
+
   // Update for loop structure based on this TensorView
   void updateLoopNest(TensorView*);
+
+  // Update for loop structure based on this TensorView
+  void initReduction(TensorView* tv, Val* init_val);
 
   // Check if a TV op, generate for loop nest around it
   void handle(Expr*) final;

@@ -41,7 +41,11 @@ struct TORCH_CUDA_API GPULower : public OptOutMutator {
   TensorIndex* getGlobalProducerIndex(
       TensorView* producer,
       TensorView* consumer);
-  // Producer indexing if it's in registers
+  // Producer indexing if it's in shared memory
+  TensorIndex* getSharedProducerIndex(
+      TensorView* producer,
+      TensorView* consumer);
+  // Producer indexing if it's in local memory
   TensorIndex* getLocalProducerIndex(
       TensorView* producer,
       TensorView* consumer);
@@ -49,6 +53,8 @@ struct TORCH_CUDA_API GPULower : public OptOutMutator {
   TensorIndex* getConsumerIndex(TensorView* consumer);
   // Consumer indexing if it's in global memory
   TensorIndex* getGlobalConsumerIndex(TensorView* consumer);
+  // Consumer indexing if it's in shared memory
+  TensorIndex* getSharedConsumerIndex(TensorView* consumer);
   // Consumer indexing if it's in local memory
   TensorIndex* getLocalConsumerIndex(TensorView* consumer);
 
@@ -71,6 +77,7 @@ struct TORCH_CUDA_API GPULower : public OptOutMutator {
   // Remake operations with TensorIndex
   Statement* mutate(UnaryOp*) final;
   Statement* mutate(BinaryOp*) final;
+  Statement* mutate(ReductionOp*) final;
 
   // TensorViews are all based on symbolic sizes. When we first initialize them
   // we don't know if they're inputs or outputs which would mean that they have

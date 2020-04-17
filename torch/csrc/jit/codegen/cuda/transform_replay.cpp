@@ -1,6 +1,6 @@
-#include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
 namespace torch {
 namespace jit {
@@ -264,11 +264,19 @@ TensorDomain* TransformReplay::runReplay(
   // used during replay to forward propagate influence.
   std::vector<bool> root_influence_vector = influence;
 
-  // Remove isReduction from the axis_map of a producer
-  // isReduction is only impactful when its on a consumer
+  // In lowering code we replay domains on to copies of themselves. This is done
+  // during the replacement of symbolic sizes for inputs and outputs (i.e. TV0[
+  // iS{i3}, iS{i4} ] -> TV0[ TV0.size[0], TV0.size[1] ]). If number of axes and
+  // reduction axes match exactly include the reduction axes during replay.
+  // Otherwise assume consumer/producer relationship and ignore reduction axes
+  // on target.
+  bool include_reductions = replay_target->nDims() == ref_root->nDims();
+
+  // Remove isReduction from the axis_map of a producer isReduction is only
+  // impactful when its on a consumer (subject to comment directly above)
   auto init_size = replay_target->nDims();
   for (decltype(init_size) i = 0; i < init_size; i++)
-    if (!replay_target->axis(i)->isReduction())
+    if (include_reductions || !replay_target->axis(i)->isReduction())
       axis_map.push_back(i);
 
   // Domain sizes must match at root for replay.
@@ -276,24 +284,9 @@ TensorDomain* TransformReplay::runReplay(
     std::stringstream err_msg;
     err_msg
         << "Transforms cannot be replayed as source and destinations do not have the same root sizes."
-        << " " << ref_root << " vs " << replay_target->domain() << std::endl;
+        << " " << ref_root << " vs " << replay_target << std::endl;
     TORCH_CHECK(false, err_msg.str());
   }
-
-  /*
-   * TODO: The JIT graph has symbolic sizes, so inputs may actually have the
-   * same sizes (assuming no broadcasts/reductions), we at some point want to
-   * have some size matching, and sizes should actually match at this point, but
-   * the check below won't work.
-   */
-
-  // for (decltype(axis_map.size()) i{0}; i < axis_map.size(); i++) {
-  //   TORCH_CHECK(
-  //       ref_root->axis(i)->size()->same_as(
-  //           target_root->axis(axis_map[i])->size()),
-  //       "Transforms cannot be replayed as source and destinations do not have
-  //       the same root sizes.");
-  // }
 
   /* STEP 3 */
   // Replay operations while forward propagating influence. The resulting
@@ -307,7 +300,7 @@ TensorDomain* TransformReplay::runReplay(
   TensorDomain* replayed = TransformIter::runReplay(replay_target);
 
   for (decltype(replayed->nDims()) i{0}; i < compute_at_axis; i++)
-    if (replayed->axis(i)->isReduction())
+    if (!include_reductions && replayed->axis(i)->isReduction())
       TORCH_CHECK(
           false,
           "Generated a compute_at dependency where a reduction would be used before computed.");

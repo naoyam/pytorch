@@ -103,6 +103,11 @@ static _enum_unordered_map<ParallelType, std::string> parallel_type_string_map{
     {ParallelType::Unroll, "Unroll"},
     {ParallelType::Serial, "Serial"}};
 
+static _enum_unordered_map<MemoryType, std::string> memory_type_string_map{
+    {MemoryType::Local, "register"},
+    {MemoryType::Shared, "shared"},
+    {MemoryType::Global, "global"}};
+
 static _enum_unordered_map<at::ScalarType, DataType> at_type_map{
     {at::ScalarType::Float, DataType::Float},
     {at::ScalarType::Int, DataType::Int}};

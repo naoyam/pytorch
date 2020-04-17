@@ -63,6 +63,12 @@ enum class ParallelType {
   Serial
 };
 
+enum class MemoryType {
+  Local,
+  Shared,
+  Global
+};
+
 ValType promote_type(const ValType& t1, const ValType& t2);
 DataType promote_type(const DataType& t1, const DataType& t2);
 bool is_cast_legal(const DataType& t1, const DataType& t2);
@@ -75,6 +81,7 @@ TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const ExprType);
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const UnaryOpType);
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const BinaryOpType);
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const ParallelType);
+TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const MemoryType);
 
 std::string stringify(const ParallelType);
 std::string stringifyThreadSize(const ParallelType);

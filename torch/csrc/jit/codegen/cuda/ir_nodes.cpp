@@ -174,6 +174,12 @@ bool TensorDomain::sameAs(const TensorDomain* const other) const {
   return true;
 }
 
+bool TensorDomain::hasReduction() const {
+  return std::any_of(domain_.begin(), domain_.end(),
+  [](IterDomain* id){ return id->isReduction(); }
+  );
+}
+
 TensorDomain* TensorDomain::noReductions() const {
   std::vector<IterDomain*> noReductionDomain;
   for (IterDomain* id : domain_)

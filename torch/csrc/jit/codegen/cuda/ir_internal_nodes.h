@@ -189,26 +189,27 @@ struct TORCH_CUDA_API IterDomain : public Val {
 
   void parallelize(ParallelType t) {
     parallel_method_ = t;
-    if (isBlockDim()) {
+    if (isBlockDim())
       TORCH_CHECK(
           !isReduction(),
           "Cannot parallelize reductions across a block dimension.");
-      if (isThreadDim())
-        TORCH_CHECK(
-            !isReduction(),
-            "Thread parallelized reductions not yet supported.");
+
+    if (isThreadDim())
       TORCH_CHECK(
-          t != ParallelType::Vectorize, "Vectorization not yet supported.");
-      if (t == ParallelType::Unroll)
-        TORCH_CHECK(
-            start()->isZeroInt() && extent()->isConstScalar(),
-            "Unrolling only supported with start = 0 and extent as a const int, but got ",
-            "a start of ",
-            start(),
-            " and extent ",
-            extent(),
-            " .");
-    }
+          !isReduction(), "Thread parallelized reductions not yet supported.");
+
+    TORCH_CHECK(
+        t != ParallelType::Vectorize, "Vectorization not yet supported.");
+
+    if (t == ParallelType::Unroll)
+      TORCH_CHECK(
+          start()->isZeroInt() && extent()->isConstScalar(),
+          "Unrolling only supported with start = 0 and extent as a const int, but got ",
+          "a start of ",
+          start(),
+          " and extent ",
+          extent(),
+          " .");
   }
 
   ParallelType parallel_method() const noexcept {
@@ -267,6 +268,8 @@ struct TORCH_CUDA_API TensorDomain : public Val {
     return domain_;
   }
 
+  bool hasReduction() const;
+  
   TensorDomain* noReductions() const;
 
   // i here is int, as we want to accept negative value and ::size_type can be a

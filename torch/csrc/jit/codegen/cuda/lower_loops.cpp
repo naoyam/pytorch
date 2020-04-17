@@ -48,6 +48,9 @@ Int* getPredicate(const TensorView* const pred_tv, std::vector<Val*> indices) {
     if (!pred->sameAs(one))
       preds.push_back(pred);
 
+  if(preds.size() == 0)
+    return one;
+
   Int* cond = preds[0];
 
   for (decltype(preds.size()) i{1}; i < preds.size(); i++)
@@ -155,8 +158,10 @@ void UnrollPass::handle(ForLoop* fl) {
 
       // ! within_unroll
       TensorView* out = ir_utils::asTV(ir_utils::asExpr(expr)->outputs()[0]);
+
       Int* pred =
           getPredicate(out, scope_utils::getLoopIndices(for_loops.back()));
+
       if (!pred->isOneInt()) {
         IfThenElse* inline_ite =
             new IfThenElse(pred, {expr}, {}, for_loops.back());
@@ -287,7 +292,8 @@ void LoopNestGenerator::pushBack(Expr* expr) {
 
 /*
  *  This is one of the most complex parts of the code lowering logic. what we
- * need to do is: 1) Reduce loop structure
+ * need to do is:
+ *  1) Reduce loop structure
  *    - Reset all loops if active_view == nullptr (I'm not the last in a series
  * of computeAts)
  *    - Else reduce to active_view_axis if loop_depth > active_view_axis
@@ -297,12 +303,15 @@ void LoopNestGenerator::pushBack(Expr* expr) {
  *    - If there is a computeAt set for this TV
  *  4) Allocate the output.
  *  5) If this is a reduction, initialize the output (open for loops to inner
- * most, predicate, initialize, close predicate, close to computeAt) 6) Open to
- * inner most loop 7) Open predicate 8) Run operation 9) Close predicate
+ * most, predicate, initialize, close predicate, close to computeAt) 
+ *  6) Open to inner most loop
+ *  7) Open predicate
+ *  8) Run operation
+ *  9) Close predicate`
  */
 
 // Update fors based on tv.
-void LoopNestGenerator::updateLoopNest(TensorView* tv) {
+void LoopNestGenerator::updateToComputeAt(TensorView* tv) {
   // 1) Reduce loop structure
   if (active_view != nullptr) {
     // - Else reduce to active_view_axis if loop_depth > active_view_axis
@@ -336,19 +345,24 @@ void LoopNestGenerator::updateLoopNest(TensorView* tv) {
 
     clearActiveView();
   }
-  //  4) Allocate the output.
-  if (!FusionGuard::getCurFusion()->hasInput(tv) &&
-      !FusionGuard::getCurFusion()->hasOutput(tv)) {
-    pushAlloc(tv);
-  }
-  // TODO:
-  //  5) If this is a reduction, initialize the output (open for loops to inner
-  //  most, predicate, initialize, close predicate, close to computeAt)
 
-  //  6) Open to inner most loop
-  for (decltype(tv->nDims()) i = for_loops.size(); i < tv->nDims(); i++)
-    openFor(tv->getComputeAtAxis(i));
 }
+
+  // Update for loop structure based on this TensorView
+  void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val){
+    TORCH_INTERNAL_ASSERT(tv->getComputeAtAxis() >= for_loops.size(),
+      "Initialization of reduction was trying to be placed at the wrong point in the loop nest.");
+    int depth = for_loops.size();
+    for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
+      openFor(tv->getComputeAtAxis(i));
+    auto clone = tv->unsafeClone();
+    for_loops.back()->body().push_back(
+      new UnaryOp(UnaryOpType::Set, clone, init_val)
+    );
+    for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
+      for_loops.pop_back();
+
+  }
 
 // Custom dispatch for Expr, want to find out of it's a TV op
 void LoopNestGenerator::handle(Expr* expr) {
@@ -356,7 +370,21 @@ void LoopNestGenerator::handle(Expr* expr) {
     return;
 
   TensorView* out = static_cast<TensorView*>(expr->output(0));
-  updateLoopNest(out);
+  updateToComputeAt(out);
+
+  //  4) Allocate the output.
+  if (!FusionGuard::getCurFusion()->hasInput(out) &&
+      !FusionGuard::getCurFusion()->hasOutput(out))
+    pushAlloc(out);
+  
+  //  5) If this is a reduction, initialize the output (open for loops to inner
+  //  most, predicate, initialize, close predicate, close to computeAt)
+  if(out->hasReduction())
+    initReduction(out, static_cast<ReductionOp*>(expr)->init());
+
+  //  6) Open to inner most loop
+  for (decltype(out->nDims()) i = for_loops.size(); i < out->nDims(); i++)
+    openFor(out->getComputeAtAxis(i));
 
   pushBack(expr);
 }

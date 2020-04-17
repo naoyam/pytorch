@@ -1,4 +1,4 @@
-#if defined(USE_CUDA)
+//#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -1074,6 +1074,31 @@ void testGPU_FusionLoopUnroll() {
   TORCH_CHECK(output.equal(check));
 }
 
+void testGPU_FusionSimpleReduction() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+
+  // Register your inputs
+  fusion.addInput(tv0);
+
+  // Do math with it, it returns a `Val*` but can be static_casted back to
+  // TensorView
+  TensorView* tv2 = static_cast<TensorView*>(sum(tv0, {1}));
+  //tv2->axis(0)->parallelize(ParallelType::TIDx);
+  // Register your outputs
+  fusion.addOutput(tv2);
+
+  std::cout<<fusion<<std::endl;
+
+  GPULower lower(&fusion);
+  lower.printKernel(std::cout);
+
+}
+
+
 } // namespace jit
 } // namespace torch
-#endif // #if defined(USE_CUDA)
+//#endif // #if defined(USE_CUDA)
