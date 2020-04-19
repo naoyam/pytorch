@@ -66,6 +66,7 @@ TensorView* TensorView::newForOutput(DataType dtype) const {
   return new TensorView(td, dtype);
 };
 
+//TODO: How do we adjust this so we can reduce to a single scalar value?
 TensorView* TensorView::newForReduction(std::vector<unsigned int> axes) const {
   TensorDomain* orig_domain = this->getRootDomain()->noReductions();
   std::set<unsigned int> axes_set(axes.begin(), axes.end());
@@ -333,6 +334,66 @@ TensorView* TensorView::reorder(const std::unordered_map<int, int>& axis2pos_) {
   // END VALIDATION CHECKS
   setDomain(domain()->reorder(axis2pos_));
 
+  return this;
+}
+
+
+/*
+  * Take reduction axes out of this domain, and create a new domain. New domain will be
+  * used to create this domain. For example:
+  * TV1[I0, I1] = TV0[I0, R0, R1, I1]
+  * TV0->rfactor({1})
+  * TV0 is transformed to -> TV0[I0, R1, I1]
+  * The TensorView returned is:
+  * TV2[I0, R0, I3, I1]
+  * The reduction will now beset as:
+  * TV1[I0, R1, I1] = TV2[I0, R0, I3, I1]
+  * TV0[I0, I1] = TV1[I0, R1, I1]
+  */
+TensorView* TensorView::rfactor(std::vector<int> axes){
+  /*
+  for(decltype(axes.size()) i{0}; i<axes.size(); i++){
+    if(axes[i] < nDims())
+      axes[i]+=nDims();
+  }
+  for(decltype(axes.size()) i{0}; i<axes.size(); i++){
+    TORCH_INTERNAL_ASSERT(
+        axes[i] >= 0 && axes[i] < nDims(),
+        "Expected rfactor axis to be >= 0 and < ",
+        nDims(),
+        " but got axis value of ",
+        axes[i]);
+    TORCH_INTERNAL_ASSERT(
+        axis(axes[i])->isReduction(),
+        "Tried to rfactor our iteration domain ",
+        axis(axes[i]),
+        " but it is not a reduction axis.");
+  }
+
+  std::set<int> axes_set(axes.begin(), axes.end());
+  // orig [I0, R0, R1, I1] (factor 1)
+  std::vector<IterDomain*> factored; // [I0, R0, I3, I1]
+  std::vector<IterDomain*> factored_out; // [I0, R1, I1]
+
+  for(decltype(nDims()) i{0}; i<nDims(); i++){
+    if(!axis(i)->isReduction()){
+      factored.push_back(axis(i));
+      factored_out.push_back(axis(i)->clone());
+    }else{
+      if(axes_set.find(i) == axes_set.end()){
+        // not factoring out i
+        factored_out.push_back(axis(i));
+        factored.push_back(new IterDomain(
+            axis(i)->start(),
+            axis(i)->extent(),
+            axis(i)->parallel_method(),
+            false));
+      } else {
+        factored.push_back(axis(i));
+      }
+    }
+  }
+*/
   return this;
 }
 

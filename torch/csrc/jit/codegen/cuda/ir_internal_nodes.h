@@ -158,6 +158,10 @@ struct TORCH_CUDA_API IterDomain : public Val {
 
   bool sameAs(const IterDomain* const other) const;
 
+  IterDomain* clone() const {
+    return new IterDomain(start(), extent(), parallel_method(), isReduction());
+  }
+
   bool isReduction() const noexcept {
     return is_reduction_domain_;
   }
@@ -194,9 +198,12 @@ struct TORCH_CUDA_API IterDomain : public Val {
           !isReduction(),
           "Cannot parallelize reductions across a block dimension.");
 
-    if (isThreadDim())
-      TORCH_CHECK(
-          !isReduction(), "Thread parallelized reductions not yet supported.");
+    // Currently a limitation as we allocate shared memory as static (not based off a dynamic size.)
+    if(isReduction())
+      if (isThreadDim())
+        TORCH_CHECK(
+            extent()->isConstScalar(),
+            "Reductions can only be parallelized across dimensions of compile-time known constants.");
 
     TORCH_CHECK(
         t != ParallelType::Vectorize, "Vectorization not yet supported.");

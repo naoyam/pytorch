@@ -180,6 +180,20 @@ struct TORCH_CUDA_API TensorView : public Val {
   // Reorder axes according to axis2pos[old_pos] = new_pos
   TensorView* reorder(const std::unordered_map<int, int>& axis2pos);
 
+  /*
+   * Take reduction axes out of this domain, and create a new domain. New domain will be
+   * used to create this domain. For example:
+   * TV1[I0, I1] = TV0[I0, R0, R1, I1]
+   * TV0->rfactor({1})
+   * TV0 is transformed to -> TV0[I0, R1, I1]
+   * The TensorView returned is:
+   * TV2[I0, R0, I3, I1]
+   * The reduction will now beset as:
+   * TV1[I0, R1, I1] = TV2[I0, R0, I3, I1]
+   * TV0[I0, I1] = TV1[I0, R1, I1]
+   */
+  TensorView* rfactor(std::vector<int> axes);
+
   friend TORCH_CUDA_API TransformReplay;
   friend TORCH_CUDA_API TransformIter;
   friend TORCH_CUDA_API OptOutMutator;

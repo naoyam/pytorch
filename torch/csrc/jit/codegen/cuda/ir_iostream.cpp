@@ -42,7 +42,7 @@ void IRPrinter::printHeader(Fusion* fusion, const std::string& kernel_name_) {
     switch (val->getValType().value()) {
       case (ValType::TensorView):
         os << "Tensor<" << val->getDataType().value() << ", "
-           << static_cast<TensorView*>(val)->getRootDomain()->nDims() << "> T"
+           << static_cast<TensorView*>(val)->getRootDomain()->noReductions()->nDims() << "> T"
            << val->name();
         break;
       case (ValType::Scalar):

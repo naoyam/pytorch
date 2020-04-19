@@ -1087,7 +1087,9 @@ void testGPU_FusionSimpleReduction() {
   // Do math with it, it returns a `Val*` but can be static_casted back to
   // TensorView
   TensorView* tv2 = static_cast<TensorView*>(sum(tv0, {1}));
-  //tv2->axis(0)->parallelize(ParallelType::TIDx);
+  tv2->split(-1, 128);
+  tv2->axis(0)->parallelize(ParallelType::BIDx);
+  tv2->axis(-1)->parallelize(ParallelType::TIDx);
   // Register your outputs
   fusion.addOutput(tv2);
 

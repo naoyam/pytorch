@@ -136,7 +136,8 @@ struct KernelArgumentHolder {
 std::pair<std::string, std::string> codeGeneration(Fusion& fusion) {
   std::stringstream str_stream;
   str_stream << "namespace " << CG_NAMESPACE << " {\n"
-             << code_template_tensor_struct << "\n";
+             << code_template_tensor_struct << "\n"
+             << code_template_block_reduction <<"\n";
   std::stringstream cdg;
   GPULower gpulw(&fusion);
   gpulw.printKernel(str_stream, KERNEL_NAME);

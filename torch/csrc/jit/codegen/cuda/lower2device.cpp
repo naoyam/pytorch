@@ -177,13 +177,21 @@ TensorIndex* GPULower::getGlobalConsumerIndex(TensorView* consumer) {
       scope_utils::getLoopIndices(active_scope).size() == consumer->nDims(),
       "Dimensionality error in code generator while computing indexing.");
 
-  const std::vector<Val*> computed_inds = IndexCompute::computeIndices(
+  std::vector<Val*> computed_inds = IndexCompute::computeIndices(
       consumer, scope_utils::getLoopIndices(active_scope));
 
+  TensorDomain* root_dom = consumer->getRootDomain();
   TORCH_INTERNAL_ASSERT(
-      computed_inds.size() == consumer->getRootDomain()->nDims(),
+      computed_inds.size() == root_dom->nDims(),
       "Dimensionality error in code generator while computing indexing.");
 
+  // Consumers don't have allocations matching their reduction dims, as that's
+  // what's being reduced from their producers. Need to remove these axes from
+  // indexing.
+  for(decltype(root_dom->nDims()) i{root_dom->nDims()}; i>0; i--){
+    if(root_dom->axis(i-1)->isReduction())
+      computed_inds.erase(computed_inds.begin()+i-1);
+  }
   std::vector<Val*> strided_inds;
   for (decltype(computed_inds.size()) i{0}; i < computed_inds.size(); i++) {
     std::stringstream ss;
@@ -520,11 +528,7 @@ void GPULower::replaceSizes() {
     }else{
       if(tv->getMemoryType() == MemoryType::Global)
         tv->setMemoryType(MemoryType::Local);
-      for(decltype(tv->nDims()) i{tv->getComputeAtAxis()}; i<tv->nDims(); i++)
-        TORCH_INTERNAL_ASSERT(tv->axis(i)->extent()->isConstScalar(),
-          "Local and shared memory are currently only supported on compile-time known sizes.");
     }
-
   }
 }
 
@@ -538,10 +542,10 @@ void validate(Fusion* fusion) {
       for (decltype(tv->nDims()) i{0}; i < tv->nDims(); i++) {
         IterDomain* id = tv->getComputeAtAxis(i);
 
-        if (id->isThread())
+        if (id->isBlockDim())
           TORCH_CHECK(
               !id->isReduction(),
-              "Parallelization on reduction axes not support at the moment found on, ",
+              "Parallelization across blocks on reduction axes not support at the moment but found on, ",
               tv,
               ".");
       }
