@@ -850,6 +850,51 @@ void testGPU_FusionCodeGen2() {
   TORCH_CHECK(output_ref.equal(output));
 }
 
+void testGPU_FusionCodeGen3() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(3);
+  TensorView* tv1 = makeDummyTensor(3);
+  TensorView* tv2 = makeDummyTensor(3);
+  TensorView* tv3 = static_cast<TensorView*>(add(tv0, new Float(2.0)));
+  TensorView* tv4 = static_cast<TensorView*>(add(tv3, tv1));
+  TensorView* tv5 = static_cast<TensorView*>(add(tv3, tv2));
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv4);
+  fusion.addOutput(tv5);
+
+  tv4->merge(0);
+  tv4->merge(0);
+  tv4->split(0, 128);
+  tv4->split(0, 4);
+  tv4->axis(0)->parallelize(ParallelType::BIDx);
+  tv4->axis(1)->parallelize(ParallelType::Unroll);
+  tv4->axis(-1)->parallelize(ParallelType::TIDx);
+
+  tv5->merge(0);
+  tv5->merge(0);
+  tv5->split(0, 128);
+  tv5->split(0, 4);
+  tv5->axis(0)->parallelize(ParallelType::BIDx);
+  tv5->axis(1)->parallelize(ParallelType::Unroll);
+  tv5->axis(-1)->parallelize(ParallelType::TIDx);
+
+  tv3->computeAt(tv4, 1);
+  tv3->computeAt(tv5, 1);
+  tv3->axis(-2)->parallelize(ParallelType::Unroll);
+  tv3->axis(-1)->parallelize(ParallelType::TIDx);
+
+  std::cout << "start code gen" << std::endl;
+  GPULower gpulw(&fusion);
+  std::stringstream cdg;
+  gpulw.printKernel(cdg);
+
+  std::cout << cdg.str() << std::endl;
+}
+
 void testGPU_FusionSimplePWise() {
   Fusion fusion;
   FusionGuard fg(&fusion);
