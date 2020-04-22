@@ -18,28 +18,31 @@ namespace fuser {
  */
 struct TORCH_CUDA_API TransformIter : public IterVisitor {
  protected:
-  virtual void replayBackward(Split* expr);
-  virtual void replayBackward(Merge* expr);
-  virtual void replayBackward(Reorder* expr);
+  virtual void replayBackward(Split*);
+  virtual void replayBackward(Merge*);
+  virtual void replayBackward(Reorder*);
 
   // dispatch
-  void replayBackward(Expr* expr);
+  void replayBackward(Expr*);
+
+  // Returns transformation exprs in reverse order (as seen processing backwards)
+  static std::vector<Expr*> getHistory(TensorDomain*);
 
   // Iterates td's history starting with td, then origin(td), origin(origin(td))
   // etc. Returns root TensorDomain once it iterates through history. If
   // generate_record=true It will record the history of td in record. Record is
   // order operations root->td.
-  TensorDomain* runBackward(TensorDomain* td, bool generate_record);
+  virtual TensorDomain* runBackward(TensorDomain*, bool generate_record);
 
-  virtual TensorDomain* replay(Split* expr, TensorDomain* tv);
-  virtual TensorDomain* replay(Merge* expr, TensorDomain* tv);
-  virtual TensorDomain* replay(Reorder* expr, TensorDomain* tv);
+  virtual TensorDomain* replay(Split*, TensorDomain*);
+  virtual TensorDomain* replay(Merge*, TensorDomain*);
+  virtual TensorDomain* replay(Reorder*, TensorDomain*);
 
   // dispatch
-  TensorDomain* replay(Expr* expr, TensorDomain* tv);
+  virtual TensorDomain* replay(Expr*, TensorDomain*);
 
   // Runs through operations recorded in record from root-> present
-  TensorDomain* runReplay(TensorDomain* tv);
+  virtual TensorDomain* runReplay(TensorDomain*);
 
   // Forward record from root, to replay_ref/ref_root
   std::vector<Expr*> record;

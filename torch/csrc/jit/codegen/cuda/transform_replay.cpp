@@ -9,8 +9,8 @@ namespace fuser {
 /*
  * Functions to backward propagate influence from split/merge/reorder
  */
-void TransformReplay::replayBackward(Split* expr) {
-  int axis = expr->axis();
+void TransformReplay::replayBackward(Split* split) {
+  int axis = split->axis();
   TORCH_INTERNAL_ASSERT(
       axis + 1 < influence.size(),
       "Error during replay backwards, influence is not sized correctly.");
@@ -18,17 +18,17 @@ void TransformReplay::replayBackward(Split* expr) {
   influence.erase(influence.begin() + axis + 1);
 }
 
-void TransformReplay::replayBackward(Merge* expr) {
-  int axis = expr->axis();
+void TransformReplay::replayBackward(Merge* merge) {
+  int axis = merge->axis();
   TORCH_INTERNAL_ASSERT(
       axis < influence.size(),
       "Error during replay backwards, influence is not sized correctly.");
   influence.insert(influence.begin() + axis + 1, influence[axis]);
 }
 
-void TransformReplay::replayBackward(Reorder* expr) {
+void TransformReplay::replayBackward(Reorder* reorder) {
   // pos2axis[new_pos] = old_pos Generate new axis2pos map
-  const std::vector<int>& pos2axis = expr->pos2axis();
+  const std::vector<int>& pos2axis = reorder->pos2axis();
 
   std::vector<bool> reorder_influence(influence.size(), false);
   for (decltype(pos2axis.size()) i = 0; i < pos2axis.size(); i++) {
@@ -44,7 +44,7 @@ void TransformReplay::replayBackward(Reorder* expr) {
 }
 
 // Entry for backward influence propagation on td following record
-TensorDomain* TransformReplay::replayBackward(
+TensorDomain* TransformReplay::runBackward(
     TensorDomain* td,
     bool create_record) {
   influence = std::vector<bool>(td->nDims(), false);
@@ -259,7 +259,7 @@ TensorDomain* TransformReplay::runReplay(
   // produce these axis
   // As we trace the ref, record the operations to go from replay_ref ->
   // ref_root, save in "record"
-  TensorDomain* ref_root = replayBackward(replay_ref, true);
+  TensorDomain* ref_root = runBackward(replay_ref, true);
   // We're going to save a copy of this vector, class member influnce will be
   // used during replay to forward propagate influence.
   std::vector<bool> root_influence_vector = influence;

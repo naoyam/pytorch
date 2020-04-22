@@ -123,21 +123,21 @@ struct TORCH_CUDA_API TransformReplay : public TransformIter {
   /*
    * Functions to backward propagate influence from split/merge/reorder
    */
-  void replayBackward(Split* expr);
-  void replayBackward(Merge* expr);
-  void replayBackward(Reorder* expr);
+  void replayBackward(Split*) override;
+  void replayBackward(Merge*) override;
+  void replayBackward(Reorder*) override;
 
   // Entry for backward influence propagation on td following record
-  TensorDomain* replayBackward(TensorDomain* td, bool generate_record = false);
+  TensorDomain* runBackward(TensorDomain* td, bool generate_record = false) override;
 
   /*
    * Replay functions, takes a TensorView and steps through the operations in
    * "record" based on influence axes. Will also update influence and propagate
    * it forward.
    */
-  TensorDomain* replay(Split* expr, TensorDomain* tv);
-  TensorDomain* replay(Merge* expr, TensorDomain* tv);
-  TensorDomain* replay(Reorder* expr, TensorDomain* tv);
+  TensorDomain* replay(Split*, TensorDomain*) override;
+  TensorDomain* replay(Merge*, TensorDomain*) override;
+  TensorDomain* replay(Reorder*, TensorDomain*) override;
 
   /*
    * Takes replay_ref and replays its transformations on replay_target
@@ -155,6 +155,8 @@ struct TORCH_CUDA_API TransformReplay : public TransformIter {
    * Replays from begining of both TensorDomains. could be more efficient to try
    * and find a common ancestor to start from, but likely not a worthwhile
    * optimization.
+   * 
+   * Replay Target as reference.
    */
   TensorView* runReplay(
       TensorView* replay_ref,
@@ -176,15 +178,18 @@ struct TORCH_CUDA_API TransformReplay : public TransformIter {
   std::vector<int> axis_map;
 
  public:
+  // Replay Target as reference.
   static TensorView* replay(
       TensorView* replay_ref,
       TensorView* replay_target,
       int compute_at_axis);
 
+  // Replay Target as reference.
   static TensorView* fullReplay(
       TensorView* replay_ref,
       TensorView* replay_target);
 
+  // Replay Target as reference.
   static TensorDomain* fullReplay(
       TensorDomain* replay_ref,
       TensorDomain* replay_target);

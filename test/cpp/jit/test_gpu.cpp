@@ -10,6 +10,7 @@
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/tensor_meta.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
+#include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
 
 // fuser and IR parser
 #include <torch/csrc/jit/codegen/cuda/parser.h>
@@ -1074,6 +1075,8 @@ void testGPU_FusionLoopUnroll() {
   TORCH_CHECK(output.equal(check));
 }
 
+// We want split/merge/reorder all tested both on and off rfactor domains, also
+// want compute at into the rfactor domain, and into its consumer
 void testGPU_FusionSimpleReduction() {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -1086,17 +1089,37 @@ void testGPU_FusionSimpleReduction() {
 
   // Do math with it, it returns a `Val*` but can be static_casted back to
   // TensorView
-  TensorView* tv2 = static_cast<TensorView*>(sum(tv0, {1}));
-  tv2->split(-1, 128);
-  tv2->axis(0)->parallelize(ParallelType::BIDx);
-  tv2->axis(-1)->parallelize(ParallelType::TIDx);
+  TensorView* tv1 = static_cast<TensorView*>(sum(tv0, {1}));
+
+  tv1->split(0, 32);
+  tv1->split(0, 16);
+  tv1->split(-1, 8);
+  tv1->split(-2, 4);
+
+  tv1->reorder({
+    {0, 1},
+    {1, 0},
+    {-1, -3},
+    {-3, -1}
+  });
+
+  tv1->merge(1);
+  tv1->merge(-2);
+  TensorDomain* new_domain = TransformRFactor::runReplay(tv1->domain(), {2});
+  std::cout<<"New domain: "<<new_domain<<std::endl;
+  std::cout<<"New root: "<<new_domain->rootDomain()<<std::endl;
+  
+  /*
+  tv1->axis(0)->parallelize(ParallelType::BIDx);
+  tv1->axis(-1)->parallelize(ParallelType::TIDx);
+  */
   // Register your outputs
-  fusion.addOutput(tv2);
+  //fusion.addOutput(tv1);
+  //TransformRFactor::runReplay(tv1->domain(), {2});
+  //std::cout<<fusion<<std::endl;
 
-  std::cout<<fusion<<std::endl;
-
-  GPULower lower(&fusion);
-  lower.printKernel(std::cout);
+  // GPULower lower(&fusion);
+  // lower.printKernel(std::cout);
 
 }
 

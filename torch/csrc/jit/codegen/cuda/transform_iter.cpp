@@ -31,12 +31,9 @@ void TransformIter::replayBackward(Expr* expr) {
   }
 }
 
-TensorDomain* TransformIter::runBackward(
-    TensorDomain* td,
-    bool generate_record) {
-  if (generate_record)
-    record = std::vector<Expr*>();
+std::vector<Expr*> TransformIter::getHistory(TensorDomain* td){
 
+  std::vector<Expr*> ops;
   TensorDomain* root = td; // backward running td
   Fusion* fusion = FusionGuard::getCurFusion();
 
@@ -50,7 +47,7 @@ TensorDomain* TransformIter::runBackward(
       TORCH_INTERNAL_ASSERT(
           false,
           "TransformReplay::runBackward is not traversing a correct history.");
-
+    ops.push_back(orig);
     visited_exprs.emplace(orig);
     TensorDomain* previous_td = nullptr;
     // Check inputs of this operation, make sure there isn't more than one TD
@@ -62,22 +59,38 @@ TensorDomain* TransformIter::runBackward(
               false,
               "TransformReplay::runBackward could not decifer transform history of a TensorDomain.");
 
-        // Place transform op on top of stack.
-        if (generate_record)
-          record.push_back(orig);
-
-        // run operation
-        replayBackward(orig);
-
         // Traverse back
         root = static_cast<TensorDomain*>(inp);
         orig = fusion->origin(root);
       }
   }
-  if (generate_record)
-    std::reverse(record.begin(), record.end());
+  return ops;
+}
 
-  return root;
+TensorDomain* TransformIter::runBackward(
+    TensorDomain* td,
+    bool generate_record) {
+
+  std::vector<Expr*> ops = getHistory(td);
+
+  if (generate_record)
+    record = std::vector<Expr*>(ops.rbegin(), ops.rend());
+
+  Fusion* fusion = FusionGuard::getCurFusion();
+
+  for(Expr* op : ops)
+    replayBackward(op);
+
+  if (ops.size() > 0) {
+    for (auto inp : ops[ops.size() - 1]->inputs())
+      if (inp->getValType() &&
+          inp->getValType().value() == ValType::TensorDomain)
+        return static_cast<TensorDomain*>(inp);
+  } else {
+    return td;
+  }
+
+  TORCH_INTERNAL_ASSERT(false, "Issue found when running tensor transform backwards. Could not find a root domain.");
 }
 
 TensorDomain* TransformIter::replay(Split* expr, TensorDomain* td) {
