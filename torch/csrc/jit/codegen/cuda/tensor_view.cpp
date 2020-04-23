@@ -167,22 +167,10 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   std::stack<Val*> dep_chain =
       DependencyCheck::getDependencyChain(this, consumer);
 
-  TORCH_CHECK(DependencyCheck::getDependencyChain(consumer, this).size() == 0,
-    "Expected ", this, " computeAt ", consumer, " but got the reverse."
-  );
-
-  if(dep_chain.size() == 0){
-    // Make sure ordering is correct based on ordered vars in Fusion.
-    auto vals = FusionGuard::getCurFusion()->deterministic_vals();
-    for(auto val : vals){
-      if(val == this){
-        break;
-      } else if ( val == consumer ){
-        consumer->computeAt(this, axis);
-        return this;
-      }
-    }
-  }
+  if(dep_chain.size() == 0)
+    TORCH_CHECK(DependencyCheck::getDependencyChain(consumer, this).size() == 0,
+      "Expected ", this, " computeAt ", consumer, " but got the reverse."
+    );
 
   // forward apply to uses of this.
   // Recursively apply replay.

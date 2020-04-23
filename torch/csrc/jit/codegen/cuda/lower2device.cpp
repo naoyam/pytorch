@@ -584,13 +584,15 @@ void fixComputeAt(Fusion* fusion){
 std::vector<Expr*> GPULower::getLoweredExprs() {
   FusionGuard fg(fusion_);
 
-  validate(fusion_);
+  // Compute at can have some circular references. Before we can call any tv
+  // with tv->getComputeAtAxis(i) we need to break those circular dependencies.
   fixComputeAt(fusion_);
-
+  
   // Initialize members of the class
   active_view = nullptr;
   active_view_axis = 0;
 
+  validate(fusion_);
   replaceSizes();
 
   auto loop_nests = LoopNestGenerator::getLoopNest(fusion_);
