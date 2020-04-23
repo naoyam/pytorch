@@ -1,4 +1,4 @@
-//#if defined(USE_CUDA)
+#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -1090,6 +1090,7 @@ void testGPU_FusionSimpleReduction() {
   // Do math with it, it returns a `Val*` but can be static_casted back to
   // TensorView
   TensorView* tv1 = static_cast<TensorView*>(sum(tv0, {1}));
+  // std::cout<<"Orig tv1: "<<tv1<<std::endl;
 
   tv1->split(0, 32);
   tv1->split(0, 16);
@@ -1097,33 +1098,48 @@ void testGPU_FusionSimpleReduction() {
   tv1->split(-2, 4);
 
   tv1->reorder({
-    {0, 1},
-    {1, 0},
-    {-1, -3},
-    {-3, -1}
+    {0, -2},
+    {2, -1},
+    {-3, 0},
+    {-1, 1}
   });
 
-  tv1->merge(1);
+  tv1->merge(0);
   tv1->merge(-2);
+
+  // std::cout<<"TV1 before rfactor: "<<tv1<<std::endl;
   TensorDomain* new_domain = TransformRFactor::runReplay(tv1->domain(), {2});
-  std::cout<<"New domain: "<<new_domain<<std::endl;
-  std::cout<<"New root: "<<new_domain->rootDomain()<<std::endl;
-  
-  /*
-  tv1->axis(0)->parallelize(ParallelType::BIDx);
-  tv1->axis(-1)->parallelize(ParallelType::TIDx);
-  */
-  // Register your outputs
-  //fusion.addOutput(tv1);
-  //TransformRFactor::runReplay(tv1->domain(), {2});
-  //std::cout<<fusion<<std::endl;
+  TensorDomain* new_domain2 = TransformRFactor::runReplay2(tv1->domain(), {2});
+  TensorDomain* replayed = TransformReplay::fullReplay(new_domain2, new_domain);
+  // std::cout<<tv1<<std::endl;
+  // std::cout<<new_domain<<std::endl;
+  // std::cout<<new_domain2<<std::endl;
+  // std::cout<<new_domain<<" -> "<<replayed<<std::endl;
+  // std::cout<<"========="<<std::endl;
+  // std::cout<<tv1->getRootDomain()<<std::endl;
+  // std::cout<<new_domain->rootDomain()<<std::endl;
+  // std::cout<<new_domain2->rootDomain()<<std::endl;
 
-  // GPULower lower(&fusion);
-  // lower.printKernel(std::cout);
-
+  TORCH_INTERNAL_ASSERT(new_domain->nDims()-1 == new_domain2->nDims(),
+    "Error in rfactor, number of dimensions is not correct.");
+  TORCH_INTERNAL_ASSERT(
+      replayed->nDims() ==
+          new_domain->rootDomain()->nDims() +
+              1, // +1 because orig iter domain goes from 1 -> 2, 2 splits
+                 // split, then merge
+      "Error in rfactor, number of dimensions is not correct, was expecting matching but got ",
+      replayed->nDims(),
+      " and ",
+      new_domain->rootDomain()->nDims() + 1,
+      ".");
+  TORCH_INTERNAL_ASSERT(
+      !replayed->sameAs(new_domain) && !new_domain->sameAs(new_domain2) &&
+          !tv1->domain()->sameAs(new_domain) &&
+          !tv1->domain()->sameAs(new_domain2),
+      "Error in rfactor, number of dimensions is not correct.");
 }
 
 
 } // namespace jit
 } // namespace torch
-//#endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)

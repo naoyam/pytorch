@@ -7,16 +7,6 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-std::ostream& operator<<(std::ostream& os, std::vector<int>& v){
-  os<<"{";
-  for(int i=0; i<v.size(); i++){
-    os<<v[i];
-    if(i != v.size()-1)
-      os<<", ";
-  }
-  return os <<"}";
-}
-
 /*
  * Functions to backward propagate influence from split/merge/reorder
  */
@@ -24,7 +14,6 @@ std::ostream& operator<<(std::ostream& os, std::vector<int>& v){
 // should_modify needs to be updated
 // axis_map goes from the transform position to the position in our modified td.
 TensorDomain* TransformRFactor::tdReplayBackward(Split* split, TensorDomain* td) {
-  
   int saxis = split->axis();
 
   TORCH_INTERNAL_ASSERT(
@@ -37,7 +26,8 @@ TensorDomain* TransformRFactor::tdReplayBackward(Split* split, TensorDomain* td)
   int axis = axis_map[saxis];
   int axis_p_1 = axis_map[saxis + 1];
   // If either dim is not to be touch, set both not to be touched
-  axis_map[axis] = axis_map[axis_p_1] == -1 ? -1 : axis_map[axis];
+  axis = axis_p_1 == -1 ? -1 : axis;
+  axis_map[saxis] = axis;
 
   // Remove axis from axis_map as in original transformations it didn't exist
   axis_map.erase(axis_map.begin() + saxis + 1);
@@ -56,8 +46,18 @@ TensorDomain* TransformRFactor::tdReplayBackward(Split* split, TensorDomain* td)
   std::vector<IterDomain*> new_domain;
   for (decltype(td->nDims()) i{0}; i < td->nDims(); i++) {
     if (i == axis) {
-      // Insert pre-split axis
-      new_domain.push_back(split->in()->axis(saxis));
+      IterDomain* orig_axis = split->in()->axis(saxis);
+      // Insert pre-split axis, make sure isReduction matches what is expected
+      if(split->in()->axis(saxis)->isReduction() != td->axis(axis)->isReduction()){
+        new_domain.push_back(new IterDomain(
+            orig_axis->start(),
+            orig_axis->extent(),
+            orig_axis->parallel_method(),
+            td->axis(axis)->isReduction()));
+      }else{
+        // preserve orig axis if it matches
+        new_domain.push_back(orig_axis);
+      }
     } else if (i != axis_p_1) {
       // Add in all other axes, these may not match the input td to the split.
       new_domain.push_back(td->axis(i));
@@ -70,7 +70,6 @@ TensorDomain* TransformRFactor::tdReplayBackward(Split* split, TensorDomain* td)
 }
 
 TensorDomain* TransformRFactor::tdReplayBackward(Merge* merge, TensorDomain* td) {
-
   /*
    * Remember axis_map goes from merge information -> how it's stored in td
    * When we're done we want axis_map to match the returned td before or not before the merge
@@ -83,7 +82,8 @@ TensorDomain* TransformRFactor::tdReplayBackward(Merge* merge, TensorDomain* td)
       maxis >= 0 && maxis < axis_map.size(),
       "TransformRFactor tried to modify an axis out of range, recieved ",
       maxis,
-      " but this value should be >=0 and <axis_map.size()");
+      " but this value should be >=0 and <",
+      axis_map.size());
 
   if(axis_map[maxis] == -1){
     // don't modify path, we need an extra axis as there was previously one there, but we shouldn't modify it.
@@ -107,8 +107,8 @@ TensorDomain* TransformRFactor::tdReplayBackward(Merge* merge, TensorDomain* td)
   for (decltype(td->nDims()) i{0}; i < td->nDims(); i++) {
     if (i == axis) {
       // Insert pre-split axis
-      new_domain.push_back(merge->in()->axis(axis));
-      new_domain.push_back(merge->in()->axis(axis+1));
+      new_domain.push_back(merge->in()->axis(maxis));
+      new_domain.push_back(merge->in()->axis(maxis+1));
     } else {
       // Add in all other axes, these may not match the input td to the split.
       new_domain.push_back(td->axis(i));
@@ -116,26 +116,25 @@ TensorDomain* TransformRFactor::tdReplayBackward(Merge* merge, TensorDomain* td)
   }
 
   TensorDomain* replayed_inp = new TensorDomain(new_domain);
-  Merge* replayed_merge = new Merge(td, replayed_inp, axis); 
+  Merge* replayed_merge = new Merge(td, replayed_inp, axis);
   return replayed_inp;
 
 }
 
 TensorDomain* TransformRFactor::tdReplayBackward(Reorder* reorder, TensorDomain* td) {
-  // pos2axis[new_pos] = old_pos Generate new axis2pos map
   const std::vector<int>& pos2axis_orig = reorder->pos2axis();
 
   // We want to convert pos2axis to something with td->nDims which it isn't guarenteed to be
   std::vector<int> pos2axis(td->nDims(), -1);
 
   std::set<int> old_pos_left;
-  for(decltype(td->nDims()) i{0}; i<td->nDims(); i++)
+  for(decltype(axis_map.size()) i{0}; i<axis_map.size(); i++)
     old_pos_left.emplace(i);
   
   for(decltype(pos2axis_orig.size()) i{0}; i<pos2axis_orig.size(); i++){
     int new_pos = axis_map[i]; // position in td
     int old_pos = pos2axis_orig[i]; // position it should be at before td
-
+    
     if(new_pos != -1){
       pos2axis[new_pos] = old_pos;
       TORCH_INTERNAL_ASSERT(old_pos_left.find(old_pos) != old_pos_left.end(),
@@ -143,16 +142,36 @@ TensorDomain* TransformRFactor::tdReplayBackward(Reorder* reorder, TensorDomain*
       old_pos_left.erase(old_pos);
     }
   }
-
-  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
-    if(pos2axis[i] == -1){
+  
+  for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
+    if (pos2axis[i] == -1 || pos2axis[i] >= td->nDims()) {
       pos2axis[i] = *(old_pos_left.begin());
       old_pos_left.erase(old_pos_left.begin());
     }
   }
-  
+
+  pos2axis.erase(pos2axis.begin() + td->nDims(), pos2axis.end());
+
+  //pos2axis_orig[reorder->out()->pos] = reorder->in()->pos
+  //axis_map[reorder->out()->pos] = td->pos
+  // pos2axis[td->pos] = old_td->pos
+  //NEED: new_axis_map[reorder->in()->pos] = old_td->pos
+
+  std::vector<int> new_axis_map(axis_map.size(), -1);
+  for (decltype(new_axis_map.size()) i{0}; i < new_axis_map.size(); i++) {
+    int reorder_out_pos = i;
+    int reorder_in_pos = pos2axis_orig[reorder_out_pos];
+    int td_pos = axis_map[reorder_out_pos];
+    int old_td_pos = td_pos == -1 ? -1 : pos2axis[td_pos];
+
+    new_axis_map[reorder_in_pos] = old_td_pos;
+  }
+
+  axis_map = new_axis_map;
+
   std::vector<IterDomain*> old_td(td->nDims(), nullptr);
    for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
+    //pos2axis[new] = old relative to td
     int new_pos = i; // position in td
     int old_pos = pos2axis[i]; // position it should be at before td
     old_td[old_pos] = td->axis(new_pos);
@@ -191,14 +210,8 @@ void TransformRFactor::replayBackward(TensorDomain* td, std::vector<Expr*> histo
 }
 
 TensorDomain* TransformRFactor::runReplay(TensorDomain* in_td, std::vector<int> axes) {
-  // Make a copy of in_td as we're going to change its history:
-  std::vector<IterDomain*> domain_copy(in_td->domain().begin(), in_td->domain().end());
-  // TD that we will actually modify
-  TensorDomain* td = new TensorDomain(domain_copy);
 
-  TransformRFactor trf;
-  int ndims = (int) td->nDims();
-  trf.axis_map.resize(ndims);
+  int ndims = (int) in_td->nDims();
 
   // Adjust and check provided axes
   std::transform(axes.begin(), axes.end(), axes.begin(), [ndims](int i) {
@@ -214,9 +227,76 @@ TensorDomain* TransformRFactor::runReplay(TensorDomain* in_td, std::vector<int> 
   // remove duplicates, and put into a set for searching
   std::set<int> axes_set(axes.begin(), axes.end());
 
+  // Make a copy of in_td as we're going to change its history:
+  std::vector<IterDomain*> domain_copy;
+  for(int i{0}; i<ndims; i++){
+    if(axes_set.find(i) != axes_set.end()){
+      IterDomain* orig_axis = in_td->axis(i);
+      TORCH_CHECK(orig_axis->isReduction(), "Tried to rFactor an axis that is not a reduction.");
+      domain_copy.push_back(new IterDomain(orig_axis->start(), orig_axis->extent(), orig_axis->parallel_method(), false));
+    }else{
+      domain_copy.push_back(in_td->axis(i));
+    }
+  }
+
+  // TD that we will actually modify
+  TensorDomain* td = new TensorDomain(domain_copy);
+
+  TransformRFactor trf;
+  trf.axis_map.resize(ndims);
+
   for (decltype(ndims) i{0}; i < ndims; i++) {
     trf.axis_map[i] = axes_set.find(i) == axes_set.end() ? i : -1;
   }
+
+  trf.replayBackward(td, TransformIter::getHistory(in_td));
+  
+  return td;
+}
+
+
+TensorDomain* TransformRFactor::runReplay2(TensorDomain* in_td, std::vector<int> axes) {
+  int ndims = (int) in_td->nDims();
+
+  // Adjust and check provided axes
+  std::transform(axes.begin(), axes.end(), axes.begin(), [ndims](int i) {
+    TORCH_CHECK(
+        i >= -ndims && i < ndims,
+        "Rfactor replay recieved an axis outside the number of dims in the tensor, acceptable inclusive range is ",
+        -ndims,
+        " to ",
+        ndims - 1);
+    return i < 0 ? i + ndims : i;
+  });
+
+  // remove duplicates, and put into a set for searching
+  std::set<int> axes_set(axes.begin(), axes.end());
+
+  TransformRFactor trf;
+  trf.axis_map.resize(ndims);
+
+  for (decltype(ndims) i{0}; i < ndims; i++) {
+    trf.axis_map[i] = axes_set.find(i) == axes_set.end() ? i : -1;
+  }
+
+  // Make a copy of in_td as we're going to change its history:
+  std::vector<IterDomain*> domain_copy;
+  int it = 0;
+  for(int i{0}; i<ndims; i++){
+    IterDomain* orig_axis = in_td->axis(i);
+    if(axes_set.find(i) != axes_set.end()){
+      domain_copy.push_back(orig_axis);
+      trf.axis_map[i] = -1;
+      it++;
+    }else if (!orig_axis->isReduction() ) {
+      domain_copy.push_back(orig_axis);
+      trf.axis_map[i] = it++;
+    } else {
+      trf.axis_map[i] = -1;
+    }
+  }
+  // TD that we will actually modify
+  TensorDomain* td = new TensorDomain(domain_copy);
 
   trf.replayBackward(td, TransformIter::getHistory(in_td));
   
