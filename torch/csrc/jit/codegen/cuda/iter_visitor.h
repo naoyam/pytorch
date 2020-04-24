@@ -6,6 +6,8 @@
 
 #include <stack>
 #include <vector>
+#include <queue>
+#include <set>
 
 namespace torch {
 namespace jit {
@@ -25,13 +27,10 @@ enum class ValType;
  * registered outputs of the Fusion. On every node handle(NodeType*) will be
  * called (topologically ordered).
  *
- * stopCondition can be overridden if it is desired to stop the traversal at any
- * particular point. toVisitCallback can also be overridden and will be called
- * when a node is added to the to_visit queue. The use of these two functions
- * can be seen in DependencyCheck which uses them to find if a value is in the
- * dependency chain of another value. stopCondition is called when the value is
- * found to stop traversal. toVisitCallback is used to maintain a dependency
- * stack.
+ * toVisitCallback can also be overridden and will be called when a node is
+ * added to the to_visit queue. The use of these two functions can be seen in
+ * DependencyCheck which uses them to find if a value is in the dependency chain
+ * of another value. toVisitCallback is used to maintain a dependency stack.
  */
 struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   virtual ~IterVisitor() = default;
@@ -62,13 +61,13 @@ struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
     OptOutDispatch::handle(v);
   }
 
-  // Stop condition allows users to stop iteration if a certain condition is met
-  virtual bool stopCondition() {
-    return false;
-  }
-
   // Callback function when a Stmt is added to the "to_visit" queue
   virtual void toVisitCallback(Statement* stmt) {}
+
+  // Traversal state
+  std::set<Statement*> visited;
+  std::deque<Statement*> to_visit;
+  std::queue<Val*> outputs_to_visit;
 
  public:
   // This version of traverse collects the points of the graph to start from
@@ -85,6 +84,7 @@ struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   void traverseFrom(Fusion* const fusion, const std::vector<Val*>& from);
 };
 
+
 // Class to check if nodes are in the dependency chain of another node.
 struct TORCH_CUDA_API DependencyCheck : public IterVisitor {
  private:
@@ -92,12 +92,14 @@ struct TORCH_CUDA_API DependencyCheck : public IterVisitor {
   DependencyCheck(Val* _dependency, Val* _of)
       : dependency_{_dependency}, of_{_of}, is_dependency{false} {}
 
+  // std::vector<Statement*> next(Statement* stmt) final;
+
   // when handle is called on val, we know 2 things. Val is a dependency of of.
   // and dep_chain contains the values in between of and dependency.
-  void handle(Val* val);
+  void handle(Val* val) final;
 
   // When we handle an expr we pop off its outputs from the dep_chain
-  void handle(Expr* expr);
+  void handle(Expr* expr) final;
 
   // When we visit an Expr we place its outputs on the dep_chain
   void toVisitCallback(Statement* stmt);
@@ -109,11 +111,6 @@ struct TORCH_CUDA_API DependencyCheck : public IterVisitor {
   Val* const of_;
   bool is_dependency;
   std::stack<Val*> dep_chain;
-
-  // Stop once we've found the dependency
-  bool stopCondition() {
-    return is_dependency;
-  }
 
  public:
   // Returns if dependency is a dependency of of.

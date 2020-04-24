@@ -2,9 +2,7 @@
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
-#include <deque>
 #include <iostream>
-#include <queue>
 
 namespace torch {
 namespace jit {
@@ -36,25 +34,21 @@ void IterVisitor::traverseFrom(
     const std::vector<Val*>& from) {
   FusionGuard fg(fusion);
 
-  std::set<Statement*> visited;
-  std::deque<Statement*> to_visit;
+  outputs_to_visit = std::queue<Val*>();  
+  to_visit.clear();
+  visited.clear();
 
-  std::queue<Val*> outputs_to_visit;
   for (Val* entry : from)
     outputs_to_visit.emplace(entry);
 
   while (!outputs_to_visit.empty()) {
-    if (stopCondition())
-      break;
-
     to_visit.push_front(outputs_to_visit.front());
     outputs_to_visit.pop();
     while (!to_visit.empty()) {
-      if (stopCondition())
-        break;
 
       Statement* stmt = to_visit.front();
       std::vector<Statement*> inps = next(stmt);
+
       for (auto it = inps.rbegin(); it != inps.rend(); it++) {
         Statement* inp = *it;
         if (visited.find(inp) == visited.end()) {
@@ -83,28 +77,28 @@ void IterVisitor::traverse(
   FusionGuard fg(fusion);
   if (breadth_first)
     TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
-  std::set<Statement*> visited;
-  std::deque<Statement*> to_visit;
 
-  std::vector<Val*> outputs_to_visit;
+  std::vector<Val*> outputs;
   if (from_outputs_only) {
     for (Val* out : fusion->outputs()) {
-      outputs_to_visit.push_back(out);
+      outputs.push_back(out);
     }
     // Search for Vals with no uses (output edges)
   } else
     for (Val* val : fusion->vals()) {
       if (!fusion->used(val))
-        outputs_to_visit.push_back(val);
+        outputs.push_back(val);
     }
 
-  traverseFrom(fusion, outputs_to_visit);
+  traverseFrom(fusion, outputs);
 }
 
 void DependencyCheck::handle(Val* val) {
-  // Debug dependency chain
-  if (val->sameAs(dependency_))
+  if (val->sameAs(dependency_)){
     is_dependency = true;
+    outputs_to_visit = std::queue<Val*>();
+    to_visit.clear();
+  }
 }
 
 void DependencyCheck::handle(Expr* expr) {
