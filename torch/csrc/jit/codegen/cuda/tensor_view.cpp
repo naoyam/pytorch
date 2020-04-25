@@ -201,35 +201,36 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   }
 
   // If not direct relationship follow dependency chain.
-  auto dep_chain = DependencyCheck::getSingleDependencyChain(this, consumer);
-  if(dep_chain.size() == 0)
-    TORCH_CHECK(DependencyCheck::isDependencyOf(consumer, this),
+  auto dep_chains = DependencyCheck::getAllDependencyChains(this, consumer);
+
+  if(dep_chains.empty()){
+    TORCH_CHECK(!DependencyCheck::isDependencyOf(consumer, this),
       "Expected ", this, " computeAt ", consumer, " but got the reverse."
     );
-
-  // forward apply to uses of this.
-  // Recursively apply replay.
-  TensorView* running_consumer = nullptr;
-
-  while (dep_chain.size() > 1) {
-
-    TORCH_INTERNAL_ASSERT(
-        dep_chain.top()->getValType() == ValType::TensorView,
-        "When following the transform dependency chain, an invalid value was found.");
-
-
-    running_consumer = static_cast<TensorView*>(dep_chain.top());
-    dep_chain.pop();
-    
-    TORCH_INTERNAL_ASSERT(
-        dep_chain.top()->getValType() == ValType::TensorView,
-        "When following the transform dependency chain, an invalid value was found.");
-
-    TensorView* running_producer = static_cast<TensorView*>(dep_chain.top());
-
-    running_producer->computeAt(running_consumer, axis);
   }
 
+  // Apply compute at throughout all paths from producer to consumer
+  while (!dep_chains.empty()) {
+    auto dep_chain = dep_chains.front();
+    dep_chains.pop_front();
+
+    while (dep_chain.size() > 1) {
+      TORCH_INTERNAL_ASSERT(
+          dep_chain.back()->getValType() == ValType::TensorView,
+          "When following the transform dependency chain, an invalid value was found.");
+
+    TensorView* running_consumer = static_cast<TensorView*>(dep_chain.back());
+      dep_chain.pop_back();
+
+      TORCH_INTERNAL_ASSERT(
+          dep_chain.back()->getValType() == ValType::TensorView,
+          "When following the transform dependency chain, an invalid value was found.");
+
+      TensorView* running_producer = static_cast<TensorView*>(dep_chain.back());
+
+      running_producer->computeAt(running_consumer, axis);
+    }
+  }
   return this;
 }
 

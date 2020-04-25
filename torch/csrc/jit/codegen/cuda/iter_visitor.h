@@ -4,10 +4,8 @@
 
 #include <torch/csrc/jit/codegen/cuda/dispatch.h>
 
-#include <stack>
 #include <vector>
-#include <queue>
-#include <set>
+#include <deque>
 
 namespace torch {
 namespace jit {
@@ -73,7 +71,7 @@ struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   // guarenteed to be all siblings throughout traversal). stmt_stack.front()
   // contains the outputs we started with (not guarenteed to be all outputs
   // throughout traversal).
-  std::deque<std::deque<Statement*> > stmt_stack;
+  std::vector<std::vector<Statement*> > stmt_stack;
 
  public:
   // Starts at nodes provided in from, traverses from these nodes to inputs.
@@ -110,14 +108,14 @@ struct TORCH_CUDA_API DependencyCheck {
   // Returns if "dependency" is a dependency of "of".
   static bool isDependencyOf(Val* dependency, Val* of);
 
-  // Finds a Val* path from "of" to "dependency". Returns that path. vector.back() is "of",
-  // vector[0] is dependency if a chain exists.
-  static std::stack<Val*> getSingleDependencyChain(Val* dependency, Val* of);
+  // Finds a Val* path from "of" to "dependency". Returns that path. deque.back() is "of",
+  // deque[0] is dependency if a chain exists.
+  static std::deque<Val*> getSingleDependencyChain(Val* dependency, Val* of);
 
   // Finds all Val* paths from "of" to "dependency". Returns that path.
-  // vector[i].back() is "of", and vector[i][0] is "dependency". Returns an
-  // empty vector if no dependency found.
-  static std::vector< std::vector<Val*> > getAllDependencyChains(Val* dependency, Val* of);
+  // deque[i].back() is "of", and deque[i][0] is "dependency". Returns an
+  // empty deque if no dependency found.
+  static std::deque< std::deque<Val*> > getAllDependencyChains(Val* dependency, Val* of);
 };
 
 } // namespace fuser
