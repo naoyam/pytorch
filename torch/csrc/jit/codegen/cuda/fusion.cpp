@@ -158,12 +158,12 @@ std::vector<Expr*> Fusion::exprs(bool from_outputs_only, bool breadth_first) {
 }
 
 std::set<Val*> Fusion::inputsOf(Val* val) {
-  return InputsOf::output(this, val); 
+  return InputsOf::output(this, val);
 }
 
 void Fusion::validateInputs() {
   std::set<Val*> all_inputs;
-  for(Val* out : outputs()){
+  for (Val* out : outputs()) {
     auto outs_inputs = inputsOf(out);
     std::set_union(
         all_inputs.begin(),
@@ -172,10 +172,13 @@ void Fusion::validateInputs() {
         outs_inputs.end(),
         std::inserter(all_inputs, all_inputs.begin()));
   }
-  for(Val* inp : all_inputs){
-    if(!inp->isConstScalar())
-      TORCH_CHECK(hasInput(inp),
-      "Could not figure out how ", inp, " is generated, however it was not specified as an input.");
+  for (Val* inp : all_inputs) {
+    if (!inp->isConstScalar())
+      TORCH_CHECK(
+          hasInput(inp),
+          "Could not figure out how ",
+          inp,
+          " is generated, however it was not specified as an input.");
   }
 }
 

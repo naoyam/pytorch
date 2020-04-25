@@ -128,7 +128,8 @@ struct TORCH_CUDA_API TransformReplay : public TransformIter {
   void replayBackward(Reorder*) override;
 
   // Entry for backward influence propagation on td following record
-  TensorDomain* runBackward(TensorDomain* td, bool generate_record = false) override;
+  TensorDomain* runBackward(TensorDomain* td, bool generate_record = false)
+      override;
 
   /*
    * Replay functions, takes a TensorView and steps through the operations in
@@ -155,7 +156,7 @@ struct TORCH_CUDA_API TransformReplay : public TransformIter {
    * Replays from begining of both TensorDomains. could be more efficient to try
    * and find a common ancestor to start from, but likely not a worthwhile
    * optimization.
-   * 
+   *
    * Replay Target as reference.
    */
   TensorView* runReplay(

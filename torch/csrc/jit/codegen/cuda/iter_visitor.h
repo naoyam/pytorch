@@ -4,8 +4,8 @@
 
 #include <torch/csrc/jit/codegen/cuda/dispatch.h>
 
-#include <vector>
 #include <deque>
+#include <vector>
 
 namespace torch {
 namespace jit {
@@ -27,7 +27,7 @@ enum class ValType;
  *
  * TODO: We may want a BFS version of this code to extract ILP, not implemented
  * yet.
- * 
+ *
  * TODO: We may want to have ordering of outputs to inputs. I'm not sure why we
  * would want this, but seems like it would be a reasonable request.
  */
@@ -71,7 +71,7 @@ struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   // guarenteed to be all siblings throughout traversal). stmt_stack.front()
   // contains the outputs we started with (not guarenteed to be all outputs
   // throughout traversal).
-  std::vector<std::vector<Statement*> > stmt_stack;
+  std::vector<std::vector<Statement*>> stmt_stack;
 
  public:
   // Starts at nodes provided in from, traverses from these nodes to inputs.
@@ -99,23 +99,23 @@ struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
       Fusion* const fusion,
       bool from_outputs_only = false,
       bool breadth_first = false);
-
 };
 
 struct TORCH_CUDA_API DependencyCheck {
  public:
-
   // Returns if "dependency" is a dependency of "of".
   static bool isDependencyOf(Val* dependency, Val* of);
 
-  // Finds a Val* path from "of" to "dependency". Returns that path. deque.back() is "of",
-  // deque[0] is dependency if a chain exists.
+  // Finds a Val* path from "of" to "dependency". Returns that path.
+  // deque.back() is "of", deque[0] is dependency if a chain exists.
   static std::deque<Val*> getSingleDependencyChain(Val* dependency, Val* of);
 
   // Finds all Val* paths from "of" to "dependency". Returns that path.
   // deque[i].back() is "of", and deque[i][0] is "dependency". Returns an
   // empty deque if no dependency found.
-  static std::deque< std::deque<Val*> > getAllDependencyChains(Val* dependency, Val* of);
+  static std::deque<std::deque<Val*>> getAllDependencyChains(
+      Val* dependency,
+      Val* of);
 };
 
 } // namespace fuser

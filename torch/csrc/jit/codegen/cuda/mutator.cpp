@@ -181,9 +181,9 @@ Statement* OptOutMutator::mutate(ReductionOp* rop) {
   Val* in = static_cast<Val*>(mutate(rop->in()));
   Val* init = rop->init();
   if (out->sameAs(rop->out()) && in->sameAs(rop->in()) &&
-        init->sameAs(rop->init()))
+      init->sameAs(rop->init()))
     return rop;
-  
+
   return new ReductionOp(rop->getReductionOpType(), init, out, in);
 }
 

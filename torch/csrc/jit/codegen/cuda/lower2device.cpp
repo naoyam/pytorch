@@ -31,8 +31,9 @@ void GPULower::setActiveView(const TensorView* const tv) {
 TensorIndex* GPULower::getGlobalProducerIndex(
     TensorView* producer,
     TensorView* consumer) {
-  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and consumer could be the same
-  if(consumer == producer)
+  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and
+  // consumer could be the same
+  if (consumer == producer)
     return getGlobalConsumerIndex(consumer);
 
   // Get new reference so replay inline doesn't change the original.
@@ -65,7 +66,6 @@ TensorIndex* GPULower::getGlobalProducerIndex(
   return new TensorIndex(producer, strided_inds);
 }
 
-
 TensorIndex* GPULower::getSharedProducerIndex(
     TensorView* producer,
     TensorView* consumer) {
@@ -76,8 +76,9 @@ TensorIndex* GPULower::getSharedProducerIndex(
       " dimensions but got one with ",
       producer->nDims());
 
-  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and consumer could be the same
-  if(consumer == producer)
+  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and
+  // consumer could be the same
+  if (consumer == producer)
     return getSharedConsumerIndex(consumer);
 
   std::vector<Val*> loopInds = scope_utils::getLoopIndices(active_scope);
@@ -120,8 +121,9 @@ TensorIndex* GPULower::getLocalProducerIndex(
       " dimensions but got one with ",
       producer->nDims());
 
-  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and consumer could be the same
-  if(consumer == producer)
+  // In reduction code we specify T0 += binaryOp(T0, T...) so that producer and
+  // consumer could be the same
+  if (consumer == producer)
     return getLocalConsumerIndex(consumer);
 
   std::vector<Val*> loopInds = scope_utils::getLoopIndices(active_scope);
@@ -158,12 +160,12 @@ TensorIndex* GPULower::getLocalProducerIndex(
 TensorIndex* GPULower::getProducerIndex(
     TensorView* producer,
     TensorView* consumer) {
-  switch(producer->getMemoryType()){
-    case(MemoryType::Global):
+  switch (producer->getMemoryType()) {
+    case (MemoryType::Global):
       return getGlobalProducerIndex(producer, consumer);
-    case(MemoryType::Shared):
+    case (MemoryType::Shared):
       return getSharedProducerIndex(producer, consumer);
-    case(MemoryType::Local):
+    case (MemoryType::Local):
       return getLocalProducerIndex(producer, consumer);
   }
   TORCH_INTERNAL_ASSERT(
@@ -188,9 +190,9 @@ TensorIndex* GPULower::getGlobalConsumerIndex(TensorView* consumer) {
   // Consumers don't have allocations matching their reduction dims, as that's
   // what's being reduced from their producers. Need to remove these axes from
   // indexing.
-  for(decltype(root_dom->nDims()) i{root_dom->nDims()}; i>0; i--){
-    if(root_dom->axis(i-1)->isReduction())
-      computed_inds.erase(computed_inds.begin()+i-1);
+  for (decltype(root_dom->nDims()) i{root_dom->nDims()}; i > 0; i--) {
+    if (root_dom->axis(i - 1)->isReduction())
+      computed_inds.erase(computed_inds.begin() + i - 1);
   }
   std::vector<Val*> strided_inds;
   for (decltype(computed_inds.size()) i{0}; i < computed_inds.size(); i++) {
@@ -288,12 +290,12 @@ TensorIndex* GPULower::getLocalConsumerIndex(TensorView* consumer) {
 // Consumer is the output of an expression
 TensorIndex* GPULower::getConsumerIndex(TensorView* consumer) {
   // GLOBAL MEMORY HANDLING
-  switch(consumer->getMemoryType()){
-    case(MemoryType::Global):
+  switch (consumer->getMemoryType()) {
+    case (MemoryType::Global):
       return getGlobalConsumerIndex(consumer);
-    case(MemoryType::Shared):
+    case (MemoryType::Shared):
       return getSharedConsumerIndex(consumer);
-    case(MemoryType::Local):
+    case (MemoryType::Local):
       return getLocalConsumerIndex(consumer);
   }
   TORCH_INTERNAL_ASSERT(
@@ -523,10 +525,10 @@ void GPULower::replaceSizes() {
 
   // Adjust memory types to make sure they are valid
   for (TensorView* tv : all_tvs) {
-    if(fusion->hasInput(tv) || fusion->hasOutput(tv)){
+    if (fusion->hasInput(tv) || fusion->hasOutput(tv)) {
       tv->setMemoryType(MemoryType::Global);
-    }else{
-      if(tv->getMemoryType() == MemoryType::Global)
+    } else {
+      if (tv->getMemoryType() == MemoryType::Global)
         tv->setMemoryType(MemoryType::Local);
     }
   }
@@ -552,29 +554,28 @@ void validate(Fusion* fusion) {
               ".");
       }
     } // if ir_utils::isTV
-  } // for(Val* val : fusion->vals()) 
+  } // for(Val* val : fusion->vals())
 } // validate
 
 // Remove circular computeAt references
-void fixComputeAt(Fusion* fusion){
+void fixComputeAt(Fusion* fusion) {
   FusionGuard fg(fusion);
 
   std::vector<Expr*> exprs = fusion->exprs(true);
   std::set<TensorView*> visited;
-  for(auto it = exprs.rbegin(); it != exprs.rend(); it++){
+  for (auto it = exprs.rbegin(); it != exprs.rend(); it++) {
     Expr* expr = *it;
-    if(!ir_utils::isTVOp(expr))
+    if (!ir_utils::isTVOp(expr))
       continue;
-    
+
     TensorView* tv = ir_utils::asTV(expr->output(0));
     TensorView* ctv = tv->getComputeAtView();
 
-    if(ctv != nullptr && visited.find(ctv) == visited.end()){
+    if (ctv != nullptr && visited.find(ctv) == visited.end()) {
       ctv->computeAt(tv, ctv->getComputeAtAxis());
       tv->clearComputeAt();
     }
     visited.emplace(tv);
-    
   }
 }
 
@@ -587,7 +588,7 @@ std::vector<Expr*> GPULower::getLoweredExprs() {
   // Compute at can have some circular references. Before we can call any tv
   // with tv->getComputeAtAxis(i) we need to break those circular dependencies.
   fixComputeAt(fusion_);
-  
+
   // Initialize members of the class
   active_view = nullptr;
   active_view_axis = 0;

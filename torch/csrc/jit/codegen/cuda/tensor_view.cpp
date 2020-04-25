@@ -50,8 +50,9 @@ TensorView* TensorView::clone() const {
   return new_view;
 }
 
-
-bool TensorView::hasReduction() const { return domain()->hasReduction(); }
+bool TensorView::hasReduction() const {
+  return domain()->hasReduction();
+}
 
 TensorView* TensorView::newForOutput(DataType dtype) const {
   std::vector<IterDomain*> domain_copy;
@@ -67,7 +68,7 @@ TensorView* TensorView::newForOutput(DataType dtype) const {
   return new TensorView(td, dtype);
 };
 
-//TODO: How do we adjust this so we can reduce to a single scalar value?
+// TODO: How do we adjust this so we can reduce to a single scalar value?
 TensorView* TensorView::newForReduction(std::vector<unsigned int> axes) const {
   TensorDomain* orig_domain = this->getRootDomain()->noReductions();
   std::set<unsigned int> axes_set(axes.begin(), axes.end());
@@ -143,19 +144,24 @@ void TensorView::copyDomain(const TensorDomain* td) {
   setDomain(new TensorDomain(idv));
 }
 void TensorView::computeAt_impl(TensorView* consumer, int axis) {
-    // Reset view otherwise will conflict with replay.
-    this->compute_at_view_ = nullptr;
-    this->compute_at_axis_ = -1;
-    TransformReplay::replay(consumer, this, axis);
-    this->compute_at_view_ = consumer;
-    this->compute_at_axis_ = (unsigned int) axis;
+  // Reset view otherwise will conflict with replay.
+  this->compute_at_view_ = nullptr;
+  this->compute_at_axis_ = -1;
+  TransformReplay::replay(consumer, this, axis);
+  this->compute_at_view_ = consumer;
+  this->compute_at_axis_ = (unsigned int)axis;
 }
 
 TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
-  TORCH_CHECK(this->fusion() == consumer->fusion(), this, " and ", consumer, " are not in the same fusion.");
+  TORCH_CHECK(
+      this->fusion() == consumer->fusion(),
+      this,
+      " and ",
+      consumer,
+      " are not in the same fusion.");
   TORCH_CHECK(
       !this->sameAs(consumer), "Cannot call this->computeAt(this, ...)");
-  
+
   if (axis < 0)
     // Compute at is a bit strange where size is the maximum acceptable value
     // instead of size-1
@@ -168,13 +174,17 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   // If not direct relationship follow dependency chain.
   auto dep_chains = DependencyCheck::getAllDependencyChains(this, consumer);
 
-  TORCH_CHECK(!dep_chains.empty() && !dep_chains.back().empty(),
-      "Compute At expects ", this, " is a dependency of ", consumer,", however it is not."
-    );
+  TORCH_CHECK(
+      !dep_chains.empty() && !dep_chains.back().empty(),
+      "Compute At expects ",
+      this,
+      " is a dependency of ",
+      consumer,
+      ", however it is not.");
 
   // TVs we already called computeAt on
   std::unordered_set<TensorView*> computeAt_ed;
-  
+
   while (!dep_chains.empty()) {
     auto dep_chain = dep_chains.front();
     dep_chains.pop_front();
@@ -184,7 +194,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
           dep_chain.back()->getValType() == ValType::TensorView,
           "When following the transform dependency chain, an invalid value was found.");
 
-    TensorView* running_consumer = static_cast<TensorView*>(dep_chain.back());
+      TensorView* running_consumer = static_cast<TensorView*>(dep_chain.back());
       dep_chain.pop_back();
 
       TORCH_INTERNAL_ASSERT(
@@ -200,7 +210,8 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       // If another view consumes producer, we may be computing this at a
       // position that doesn't match that consumer. Likely producing too little
       // for that next consumer
-      for (Expr* other_use : FusionGuard::getCurFusion()->uses(running_producer)) {
+      for (Expr* other_use :
+           FusionGuard::getCurFusion()->uses(running_producer)) {
         for (Val* maybe_other_consumer : other_use->outputs()) {
           if (*(maybe_other_consumer->getValType()) != ValType::TensorView)
             continue;
@@ -211,13 +222,14 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
           if (running_consumer->sameAs(other_consumer))
             continue;
 
-          if (DependencyCheck::isDependencyOf(running_consumer, other_consumer)) {
-            if(computeAt_ed.find(running_consumer) == computeAt_ed.end())
+          if (DependencyCheck::isDependencyOf(
+                  running_consumer, other_consumer)) {
+            if (computeAt_ed.find(running_consumer) == computeAt_ed.end())
               running_consumer->computeAt_impl(other_consumer, axis);
           } else {
             // Either direction here is fine if there isn't a dependency, assume
             // there's a dependency in the other direction
-            if(computeAt_ed.find(other_consumer) == computeAt_ed.end())
+            if (computeAt_ed.find(other_consumer) == computeAt_ed.end())
               other_consumer->computeAt_impl(running_consumer, axis);
           }
         }
@@ -238,10 +250,7 @@ TensorView* TensorView::split(int axis, int factor) {
       axis >= 0 && axis < domain()->nDims(),
       "Trying to split axis outside of TensorView's range.");
 
-  TORCH_CHECK(
-      factor >= 0,
-      "Cannot split by a factor less than 1.");
-
+  TORCH_CHECK(factor >= 0, "Cannot split by a factor less than 1.");
 
   if (getComputeAtView() != nullptr)
     if (axis < getComputeAtAxis())
@@ -346,20 +355,15 @@ TensorView* TensorView::reorder(const std::unordered_map<int, int>& axis2pos_) {
   return this;
 }
 
-
 /*
-  * Take reduction axes out of this domain, and create a new domain. New domain will be
-  * used to create this domain. For example:
-  * TV1[I0, I1] = TV0[I0, R0, R1, I1]
-  * TV0->rfactor({1})
-  * TV0 is transformed to -> TV0[I0, R1, I1]
-  * The TensorView returned is:
-  * TV2[I0, R0, I3, I1]
-  * The reduction will now beset as:
-  * TV1[I0, R1, I1] = TV2[I0, R0, I3, I1]
-  * TV0[I0, I1] = TV1[I0, R1, I1]
-  */
-TensorView* TensorView::rfactor(std::vector<int> axes){
+ * Take reduction axes out of this domain, and create a new domain. New domain
+ * will be used to create this domain. For example: TV1[I0, I1] = TV0[I0, R0,
+ * R1, I1] TV0->rfactor({1}) TV0 is transformed to -> TV0[I0, R1, I1] The
+ * TensorView returned is: TV2[I0, R0, I3, I1] The reduction will now beset as:
+ * TV1[I0, R1, I1] = TV2[I0, R0, I3, I1]
+ * TV0[I0, I1] = TV1[I0, R1, I1]
+ */
+TensorView* TensorView::rfactor(std::vector<int> axes) {
   /*
   for(decltype(axes.size()) i{0}; i<axes.size(); i++){
     if(axes[i] < nDims())

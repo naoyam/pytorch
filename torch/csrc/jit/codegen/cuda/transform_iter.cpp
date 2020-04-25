@@ -31,8 +31,7 @@ void TransformIter::replayBackward(Expr* expr) {
   }
 }
 
-std::vector<Expr*> TransformIter::getHistory(TensorDomain* td){
-
+std::vector<Expr*> TransformIter::getHistory(TensorDomain* td) {
   std::vector<Expr*> ops;
   TensorDomain* root = td; // backward running td
   Fusion* fusion = FusionGuard::getCurFusion();
@@ -70,7 +69,6 @@ std::vector<Expr*> TransformIter::getHistory(TensorDomain* td){
 TensorDomain* TransformIter::runBackward(
     TensorDomain* td,
     bool generate_record) {
-
   std::vector<Expr*> ops = getHistory(td);
 
   if (generate_record)
@@ -78,7 +76,7 @@ TensorDomain* TransformIter::runBackward(
 
   Fusion* fusion = FusionGuard::getCurFusion();
 
-  for(Expr* op : ops)
+  for (Expr* op : ops)
     replayBackward(op);
 
   if (ops.size() > 0) {
@@ -90,7 +88,9 @@ TensorDomain* TransformIter::runBackward(
     return td;
   }
 
-  TORCH_INTERNAL_ASSERT(false, "Issue found when running tensor transform backwards. Could not find a root domain.");
+  TORCH_INTERNAL_ASSERT(
+      false,
+      "Issue found when running tensor transform backwards. Could not find a root domain.");
 }
 
 TensorDomain* TransformIter::replay(Split* expr, TensorDomain* td) {

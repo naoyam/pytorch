@@ -198,8 +198,9 @@ struct TORCH_CUDA_API IterDomain : public Val {
           !isReduction(),
           "Cannot parallelize reductions across a block dimension.");
 
-    // Currently a limitation as we allocate shared memory as static (not based off a dynamic size.)
-    if(isReduction())
+    // Currently a limitation as we allocate shared memory as static (not based
+    // off a dynamic size.)
+    if (isReduction())
       if (isThreadDim())
         TORCH_CHECK(
             extent()->isConstScalar(),
@@ -276,7 +277,7 @@ struct TORCH_CUDA_API TensorDomain : public Val {
   }
 
   bool hasReduction() const;
-  
+
   TensorDomain* noReductions() const;
 
   // i here is int, as we want to accept negative value and ::size_type can be a

@@ -29,21 +29,22 @@ std::vector<Statement*> IterVisitor::next(Expr* expr) {
 }
 
 // Remove any stmt in stmts that is in visited
-namespace{
-  void remove_visited(std::vector<Statement*>& stmts, const std::unordered_set<Statement*>& visited){
-    std::deque<std::vector<Statement*>::iterator> to_erase;
-    for(auto it = stmts.begin(); it != stmts.end(); it++){
-      if(visited.find(*it) != visited.end() )
-        to_erase.push_back(it);
-    }
+namespace {
+void remove_visited(
+    std::vector<Statement*>& stmts,
+    const std::unordered_set<Statement*>& visited) {
+  std::deque<std::vector<Statement*>::iterator> to_erase;
+  for (auto it = stmts.begin(); it != stmts.end(); it++) {
+    if (visited.find(*it) != visited.end())
+      to_erase.push_back(it);
+  }
 
-    while(!to_erase.empty()){
-      stmts.erase(to_erase.back());
-      to_erase.pop_back();
-    }
-
+  while (!to_erase.empty()) {
+    stmts.erase(to_erase.back());
+    to_erase.pop_back();
   }
 }
+} // namespace
 
 void IterVisitor::traverseFrom(
     Fusion* const fusion,
@@ -56,17 +57,18 @@ void IterVisitor::traverseFrom(
 
   while (!stmt_stack.empty()) {
     auto next_stmts = next(stmt_stack.back().back());
-    
+
     // Remove statements we already visited if we're not traversing all paths
-    if(!traverseAllPaths)
+    if (!traverseAllPaths)
       remove_visited(next_stmts, visited);
-    
+
     // Traverse down until we get to a leaf
     while (!next_stmts.empty()) {
-      stmt_stack.push_back(std::vector<Statement*>(next_stmts.rbegin(), next_stmts.rend()));
+      stmt_stack.push_back(
+          std::vector<Statement*>(next_stmts.rbegin(), next_stmts.rend()));
       next_stmts = next(stmt_stack.back().back());
       // Remove statements we already visited if we're not traversing all paths
-      if(!traverseAllPaths)
+      if (!traverseAllPaths)
         remove_visited(next_stmts, visited);
     }
 
@@ -77,9 +79,8 @@ void IterVisitor::traverseFrom(
     handle(stmt_stack.back().back());
     // Remove
     stmt_stack.back().pop_back();
-    
-    while (!stmt_stack.empty() && stmt_stack.back().empty()) {
 
+    while (!stmt_stack.empty() && stmt_stack.back().empty()) {
       stmt_stack.pop_back();
       if (!stmt_stack.empty()) {
         // Mark visited
@@ -90,9 +91,7 @@ void IterVisitor::traverseFrom(
         stmt_stack.back().pop_back();
       }
     }
-
   }
-
 }
 
 void IterVisitor::traverse(
@@ -143,59 +142,64 @@ void IterVisitor::traverseAllPaths(
 
 /* DEPENDENCY CHECKING */
 
-namespace{
+namespace {
 
-// Looks for and returns 
-struct DependencyChains : public IterVisitor{
-
-  std::deque< std::deque<Val*> > dep_chains;
+// Looks for and returns
+struct DependencyChains : public IterVisitor {
+  std::deque<std::deque<Val*>> dep_chains;
   bool is_dependency = false;
   Val* dependency_;
 
   void handle(Val* val) {
-  if (val->sameAs(dependency_)){
-    is_dependency = true;
-    std::deque<Val*> deps;
-    for(auto stack : stmt_stack){
-      if(stack.back()->isVal())
-        deps.push_back(static_cast<Val*>(stack.back()));
+    if (val->sameAs(dependency_)) {
+      is_dependency = true;
+      std::deque<Val*> deps;
+      for (auto stack : stmt_stack) {
+        if (stack.back()->isVal())
+          deps.push_back(static_cast<Val*>(stack.back()));
+      }
+      // Order as dependency -> of
+      dep_chains.push_back(std::deque<Val*>(deps.rbegin(), deps.rend()));
     }
-    // Order as dependency -> of
-    dep_chains.push_back(std::deque<Val*>(deps.rbegin(), deps.rend()));
   }
-}
 
-DependencyChains(Val* _dependency, Val* _of, bool all_chains_ = false):dependency_(_dependency){
-  traverseFrom(_of->fusion(), {_of}, all_chains_);
-}
+  DependencyChains(Val* _dependency, Val* _of, bool all_chains_ = false)
+      : dependency_(_dependency) {
+    traverseFrom(_of->fusion(), {_of}, all_chains_);
+  }
 
-static std::deque<Val*> getDependencyChain(Val* dependency, Val* of) {
-  DependencyChains dp(dependency, of, false);
-  if(dp.dep_chains.empty())
-    return std::deque<Val*>();
-  return dp.dep_chains[0];
-}
+  static std::deque<Val*> getDependencyChain(Val* dependency, Val* of) {
+    DependencyChains dp(dependency, of, false);
+    if (dp.dep_chains.empty())
+      return std::deque<Val*>();
+    return dp.dep_chains[0];
+  }
 
-static std::deque< std::deque<Val*> > getDependencyChains(Val* dependency, Val* of) {
-  DependencyChains dp(dependency, of, true);
-  if(dp.dep_chains.empty())
-    return std::deque< std::deque<Val*> >();
-  return dp.dep_chains;
-}
-
+  static std::deque<std::deque<Val*>> getDependencyChains(
+      Val* dependency,
+      Val* of) {
+    DependencyChains dp(dependency, of, true);
+    if (dp.dep_chains.empty())
+      return std::deque<std::deque<Val*>>();
+    return dp.dep_chains;
+  }
 };
 
-} //namespace
+} // namespace
 
-bool DependencyCheck::isDependencyOf(Val* dependency, Val* of){
+bool DependencyCheck::isDependencyOf(Val* dependency, Val* of) {
   return !DependencyChains::getDependencyChain(dependency, of).empty();
 }
 
-std::deque<Val*> DependencyCheck::getSingleDependencyChain(Val* dependency, Val* of){
+std::deque<Val*> DependencyCheck::getSingleDependencyChain(
+    Val* dependency,
+    Val* of) {
   return DependencyChains::getDependencyChain(dependency, of);
 }
 
-std::deque< std::deque<Val*> > DependencyCheck::getAllDependencyChains(Val* dependency, Val* of){
+std::deque<std::deque<Val*>> DependencyCheck::getAllDependencyChains(
+    Val* dependency,
+    Val* of) {
   return DependencyChains::getDependencyChains(dependency, of);
 }
 

@@ -72,8 +72,8 @@ static _enum_unordered_map<UnaryOpType, std::string> unary_op_type_string_map{
     {UnaryOpType::Cast, "Cast"},
     {UnaryOpType::Set, "Set"}};
 static _enum_unordered_map<UnaryOpType, std::string>
-    unary_op_type_inline_op_string_map{{UnaryOpType::Neg, "~"}, {UnaryOpType::Set, ""}
-    };
+    unary_op_type_inline_op_string_map{{UnaryOpType::Neg, "~"},
+                                       {UnaryOpType::Set, ""}};
 static _enum_unordered_map<BinaryOpType, std::string> binary_op_type_string_map{
     {BinaryOpType::Add, "Add"},
     {BinaryOpType::Sub, "Sub"},

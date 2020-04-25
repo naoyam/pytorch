@@ -63,11 +63,7 @@ enum class ParallelType {
   Serial
 };
 
-enum class MemoryType {
-  Local,
-  Shared,
-  Global
-};
+enum class MemoryType { Local, Shared, Global };
 
 ValType promote_type(const ValType& t1, const ValType& t2);
 DataType promote_type(const DataType& t1, const DataType& t2);

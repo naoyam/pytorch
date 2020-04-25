@@ -107,7 +107,9 @@ ReductionOp::ReductionOp(
       init_(_init),
       out_{_out},
       in_{_in} {
-  TORCH_INTERNAL_ASSERT(_init->isConstScalar(), "Tried to create a reduction operation whith an initial value that isn't a constant.");
+  TORCH_INTERNAL_ASSERT(
+      _init->isConstScalar(),
+      "Tried to create a reduction operation whith an initial value that isn't a constant.");
   addOutput(_out);
   addInput(_in);
   this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
@@ -175,9 +177,9 @@ bool TensorDomain::sameAs(const TensorDomain* const other) const {
 }
 
 bool TensorDomain::hasReduction() const {
-  return std::any_of(domain_.begin(), domain_.end(),
-  [](IterDomain* id){ return id->isReduction(); }
-  );
+  return std::any_of(domain_.begin(), domain_.end(), [](IterDomain* id) {
+    return id->isReduction();
+  });
 }
 
 TensorDomain* TensorDomain::noReductions() const {

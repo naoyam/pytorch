@@ -29,15 +29,17 @@ struct TORCH_CUDA_API TransformRFactor : public TransformIter {
   // Have to have our own dispatch because of ther return type
   TensorDomain* tdReplayBackward(Expr*, TensorDomain*);
 
-  // Entry for backward influence propagation on td following record, this transformation is in place on td
+  // Entry for backward influence propagation on td following record, this
+  // transformation is in place on td
   void replayBackward(TensorDomain* td, std::vector<Expr*> history);
 
   std::vector<int> axis_map;
 
-public:
- // Create a copy of td, change its history by presrving axes so they appear in the root domain
- static TensorDomain* runReplay(TensorDomain*, std::vector<int> axes);
- static TensorDomain* runReplay2(TensorDomain*, std::vector<int> axes);
+ public:
+  // Create a copy of td, change its history by presrving axes so they appear in
+  // the root domain
+  static TensorDomain* runReplay(TensorDomain*, std::vector<int> axes);
+  static TensorDomain* runReplay2(TensorDomain*, std::vector<int> axes);
 };
 
 } // namespace fuser

@@ -47,17 +47,20 @@ Int* getPredicate(const TensorView* const pred_tv, std::vector<Val*> indices) {
     if (!pred->isOneInt())
       preds.push_back(pred);
 
-  if(preds.size() == 0)
+  if (preds.size() == 0)
     return new Int(1);
 
   Val* cond = preds[0];
-  
-  for (decltype(preds.size()) i{1}; i < preds.size(); i++){
+
+  for (decltype(preds.size()) i{1}; i < preds.size(); i++) {
     cond = andOp(cond, preds[i]);
   }
 
-  TORCH_INTERNAL_ASSERT(cond->getValType().value() == ValType::Scalar && cond->getDataType().value() == DataType::Int,
-  "Error computing predicate, should be returning an Int, but returning ", cond);
+  TORCH_INTERNAL_ASSERT(
+      cond->getValType().value() == ValType::Scalar &&
+          cond->getDataType().value() == DataType::Int,
+      "Error computing predicate, should be returning an Int, but returning ",
+      cond);
 
   return static_cast<Int*>(cond);
 }
@@ -100,9 +103,11 @@ void UnrollPass::handle(ForLoop* fl) {
       unroll_pred_inds.push_back((*it)->index());
       it++;
     }
-    
-    TORCH_INTERNAL_ASSERT(it != for_loops.end(), "Error unrolling loops, expected an unrolled loop but wasn't found.");
-  
+
+    TORCH_INTERNAL_ASSERT(
+        it != for_loops.end(),
+        "Error unrolling loops, expected an unrolled loop but wasn't found.");
+
     // This is the outer most loop that needs to be unrolled
     ForLoop* first_unroll = *it;
 
@@ -157,7 +162,8 @@ void UnrollPass::handle(ForLoop* fl) {
     } // for expr
   } else { //  if(!within_unroll)
     // modify in place, so grab a copy of exprs first.
-    std::vector<Expr*> exprs(fl->body().exprs().begin(), fl->body().exprs().end());
+    std::vector<Expr*> exprs(
+        fl->body().exprs().begin(), fl->body().exprs().end());
     for (auto expr : exprs) {
       if (!ir_utils::isTVOp(expr))
         continue;
@@ -176,7 +182,7 @@ void UnrollPass::handle(ForLoop* fl) {
       }
     }
   } // else (if(!within_unroll))
-  
+
   for_loops.pop_back();
   within_unroll = prev_unroll;
 }
@@ -310,7 +316,7 @@ void LoopNestGenerator::pushBack(Expr* expr) {
  *    - If there is a computeAt set for this TV
  *  4) Allocate the output.
  *  5) If this is a reduction, initialize the output (open for loops to inner
- * most, predicate, initialize, close predicate, close to computeAt) 
+ * most, predicate, initialize, close predicate, close to computeAt)
  *  6) Open to inner most loop
  *  7) Open predicate
  *  8) Run operation
@@ -352,24 +358,22 @@ void LoopNestGenerator::updateToComputeAt(TensorView* tv) {
 
     clearActiveView();
   }
-
 }
 
-  // Update for loop structure based on this TensorView
-  void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val){
-    TORCH_INTERNAL_ASSERT(tv->getComputeAtAxis() >= for_loops.size(),
+// Update for loop structure based on this TensorView
+void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val) {
+  TORCH_INTERNAL_ASSERT(
+      tv->getComputeAtAxis() >= for_loops.size(),
       "Initialization of reduction was trying to be placed at the wrong point in the loop nest.");
-    int depth = for_loops.size();
-    for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
-      openFor(tv->getComputeAtAxis(i));
-    auto clone = tv->unsafeClone();
-    for_loops.back()->body().push_back(
-      new UnaryOp(UnaryOpType::Set, clone, init_val)
-    );
-    for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
-      for_loops.pop_back();
-
-  }
+  int depth = for_loops.size();
+  for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
+    openFor(tv->getComputeAtAxis(i));
+  auto clone = tv->unsafeClone();
+  for_loops.back()->body().push_back(
+      new UnaryOp(UnaryOpType::Set, clone, init_val));
+  for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
+    for_loops.pop_back();
+}
 
 // Custom dispatch for Expr, want to find out of it's a TV op
 void LoopNestGenerator::handle(Expr* expr) {
@@ -383,10 +387,10 @@ void LoopNestGenerator::handle(Expr* expr) {
   if (!FusionGuard::getCurFusion()->hasInput(out) &&
       !FusionGuard::getCurFusion()->hasOutput(out))
     pushAlloc(out);
-  
+
   //  5) If this is a reduction, initialize the output (open for loops to inner
   //  most, predicate, initialize, close predicate, close to computeAt)
-  if(out->hasReduction())
+  if (out->hasReduction())
     initReduction(out, static_cast<ReductionOp*>(expr)->init());
 
   //  6) Open to inner most loop

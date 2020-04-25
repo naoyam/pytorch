@@ -1097,12 +1097,7 @@ void testGPU_FusionSimpleReduction() {
   tv1->split(-1, 8);
   tv1->split(-2, 4);
 
-  tv1->reorder({
-    {0, -2},
-    {2, -1},
-    {-3, 0},
-    {-1, 1}
-  });
+  tv1->reorder({{0, -2}, {2, -1}, {-3, 0}, {-1, 1}});
 
   tv1->merge(0);
   tv1->merge(-2);
@@ -1120,8 +1115,9 @@ void testGPU_FusionSimpleReduction() {
   // std::cout<<new_domain->rootDomain()<<std::endl;
   // std::cout<<new_domain2->rootDomain()<<std::endl;
 
-  TORCH_INTERNAL_ASSERT(new_domain->nDims()-1 == new_domain2->nDims(),
-    "Error in rfactor, number of dimensions is not correct.");
+  TORCH_INTERNAL_ASSERT(
+      new_domain->nDims() - 1 == new_domain2->nDims(),
+      "Error in rfactor, number of dimensions is not correct.");
   TORCH_INTERNAL_ASSERT(
       replayed->nDims() ==
           new_domain->rootDomain()->nDims() +
@@ -1138,7 +1134,6 @@ void testGPU_FusionSimpleReduction() {
           !tv1->domain()->sameAs(new_domain2),
       "Error in rfactor, number of dimensions is not correct.");
 }
-
 
 } // namespace jit
 } // namespace torch

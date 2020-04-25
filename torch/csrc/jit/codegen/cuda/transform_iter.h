@@ -25,7 +25,8 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
   // dispatch
   void replayBackward(Expr*);
 
-  // Returns transformation exprs in reverse order (as seen processing backwards)
+  // Returns transformation exprs in reverse order (as seen processing
+  // backwards)
   static std::vector<Expr*> getHistory(TensorDomain*);
 
   // Iterates td's history starting with td, then origin(td), origin(origin(td))

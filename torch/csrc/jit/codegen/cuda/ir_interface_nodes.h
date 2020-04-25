@@ -170,7 +170,7 @@ struct TORCH_CUDA_API TensorView : public Val {
   // Compute this TensorView relative to another tensor at axis
   TensorView* computeAt(TensorView* consumer, int axis);
 
-  void clearComputeAt(){
+  void clearComputeAt() {
     compute_at_axis_ = -1;
     compute_at_view_ = nullptr;
   }
@@ -186,16 +186,11 @@ struct TORCH_CUDA_API TensorView : public Val {
   TensorView* reorder(const std::unordered_map<int, int>& axis2pos);
 
   /*
-   * Take reduction axes out of this domain, and create a new domain. New domain will be
-   * used to create this domain. For example:
-   * TV1[I0, I1] = TV0[I0, R0, R1, I1]
-   * TV0->rfactor({1})
-   * TV0 is transformed to -> TV0[I0, R1, I1]
-   * The TensorView returned is:
-   * TV2[I0, R0, I3, I1]
-   * The reduction will now beset as:
-   * TV1[I0, R1, I1] = TV2[I0, R0, I3, I1]
-   * TV0[I0, I1] = TV1[I0, R1, I1]
+   * Take reduction axes out of this domain, and create a new domain. New domain
+   * will be used to create this domain. For example: TV1[I0, I1] = TV0[I0, R0,
+   * R1, I1] TV0->rfactor({1}) TV0 is transformed to -> TV0[I0, R1, I1] The
+   * TensorView returned is: TV2[I0, R0, I3, I1] The reduction will now beset
+   * as: TV1[I0, R1, I1] = TV2[I0, R0, I3, I1] TV0[I0, I1] = TV1[I0, R1, I1]
    */
   TensorView* rfactor(std::vector<int> axes);
 
@@ -224,22 +219,21 @@ struct TORCH_CUDA_API TensorView : public Val {
     compute_at_axis_ = axis;
   }
 
-  void setMemoryType(MemoryType mt){
+  void setMemoryType(MemoryType mt) {
     memory_type_ = mt;
-    bool is_inp_or_out = this->fusion()->hasInput(this) || this->fusion()->hasOutput(this);
-    if(is_inp_or_out)
+    bool is_inp_or_out =
+        this->fusion()->hasInput(this) || this->fusion()->hasOutput(this);
+    if (is_inp_or_out)
       TORCH_INTERNAL_ASSERT(
-        mt == MemoryType::Global,
-        "Tried to set an input or output to the fusion to a non-global memory type."
-      );
+          mt == MemoryType::Global,
+          "Tried to set an input or output to the fusion to a non-global memory type.");
   }
 
-  MemoryType getMemoryType(){
+  MemoryType getMemoryType() {
     return memory_type_;
   }
 
  private:
-
   // Transform this view like consumer, mark compute_at_(viw,axis)
   void computeAt_impl(TensorView* consumer, int axis);
 
