@@ -82,8 +82,8 @@ TORCH_CUDA_API void runKernel(
 // Facility API to run kernel in tests.
 TORCH_CUDA_API void runTestKernel(
     CudaKernel& entry,
-    const std::vector<at::Tensor>& inputs,
-    std::vector<at::Tensor>& outputs);
+    const std::vector<at::Tensor> inputs,
+    std::vector<at::Tensor> outputs);
 
 } // namespace cuda
 } // namespace fuser

@@ -1,4 +1,4 @@
-#if defined(USE_CUDA)
+//#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -147,7 +147,7 @@ void testGPU_FusionRegister() {
 struct DummyExpr : public Expr {
   ~DummyExpr() = default;
   DummyExpr(Val* _outlhs, Val* _outrhs, Val* _lhs, Val* _rhs)
-      : Expr(ExprType::BinaryOp) // Not terribly safe...
+      : Expr(ExprType::UnaryOp) // Not terribly safe...
   {
     addOutput(_outlhs);
     addOutput(_outrhs);
@@ -558,32 +558,32 @@ void testGPU_FusionParser() {
       << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){\n"
       << "  float T2[4];\n"
       << "  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
-      << "    for(size_t i64 = 0; i64 < 4; ++i64 ) {\n"
-      << "      T2[ i64 ]\n"
-      << "         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
-      << "         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
+      << "    for(size_t i94 = 0; i94 < 4; ++i94 ) {\n"
+      << "      T2[ i94 ]\n"
+      << "         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
+      << "         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
       << "    }\n"
       << "  } else { \n"
-      << "    for(size_t i64 = 0; i64 < 4; ++i64 ) {\n"
-      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
-      << "        T2[ i64 ]\n"
-      << "           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
-      << "           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
+      << "    for(size_t i94 = 0; i94 < 4; ++i94 ) {\n"
+      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
+      << "        T2[ i94 ]\n"
+      << "           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
+      << "           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
       << "      }\n"
       << "    }\n"
       << "  }\n"
       << "  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "    for(size_t i65 = 0; i65 < 4; ++i65 ) {\n"
-      << "      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
-      << "         = T2[ i65 ]\n"
-      << "         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
+      << "    for(size_t i95 = 0; i95 < 4; ++i95 ) {\n"
+      << "      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
+      << "         = T2[ i95 ]\n"
+      << "         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
       << "    }\n"
       << "  } else { \n"
-      << "    for(size_t i65 = 0; i65 < 4; ++i65 ) {\n"
-      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
-      << "           = T2[ i65 ]\n"
-      << "           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
+      << "    for(size_t i95 = 0; i95 < 4; ++i95 ) {\n"
+      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
+      << "        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
+      << "           = T2[ i95 ]\n"
+      << "           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
       << "      }\n"
       << "    }\n"
       << "  }\n"
@@ -647,29 +647,29 @@ void testGPU_FusionDependency() {
   TORCH_CHECK(!DependencyCheck::isDependencyOf(f6, f4));
   TORCH_CHECK(!DependencyCheck::isDependencyOf(f10, f8));
 
-  std::stack<Val*> dep_chain = DependencyCheck::getDependencyChain(f0, f11);
-  TORCH_CHECK(dep_chain.top() == f11);
-  dep_chain.pop();
-  TORCH_CHECK(dep_chain.top() == f3);
-  dep_chain.pop();
-  TORCH_CHECK(dep_chain.top() == f2);
-  dep_chain.pop();
+  auto dep_chain = DependencyCheck::getSingleDependencyChain(f0, f11);
+  TORCH_CHECK(dep_chain.back() == f11);
+  dep_chain.pop_back();
+  TORCH_CHECK(dep_chain.back() == f3);
+  dep_chain.pop_back();
+  TORCH_CHECK(dep_chain.back() == f2);
+  dep_chain.pop_back();
 
-  dep_chain = DependencyCheck::getDependencyChain(f6, f11);
-  TORCH_CHECK(dep_chain.top() == f11);
-  dep_chain.pop();
-  TORCH_CHECK(dep_chain.top() == f10);
-  dep_chain.pop();
+  dep_chain = DependencyCheck::getSingleDependencyChain(f6, f11);
+  TORCH_CHECK(dep_chain.back() == f11);
+  dep_chain.pop_back();
+  TORCH_CHECK(dep_chain.back() == f10);
+  dep_chain.pop_back();
 
-  dep_chain = DependencyCheck::getDependencyChain(f4, f11);
-  TORCH_CHECK(dep_chain.top() == f11);
-  dep_chain.pop();
-  TORCH_CHECK(dep_chain.top() == f10);
-  dep_chain.pop();
-  TORCH_CHECK(dep_chain.top() == f6);
-  dep_chain.pop();
+  dep_chain = DependencyCheck::getSingleDependencyChain(f4, f11);
+  TORCH_CHECK(dep_chain.back() == f11);
+  dep_chain.pop_back();
+  TORCH_CHECK(dep_chain.back() == f10);
+  dep_chain.pop_back();
+  TORCH_CHECK(dep_chain.back() == f6);
+  dep_chain.pop_back();
 
-  dep_chain = DependencyCheck::getDependencyChain(f11, f2);
+  dep_chain = DependencyCheck::getSingleDependencyChain(f11, f2);
   TORCH_CHECK(dep_chain.empty());
 }
 
@@ -797,17 +797,17 @@ void testGPU_FusionCodeGen2() {
       << "}\n"
       << "\n"
       << "__global__ void CUDAGeneratedKernel(Tensor<float, 3> T0, Tensor<float, 3> T1, Tensor<float, 3> T3){\n"
-      << "  for(size_t i33 = 0; i33 < 4; ++i33 ) {\n"
-      << "    for(size_t i34 = 0; i34 < T3.size[1]; ++i34 ) {\n"
+      << "  for(size_t i53 = 0; i53 < 4; ++i53 ) {\n"
+      << "    for(size_t i54 = 0; i54 < T3.size[1]; ++i54 ) {\n"
       << "      float T2[1];\n"
-      << "      if ( ( ( ( blockIdx.x * 4 ) + i33 ) < T3.size[0] ) ) { \n"
+      << "      if ( ( ( ( blockIdx.x * 4 ) + i53 ) < T3.size[0] ) ) { \n"
       << "        T2[ 0 ]\n"
-      << "           = T1[ ( ( ( blockIdx.x * 4 ) + i33 ) * T1.stride[0] ) + ( i34 * T1.stride[1] ) + ( threadIdx.x * T1.stride[2] ) ]\n"
+      << "           = T1[ ( ( ( blockIdx.x * 4 ) + i53 ) * T1.stride[0] ) + ( i54 * T1.stride[1] ) + ( threadIdx.x * T1.stride[2] ) ]\n"
       << "           + float(2);\n"
       << "      }\n"
-      << "      if ( ( ( ( blockIdx.x * 4 ) + i33 ) < T3.size[0] ) ) { \n"
-      << "        T3[ ( ( ( blockIdx.x * 4 ) + i33 ) * T3.stride[0] ) + ( i34 * T3.stride[1] ) + ( threadIdx.x * T3.stride[2] ) ]\n"
-      << "           = T0[ ( ( ( blockIdx.x * 4 ) + i33 ) * T0.stride[0] ) + ( i34 * T0.stride[1] ) + ( threadIdx.x * T0.stride[2] ) ]\n"
+      << "      if ( ( ( ( blockIdx.x * 4 ) + i53 ) < T3.size[0] ) ) { \n"
+      << "        T3[ ( ( ( blockIdx.x * 4 ) + i53 ) * T3.stride[0] ) + ( i54 * T3.stride[1] ) + ( threadIdx.x * T3.stride[2] ) ]\n"
+      << "           = T0[ ( ( ( blockIdx.x * 4 ) + i53 ) * T0.stride[0] ) + ( i54 * T0.stride[1] ) + ( threadIdx.x * T0.stride[2] ) ]\n"
       << "           + T2[ 0 ];\n"
       << "      }\n"
       << "    }\n"
@@ -1011,6 +1011,64 @@ void testGPU_FusionForLoop() {
   }
 }
 
+int ceilDiv_(int a, int b) {
+  return (a + b - 1) / b;
+}
+
+void testGPU_FusionLoopUnroll2() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = static_cast<TensorView*>(mul(tv0, new Float(-1.0)));
+  TensorView* tv2 = static_cast<TensorView*>(add(tv0, new Float(3.0)));
+  TensorView* tv3 = static_cast<TensorView*>(add(tv2, tv1));
+
+  // t1 = t0 * -1.0
+  // t2 = t0 + 3.0
+  // t3 = t2 t1
+
+  fusion.addOutput(tv3);
+
+  tv3->merge(0);
+  tv3->split(0, 128);
+  tv3->split(0, 4);
+
+  tv0->computeAt(tv3, 1);
+
+  tv3->axis(0)->parallelize(ParallelType::BIDx);
+  tv3->axis(1)->parallelize(ParallelType::Unroll);
+  tv3->axis(-1)->parallelize(ParallelType::TIDx);
+
+  tv1->axis(1)->parallelize(ParallelType::Unroll);
+  tv1->axis(-1)->parallelize(ParallelType::TIDx);
+
+  tv2->axis(1)->parallelize(ParallelType::Unroll);
+  tv2->axis(-1)->parallelize(ParallelType::TIDx);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+  at::Tensor t0 = at::randn({129, 127}, options);
+  auto t1 = t0.mul({-1.0});
+  auto t2 = t0.add({3.0});
+  auto t3 = t2.add(t1);
+
+  at::Tensor kernel_out = at::zeros({129, 127}, options);
+
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.device_ = 0;
+
+  int blocks = ceilDiv_(ceilDiv_(129 * 127, 128), 4);
+  prog.grid(blocks); // 1 CTA
+  prog.block(128); // 128 Threads
+  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
+  torch::jit::fuser::cuda::runTestKernel(prog, {t0}, {kernel_out});
+
+  TORCH_INTERNAL_ASSERT(at::allclose(kernel_out, t3));
+}
+
 void testGPU_FusionLoopUnroll() {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -1137,4 +1195,4 @@ void testGPU_FusionSimpleReduction() {
 
 } // namespace jit
 } // namespace torch
-#endif // #if defined(USE_CUDA)
+//#endif // #if defined(USE_CUDA)

@@ -290,8 +290,8 @@ void runKernel(
 // This function is here for testing purposes only
 void runTestKernel(
     CudaKernel& entry,
-    const std::vector<at::Tensor>& inputs,
-    std::vector<at::Tensor>& outputs) {
+    const std::vector<at::Tensor> inputs,
+    std::vector<at::Tensor> outputs) {
   const auto prior_device = at::cuda::current_device();
   at::cuda::set_device(entry.device_);
   auto stream = at::cuda::getCurrentCUDAStream();
