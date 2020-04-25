@@ -104,36 +104,20 @@ struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
 
 };
 
-
-// Class to check if nodes are in the dependency chain of another node.
-struct TORCH_CUDA_API DependencyCheck : public IterVisitor {
- private:
-  // Class constructor checking if _dependency is a dependency of _of.
-  DependencyCheck(Val* _dependency, Val* _of)
-      : dependency_{_dependency}, of_{_of}, is_dependency{false} {}
-
-  // when handle is called on val, we know 2 things. Val is a dependency of of.
-  // and dep_chain contains the values in between of and dependency.
-  void handle(Val* val) final;
-
-  // Traverse the dep chain from of, return if dependency was found in it
-  bool check();
-
-  Val* const dependency_;
-  Val* const of_;
-  bool is_dependency;
-  std::stack<Val*> dep_chain;
-
+struct TORCH_CUDA_API DependencyCheck {
  public:
-  // Returns if dependency is a dependency of of.
-  static bool isDependencyOf(Val* dependency, Val* of) {
-    DependencyCheck dp(dependency, of);
-    return dp.check();
-  }
 
-  // Return the dependency chain, including dependency and of. If no dependency
-  // was found, returns an empty stack.
-  static std::stack<Val*> getDependencyChain(Val* dependency, Val* of);
+  // Returns if "dependency" is a dependency of "of".
+  static bool isDependencyOf(Val* dependency, Val* of);
+
+  // Finds a Val* path from "of" to "dependency". Returns that path. vector.back() is "of",
+  // vector[0] is dependency if a chain exists.
+  static std::stack<Val*> getSingleDependencyChain(Val* dependency, Val* of);
+
+  // Finds all Val* paths from "of" to "dependency". Returns that path.
+  // vector[i].back() is "of", and vector[i][0] is "dependency". Returns an
+  // empty vector if no dependency found.
+  static std::vector< std::vector<Val*> > getAllDependencyChains(Val* dependency, Val* of);
 };
 
 } // namespace fuser

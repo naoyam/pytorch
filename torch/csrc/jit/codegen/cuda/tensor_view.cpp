@@ -201,9 +201,9 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   }
 
   // If not direct relationship follow dependency chain.
-  auto dep_chain = DependencyCheck::getDependencyChain(this, consumer);
+  auto dep_chain = DependencyCheck::getSingleDependencyChain(this, consumer);
   if(dep_chain.size() == 0)
-    TORCH_CHECK(DependencyCheck::getDependencyChain(consumer, this).size() == 0,
+    TORCH_CHECK(DependencyCheck::isDependencyOf(consumer, this),
       "Expected ", this, " computeAt ", consumer, " but got the reverse."
     );
 
