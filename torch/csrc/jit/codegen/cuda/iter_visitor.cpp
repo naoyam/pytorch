@@ -2,7 +2,6 @@
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
-#include <iostream>
 
 namespace torch {
 namespace jit {
@@ -29,45 +28,71 @@ std::vector<Statement*> IterVisitor::next(Expr* expr) {
   return {expr->inputs().begin(), expr->inputs().end()};
 }
 
+// Remove any stmt in stmts that is in visited
+namespace{
+  void remove_visited(std::vector<Statement*>& stmts, const std::unordered_set<Statement*>& visited){
+    std::stack<std::vector<Statement*>::iterator> to_erase;
+    for(auto it = stmts.begin(); it != stmts.end(); it++){
+      if(visited.find(*it) != visited.end() )
+        to_erase.push(it);
+    }
+
+    while(!to_erase.empty()){
+      stmts.erase(to_erase.top());
+      to_erase.pop();
+    }
+
+  }
+}
+
 void IterVisitor::traverseFrom(
     Fusion* const fusion,
-    const std::vector<Val*>& from) {
+    const std::vector<Val*>& from,
+    bool traverseAllPaths) {
   FusionGuard fg(fusion);
+  std::unordered_set<Statement*> visited;
+  stmt_stack.clear();
+  stmt_stack.push_back(std::deque<Statement*>(from.rbegin(), from.rend()));
 
-  outputs_to_visit = std::queue<Val*>();  
-  to_visit.clear();
-  visited.clear();
+  while (!stmt_stack.empty()) {
+    auto next_stmts = next(stmt_stack.back().back());
+    
+    // Remove statements we already visited if we're not traversing all paths
+    if(!traverseAllPaths)
+      remove_visited(next_stmts, visited);
+    
+    // Traverse down until we get to a leaf
+    while (!next_stmts.empty()) {
+      stmt_stack.push_back(std::deque<Statement*>(next_stmts.rbegin(), next_stmts.rend()));
+      next_stmts = next(stmt_stack.back().back());
+      // Remove statements we already visited if we're not traversing all paths
+      if(!traverseAllPaths)
+        remove_visited(next_stmts, visited);
+    }
 
-  for (Val* entry : from)
-    outputs_to_visit.emplace(entry);
+    // Traverse back up
+    // Mark visited
+    visited.emplace(stmt_stack.back().back());
+    // Handle
+    handle(stmt_stack.back().back());
+    // Remove
+    stmt_stack.back().pop_back();
+    
+    while (!stmt_stack.empty() && stmt_stack.back().empty()) {
 
-  while (!outputs_to_visit.empty()) {
-    to_visit.push_front(outputs_to_visit.front());
-    outputs_to_visit.pop();
-    while (!to_visit.empty()) {
-
-      Statement* stmt = to_visit.front();
-      std::vector<Statement*> inps = next(stmt);
-
-      for (auto it = inps.rbegin(); it != inps.rend(); it++) {
-        Statement* inp = *it;
-        if (visited.find(inp) == visited.end()) {
-          toVisitCallback(inp);
-          to_visit.emplace_front(inp);
-        }
-      }
-
-      if (to_visit.front() != stmt) {
-        continue;
-      }
-
-      to_visit.pop_front();
-      if (visited.find(stmt) == visited.end()) {
-        handle(stmt);
-        visited.emplace(stmt);
+      stmt_stack.pop_back();
+      if (!stmt_stack.empty()) {
+        // Mark visited
+        visited.emplace(stmt_stack.back().back());
+        // Handle
+        handle(stmt_stack.back().back());
+        // Remove
+        stmt_stack.back().pop_back();
       }
     }
+
   }
+
 }
 
 void IterVisitor::traverse(
@@ -90,42 +115,47 @@ void IterVisitor::traverse(
         outputs.push_back(val);
     }
 
-  traverseFrom(fusion, outputs);
+  traverseFrom(fusion, outputs, false);
+}
+
+void IterVisitor::traverseAllPaths(
+    Fusion* const fusion,
+    bool from_outputs_only,
+    bool breadth_first) {
+  FusionGuard fg(fusion);
+  if (breadth_first)
+    TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+
+  std::vector<Val*> outputs;
+  if (from_outputs_only) {
+    for (Val* out : fusion->outputs()) {
+      outputs.push_back(out);
+    }
+    // Search for Vals with no uses (output edges)
+  } else
+    for (Val* val : fusion->vals()) {
+      if (!fusion->used(val))
+        outputs.push_back(val);
+    }
+
+  traverseFrom(fusion, outputs, true);
 }
 
 void DependencyCheck::handle(Val* val) {
   if (val->sameAs(dependency_)){
     is_dependency = true;
-    outputs_to_visit = std::queue<Val*>();
-    to_visit.clear();
-  }
-}
-
-void DependencyCheck::handle(Expr* expr) {
-  // We want to update the dependency chain, but we want to make sure
-  // that the top value on the chain is an output of this expr
-
-  for (decltype(expr->nOutputs()) i = 0; i < expr->nOutputs(); i++) {
-    TORCH_INTERNAL_ASSERT(
-        expr->hasOutput(dep_chain.top()),
-        "IterVisitor attempted to visit an expr, but this expr was visited in an incorrect order.");
-    dep_chain.pop();
-  }
-}
-
-void DependencyCheck::toVisitCallback(Statement* stmt) {
-  // If an expression push outputs of expr to dependency chain.
-  if (stmt->isExpr()) {
-    Expr* expr = static_cast<Expr*>(stmt);
-    for (auto out : expr->outputs()) {
-      dep_chain.push(static_cast<Val*>(out));
+    std::stack<Val*> deps;
+    for(auto stack : stmt_stack){
+      if(stack.back()->isVal())
+        deps.push(static_cast<Val*>(stack.back()));
     }
+    dep_chain = deps;
   }
 }
 
 bool DependencyCheck::check() {
   is_dependency = false;
-  IterVisitor::traverseFrom(of_->fusion(), {of_});
+  IterVisitor::traverseFrom(of_->fusion(), {of_}, false);
   return is_dependency;
 }
 

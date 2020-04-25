@@ -164,9 +164,44 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       axis >= 0 && axis < consumer->nDims() + 1,
       "Compute at called on an axis outside valid range.");
 
-  std::stack<Val*> dep_chain =
-      DependencyCheck::getDependencyChain(this, consumer);
+  // Direct dependency relationship, run replay.
+  if(FusionGuard::getCurFusion()->origin(consumer) != nullptr
+     && FusionGuard::getCurFusion()->origin(consumer)->hasInput(this)){
+    // Reset view otherwise will conflict with replay.
+    this->compute_at_view_ = nullptr;
+    this->compute_at_axis_ = -1;
+    TransformReplay::replay(consumer, this, axis);
+    this->compute_at_view_ = consumer;
+    this->compute_at_axis_ = (unsigned int) axis;
 
+    // If another view consumes this, we may be computing this at a position
+    // that doesn't match that consumer. Likely producing too little for that
+    // next consumer
+    for (Expr* other_use : FusionGuard::getCurFusion()->uses(this)) {
+      for (Val* maybe_other_consumer : other_use->outputs()) {
+        if (*(maybe_other_consumer->getValType()) != ValType::TensorView)
+          continue;
+
+        TensorView* other_consumer =
+            static_cast<TensorView*>(maybe_other_consumer);
+        if (consumer->sameAs(other_consumer))
+          continue;
+
+        if (DependencyCheck::isDependencyOf(consumer, other_consumer)) {
+          // There seem to be two choices here, either consumer or
+          // consumer I believe they end up being equivelent, but uncertain they
+          // actually are.
+          consumer->computeAt(other_consumer, axis);
+        } else {
+          other_consumer->computeAt(consumer, axis);
+        }
+      }
+    }
+    return this;
+  }
+
+  // If not direct relationship follow dependency chain.
+  auto dep_chain = DependencyCheck::getDependencyChain(this, consumer);
   if(dep_chain.size() == 0)
     TORCH_CHECK(DependencyCheck::getDependencyChain(consumer, this).size() == 0,
       "Expected ", this, " computeAt ", consumer, " but got the reverse."
@@ -174,64 +209,27 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
 
   // forward apply to uses of this.
   // Recursively apply replay.
-  TensorView* running_consumer = consumer;
-  // dep_chain = deps <- consumer (this chain doesn't contain this)
-  // We want to apply:
-  //  dep[n-1].compute_at(consumer)
-  //  ...
-  //  this.compute_at(dep[0])
-  while (!dep_chain.empty()) {
-    Val* val = dep_chain.top();
-    dep_chain.pop();
+  TensorView* running_consumer = nullptr;
+
+  while (dep_chain.size() > 1) {
+
     TORCH_INTERNAL_ASSERT(
-        val->getValType() == ValType::TensorView,
+        dep_chain.top()->getValType() == ValType::TensorView,
         "When following the transform dependency chain, an invalid value was found.");
-    TensorView* tv = static_cast<TensorView*>(val);
-    if (tv->sameAs(consumer))
-      continue;
-    tv->computeAt(running_consumer, axis);
-    // TransformReplay::replay(running_consumer, tv, axis);
-    running_consumer = tv; // replay is in-place
-  }
-  // At this point running_consumer is the direct consumer of this
 
-  // If another view consumes this, we may be computing this at a position that
-  // doesn't match that consumer. Likely producing too little for that next
-  // consumer
-  for (Expr* other_use : FusionGuard::getCurFusion()->uses(this)) {
-    for (Val* maybe_other_consumer : other_use->outputs()) {
-      if (*(maybe_other_consumer->getValType()) != ValType::TensorView)
-        continue;
 
-      TensorView* other_consumer =
-          static_cast<TensorView*>(maybe_other_consumer);
-      if (running_consumer->sameAs(other_consumer))
-        continue;
+    running_consumer = static_cast<TensorView*>(dep_chain.top());
+    dep_chain.pop();
+    
+    TORCH_INTERNAL_ASSERT(
+        dep_chain.top()->getValType() == ValType::TensorView,
+        "When following the transform dependency chain, an invalid value was found.");
 
-      if (DependencyCheck::isDependencyOf(running_consumer, other_consumer)) {
-        // There seem to be two choices here, either running_consumer or
-        // consumer I believe they end up being equivelent, but uncertain they
-        // actually are.
-        running_consumer->computeAt(other_consumer, axis);
-      } else {
-        other_consumer->computeAt(running_consumer, axis);
-      }
-    }
+    TensorView* running_producer = static_cast<TensorView*>(dep_chain.top());
+
+    running_producer->computeAt(running_consumer, axis);
   }
 
-  if (FusionGuard::getCurFusion()->origin(this) == nullptr)
-    return this;
-
-  // Dep chain doesn't contain this, try to run on replay, as it may be merging
-  // two independent loop nests of the same sizes.
-
-  // Reset view otherwise will conflict with replay.
-
-  this->compute_at_view_ = nullptr;
-  this->compute_at_axis_ = -1;
-  TransformReplay::replay(running_consumer, this, axis);
-  this->compute_at_view_ = running_consumer;
-  this->compute_at_axis_ = (unsigned int)axis;
   return this;
 }
 

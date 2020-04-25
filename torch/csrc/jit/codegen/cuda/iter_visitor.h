@@ -22,15 +22,16 @@ struct Fusion;
 enum class ValType;
 
 /*
- * IterVisitor walks a Fusion topologically ordered from outputs of the fusion.
- * By default outputs are any leaf Vars that don't have uses, but can be set to
- * registered outputs of the Fusion. On every node handle(NodeType*) will be
- * called (topologically ordered).
+ * IterVisitor starts from leaf nodes, fusion outputs, or the provided values.
+ * It walks the DAG bacwkards from the starting nodes, to roots. Each node in
+ * the dag will be called with handle(Statement*) in topolgical order inputs of
+ * the fusion to outputs of the fusion.
  *
- * toVisitCallback can also be overridden and will be called when a node is
- * added to the to_visit queue. The use of these two functions can be seen in
- * DependencyCheck which uses them to find if a value is in the dependency chain
- * of another value. toVisitCallback is used to maintain a dependency stack.
+ * TODO: We may want a BFS version of this code to extract ILP, not implemented
+ * yet.
+ * 
+ * TODO: We may want to have ordering of outputs to inputs. I'm not sure why we
+ * would want this, but seems like it would be a reasonable request.
  */
 struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   virtual ~IterVisitor() = default;
@@ -44,44 +45,63 @@ struct TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   IterVisitor& operator=(IterVisitor&& other) = default;
 
   // Functions return nodes in reverse order to be added to the to_visit queue
-  // These functions will start at outputs and propagate op through the DAG
-  // in depth first traversal. Next could be called on nodes multiple times,
-  // however, once handle is called on a node next will not be called.
+  // These functions will start at outputs and propagate up through the DAG
+  // to inputs based on depth first traversal. Next could be called on a node
+  // multiple times.
   virtual std::vector<Statement*> next(Statement* stmt);
   virtual std::vector<Statement*> next(Expr* expr);
   virtual std::vector<Statement*> next(Val* v);
 
-  void handle(Statement* s) {
+  // This handle functions is called on every Statement* in topological order,
+  // starting from outputs to inputs.
+  virtual void handle(Statement* s) {
     OptOutDispatch::handle(s);
   }
-  void handle(Expr* e) {
+  // This handle functions is called on every Expr* in topological order,
+  // starting from outputs to inputs.
+  virtual void handle(Expr* e) {
     OptOutDispatch::handle(e);
   }
-  void handle(Val* v) {
+  // This handle functions is called on every Val* in topological order,
+  // starting from outputs to inputs.
+  virtual void handle(Val* v) {
     OptOutDispatch::handle(v);
   }
 
-  // Callback function when a Stmt is added to the "to_visit" queue
-  virtual void toVisitCallback(Statement* stmt) {}
-
-  // Traversal state
-  std::set<Statement*> visited;
-  std::deque<Statement*> to_visit;
-  std::queue<Val*> outputs_to_visit;
+  // The entire stack during traversal. stmt_stack.back().back() is the node
+  // that is being called in handle(). stmt_stack.back() contains siblings (not
+  // guarenteed to be all siblings throughout traversal). stmt_stack.front()
+  // contains the outputs we started with (not guarenteed to be all outputs
+  // throughout traversal).
+  std::deque<std::deque<Statement*> > stmt_stack;
 
  public:
-  // This version of traverse collects the points of the graph to start from
-  // The "from_outputs_only" argument forces the graph to start from outputs
-  // instead of search for Val typed nodes that have no uses.
-  // The output type set limits further the set of Val nodes to search by type.
+  // Starts at nodes provided in from, traverses from these nodes to inputs.
+  // Calls handle on all Statement*s in topological sorted order.
+  // traverseAllPaths = false only call handle on each Statement* once
+  // traverseAllPaths = true traverses all paths from nodes in from to inputs.
+  //   Handle on a Statement* for every path from "from" nodes, to inputs.
+  void traverseFrom(
+      Fusion* const fusion,
+      const std::vector<Val*>& from,
+      bool traverseAllPaths = false);
+
+  // from_outputs_only = true start from outputs registered with fusion,
+  // from_outputs_only = false start from all leaf nodes,
+  // bool breadth_first = true is not implemented yet
   void traverse(
       Fusion* const fusion,
       bool from_outputs_only = false,
       bool breadth_first = false);
 
-  // Starts at from, traverses backwards through DAG, calls handle on nodes
-  // in depth first topological sorted order.
-  void traverseFrom(Fusion* const fusion, const std::vector<Val*>& from);
+  // from_outputs_only = true start from outputs registered with fusion,
+  // from_outputs_only = false start from all leaf nodes,
+  // bool breadth_first = true is not implemented yet
+  void traverseAllPaths(
+      Fusion* const fusion,
+      bool from_outputs_only = false,
+      bool breadth_first = false);
+
 };
 
 
@@ -92,17 +112,9 @@ struct TORCH_CUDA_API DependencyCheck : public IterVisitor {
   DependencyCheck(Val* _dependency, Val* _of)
       : dependency_{_dependency}, of_{_of}, is_dependency{false} {}
 
-  // std::vector<Statement*> next(Statement* stmt) final;
-
   // when handle is called on val, we know 2 things. Val is a dependency of of.
   // and dep_chain contains the values in between of and dependency.
   void handle(Val* val) final;
-
-  // When we handle an expr we pop off its outputs from the dep_chain
-  void handle(Expr* expr) final;
-
-  // When we visit an Expr we place its outputs on the dep_chain
-  void toVisitCallback(Statement* stmt);
 
   // Traverse the dep chain from of, return if dependency was found in it
   bool check();

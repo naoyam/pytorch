@@ -80,12 +80,11 @@ struct ExprSort : public IterVisitor {
       bool breadth_first);
 };
 
-
 struct InputsOf : public IterVisitor {
  private:
   std::set<Val*> inputs;
 
-  std::vector<Statement*> next(Val* v) final;
+  void handle(Val* v) final;
 
  public:
   static std::set<Val*> output(Fusion* fusion, Val* output_);
