@@ -142,15 +142,16 @@ void TensorView::copyDomain(const TensorDomain* td) {
     idv.push_back(td->axis(i));
   setDomain(new TensorDomain(idv));
 }
+void TensorView::computeAt_impl(TensorView* consumer, int axis) {
+    // Reset view otherwise will conflict with replay.
+    this->compute_at_view_ = nullptr;
+    this->compute_at_axis_ = -1;
+    TransformReplay::replay(consumer, this, axis);
+    this->compute_at_view_ = consumer;
+    this->compute_at_axis_ = (unsigned int) axis;
+}
 
 TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
-  /*
-   * Recursive compute_at:
-   * Recurse backward from consumer, to this, make sure there's a dependency
-   * chain there. Call ComputeAt for all tensors between this and consumer.
-   *
-   * Compute at modifies this, not consumer.
-   */
   TORCH_CHECK(this->fusion() == consumer->fusion(), this, " and ", consumer, " are not in the same fusion.");
   TORCH_CHECK(
       !this->sameAs(consumer), "Cannot call this->computeAt(this, ...)");
@@ -164,52 +165,16 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       axis >= 0 && axis < consumer->nDims() + 1,
       "Compute at called on an axis outside valid range.");
 
-  // Direct dependency relationship, run replay.
-  if(FusionGuard::getCurFusion()->origin(consumer) != nullptr
-     && FusionGuard::getCurFusion()->origin(consumer)->hasInput(this)){
-    // Reset view otherwise will conflict with replay.
-    this->compute_at_view_ = nullptr;
-    this->compute_at_axis_ = -1;
-    TransformReplay::replay(consumer, this, axis);
-    this->compute_at_view_ = consumer;
-    this->compute_at_axis_ = (unsigned int) axis;
-
-    // If another view consumes this, we may be computing this at a position
-    // that doesn't match that consumer. Likely producing too little for that
-    // next consumer
-    for (Expr* other_use : FusionGuard::getCurFusion()->uses(this)) {
-      for (Val* maybe_other_consumer : other_use->outputs()) {
-        if (*(maybe_other_consumer->getValType()) != ValType::TensorView)
-          continue;
-
-        TensorView* other_consumer =
-            static_cast<TensorView*>(maybe_other_consumer);
-        if (consumer->sameAs(other_consumer))
-          continue;
-
-        if (DependencyCheck::isDependencyOf(consumer, other_consumer)) {
-          // There seem to be two choices here, either consumer or
-          // consumer I believe they end up being equivelent, but uncertain they
-          // actually are.
-          consumer->computeAt(other_consumer, axis);
-        } else {
-          other_consumer->computeAt(consumer, axis);
-        }
-      }
-    }
-    return this;
-  }
-
   // If not direct relationship follow dependency chain.
   auto dep_chains = DependencyCheck::getAllDependencyChains(this, consumer);
 
-  if(dep_chains.empty()){
-    TORCH_CHECK(!DependencyCheck::isDependencyOf(consumer, this),
-      "Expected ", this, " computeAt ", consumer, " but got the reverse."
+  TORCH_CHECK(!dep_chains.empty() && !dep_chains.back().empty(),
+      "Compute At expects ", this, " is a dependency of ", consumer,", however it is not."
     );
-  }
 
-  // Apply compute at throughout all paths from producer to consumer
+  // TVs we already called computeAt on
+  std::unordered_set<TensorView*> computeAt_ed;
+  
   while (!dep_chains.empty()) {
     auto dep_chain = dep_chains.front();
     dep_chains.pop_front();
@@ -227,10 +192,41 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
           "When following the transform dependency chain, an invalid value was found.");
 
       TensorView* running_producer = static_cast<TensorView*>(dep_chain.back());
+      if (computeAt_ed.find(running_producer) != computeAt_ed.end())
+        continue;
 
-      running_producer->computeAt(running_consumer, axis);
+      running_producer->computeAt_impl(running_consumer, axis);
+
+      // If another view consumes producer, we may be computing this at a
+      // position that doesn't match that consumer. Likely producing too little
+      // for that next consumer
+      for (Expr* other_use : FusionGuard::getCurFusion()->uses(running_producer)) {
+        for (Val* maybe_other_consumer : other_use->outputs()) {
+          if (*(maybe_other_consumer->getValType()) != ValType::TensorView)
+            continue;
+
+          TensorView* other_consumer =
+              static_cast<TensorView*>(maybe_other_consumer);
+
+          if (running_consumer->sameAs(other_consumer))
+            continue;
+
+          if (DependencyCheck::isDependencyOf(running_consumer, other_consumer)) {
+            if(computeAt_ed.find(running_consumer) == computeAt_ed.end())
+              running_consumer->computeAt_impl(other_consumer, axis);
+          } else {
+            // Either direction here is fine if there isn't a dependency, assume
+            // there's a dependency in the other direction
+            if(computeAt_ed.find(other_consumer) == computeAt_ed.end())
+              other_consumer->computeAt_impl(running_consumer, axis);
+          }
+        }
+      }
+
+      computeAt_ed.emplace(running_producer);
     }
   }
+
   return this;
 }
 
