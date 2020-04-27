@@ -143,6 +143,7 @@ void TensorView::copyDomain(const TensorDomain* td) {
     idv.push_back(td->axis(i));
   setDomain(new TensorDomain(idv));
 }
+
 void TensorView::computeAt_impl(TensorView* consumer, int axis) {
   // Reset view otherwise will conflict with replay.
   this->compute_at_view_ = nullptr;
@@ -152,6 +153,47 @@ void TensorView::computeAt_impl(TensorView* consumer, int axis) {
   this->compute_at_axis_ = (unsigned int)axis;
 }
 
+void TensorView::forwardComputeAt_impl(TensorView* producer, int axis) {
+  // Reset view otherwise will conflict with replay.
+  producer->compute_at_view_ = nullptr;
+  producer->compute_at_axis_ = -1;
+  TransformReplay::replay(this, producer, axis);
+  producer->compute_at_view_ = this;
+  producer->compute_at_axis_ = (unsigned int)axis;
+}
+
+namespace {
+// Wrapper around set_intersection
+template <typename T>
+std::set<T> set_intersection(const std::set<T>& set1, const std::set<T>& set2) {
+  std::set<T> intersection;
+  std::set_intersection(
+      set1.begin(),
+      set1.end(),
+      set2.begin(),
+      set2.end(),
+      std::inserter(intersection, intersection.begin()));
+  return intersection;
+}
+
+// convert an iterable of Val* to be an iterable of TensorView*
+template <typename T1, typename T2>
+T1 tv_iterable(const T2& val_iterable) {
+  T1 tv_iterable = T1();
+  std::transform(
+      val_iterable.begin(),
+      val_iterable.end(),
+      std::back_inserter(tv_iterable),
+      [](Val* v) {
+        TORCH_INTERNAL_ASSERT(
+            v->getValType().value() == ValType::TensorView,
+            "When following the computeAt dependency chain, a non TensorView value was found.");
+        return static_cast<TensorView*>(v);
+      });
+  return tv_iterable;
+}
+} // namespace
+
 TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   TORCH_CHECK(
       this->fusion() == consumer->fusion(),
@@ -159,6 +201,9 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       " and ",
       consumer,
       " are not in the same fusion.");
+
+  FusionGuard fg(this->fusion());
+
   TORCH_CHECK(
       !this->sameAs(consumer), "Cannot call this->computeAt(this, ...)");
 
@@ -174,69 +219,112 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   // If not direct relationship follow dependency chain.
   auto dep_chains = DependencyCheck::getAllDependencyChains(this, consumer);
 
+  std::deque<Val*> dep_chain;
+  if (!dep_chains.empty())
+    dep_chain = dep_chains.front();
+
   TORCH_CHECK(
-      !dep_chains.empty() && !dep_chains.back().empty(),
+      !dep_chain.empty(),
       "Compute At expects ",
       this,
       " is a dependency of ",
       consumer,
       ", however it is not.");
 
-  // TVs we already called computeAt on
-  std::unordered_set<TensorView*> computeAt_ed;
+  TORCH_INTERNAL_ASSERT(
+      dep_chain.back() == consumer && dep_chain[0] == this,
+      "Error computing dependency chain.");
 
-  while (!dep_chains.empty()) {
-    auto dep_chain = dep_chains.front();
-    dep_chains.pop_front();
+  // Replay from consumer to producer
+  dep_chain.pop_back();
+  while (dep_chain.size() > 1) {
+    Val* consumer_val = dep_chain.back();
+    dep_chain.pop_back();
+    Val* producer_val = dep_chain.back();
 
-    while (dep_chain.size() > 1) {
-      TORCH_INTERNAL_ASSERT(
-          dep_chain.back()->getValType() == ValType::TensorView,
-          "When following the transform dependency chain, an invalid value was found.");
+    TORCH_INTERNAL_ASSERT(
+        consumer_val->getValType().value() == ValType::TensorView &&
+            producer_val->getValType().value() == ValType::TensorView,
+        "When following the computeAt dependency chain, a non TensorView value was found.");
 
-      TensorView* running_consumer = static_cast<TensorView*>(dep_chain.back());
-      dep_chain.pop_back();
+    TensorView* running_consumer = static_cast<TensorView*>(consumer_val);
+    TensorView* running_producer = static_cast<TensorView*>(producer_val);
+    running_producer->computeAt_impl(running_consumer, axis);
+  }
 
-      TORCH_INTERNAL_ASSERT(
-          dep_chain.back()->getValType() == ValType::TensorView,
-          "When following the transform dependency chain, an invalid value was found.");
+  /*
+   * Compute At has now worked from consumer to producer, transforming producer
+   * to match computeAt selected in consumer We now need to work from producer
+   * up to its consumers (including indirect consumption) so their use also
+   * matches. If we can find a TV that contains all uses of producer, we can
+   * terminate this propagation there. If not, we need to propagate all the way
+   * to outputs.
+   *
+   * First we'll look for that terminating point.
+   */
 
-      TensorView* running_producer = static_cast<TensorView*>(dep_chain.back());
-      if (computeAt_ed.find(running_producer) != computeAt_ed.end())
-        continue;
+  // Grab all uses of producer
+  auto val_all_consumer_chains =
+      DependencyCheck::getAllDependencyChainsTo(this);
 
-      running_producer->computeAt_impl(running_consumer, axis);
+  // Convert dep chains to tensor view chains
+  std::deque<std::deque<TensorView*>> all_consumer_chains;
+  for (auto val_dep_chain : val_all_consumer_chains)
+    all_consumer_chains.push_back(
+        tv_iterable<std::deque<TensorView*>>(val_dep_chain));
 
-      // If another view consumes producer, we may be computing this at a
-      // position that doesn't match that consumer. Likely producing too little
-      // for that next consumer
-      for (Expr* other_use :
-           FusionGuard::getCurFusion()->uses(running_producer)) {
-        for (Val* maybe_other_consumer : other_use->outputs()) {
-          if (*(maybe_other_consumer->getValType()) != ValType::TensorView)
-            continue;
+  std::set<TensorView*> common_consumers(
+      all_consumer_chains.front().begin(), all_consumer_chains.front().end());
+  for (auto dep_chain : all_consumer_chains) {
+    std::set<TensorView*> chain_consumers(dep_chain.begin(), dep_chain.end());
+    common_consumers = set_intersection(
+        common_consumers,
+        std::set<TensorView*>(dep_chain.begin(), dep_chain.end()));
+  }
 
-          TensorView* other_consumer =
-              static_cast<TensorView*>(maybe_other_consumer);
-
-          if (running_consumer->sameAs(other_consumer))
-            continue;
-
-          if (DependencyCheck::isDependencyOf(
-                  running_consumer, other_consumer)) {
-            if (computeAt_ed.find(running_consumer) == computeAt_ed.end())
-              running_consumer->computeAt_impl(other_consumer, axis);
-          } else {
-            // Either direction here is fine if there isn't a dependency, assume
-            // there's a dependency in the other direction
-            if (computeAt_ed.find(other_consumer) == computeAt_ed.end())
-              other_consumer->computeAt_impl(running_consumer, axis);
-          }
-        }
-      }
-
-      computeAt_ed.emplace(running_producer);
+  // Remove all TVs between producer and consumer
+  for (auto dep_chain : dep_chains) {
+    auto tv_chain = tv_iterable<std::deque<TensorView*>>(dep_chain);
+    for (auto tv : tv_chain) {
+      if (tv != consumer)
+        common_consumers.erase(tv);
     }
+  }
+
+  // Grab the first (topologically) common consumer
+  TensorView* common_consumer = nullptr;
+  if (!common_consumers.empty()) {
+    for (TensorView* tv : all_consumer_chains.front())
+      if (common_consumers.find(tv) != common_consumers.end()) {
+        common_consumer = tv;
+        break;
+      }
+  }
+
+  // Forward compute at through all consumers until common_consumer if there is
+  // one
+  std::set<TensorView*> output_set;
+  for (auto dep_chain : all_consumer_chains) {
+    while (dep_chain.size() > 1) {
+      TensorView* running_producer = dep_chain.front();
+      dep_chain.pop_front();
+      TensorView* running_consumer = dep_chain.front();
+
+      if (running_producer == common_consumer)
+        break;
+
+      running_consumer->forwardComputeAt_impl(running_producer, axis);
+      if (dep_chain.size() == 1) // last one
+        output_set.emplace(running_consumer);
+    }
+  }
+
+  std::vector<TensorView*> outputs(output_set.begin(), output_set.end());
+
+  for (decltype(outputs.size()) i{0};
+       i < outputs.size() - 1 && outputs.size() > 0;
+       i++) {
+    outputs[i]->computeAt_impl(outputs[i + 1], axis);
   }
 
   return this;

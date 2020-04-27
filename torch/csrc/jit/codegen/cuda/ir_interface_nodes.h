@@ -237,6 +237,9 @@ struct TORCH_CUDA_API TensorView : public Val {
   // Transform this view like consumer, mark compute_at_(viw,axis)
   void computeAt_impl(TensorView* consumer, int axis);
 
+  // Transform this view like producer, mark producer as compute_at_(this, axis)
+  void forwardComputeAt_impl(TensorView* producer, int axis);
+
   TensorDomain* domain_;
   TensorView* compute_at_view_ = nullptr;
   unsigned int compute_at_axis_ = 0;

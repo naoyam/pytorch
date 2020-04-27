@@ -110,12 +110,17 @@ struct TORCH_CUDA_API DependencyCheck {
   // deque.back() is "of", deque[0] is dependency if a chain exists.
   static std::deque<Val*> getSingleDependencyChain(Val* dependency, Val* of);
 
-  // Finds all Val* paths from "of" to "dependency". Returns that path.
+  // Finds all Val* paths from "of" to "dependency". Returns those paths.
   // deque[i].back() is "of", and deque[i][0] is "dependency". Returns an
   // empty deque if no dependency found.
   static std::deque<std::deque<Val*>> getAllDependencyChains(
       Val* dependency,
       Val* of);
+
+  // Finds all Val* paths from all leaf nodes to "dependency". Returns those
+  // paths. deque[i].back() are leaf nodes, and deque[i][0] is "dependency".
+  // Returns an empty deque if there are no uses of dependency found.
+  static std::deque<std::deque<Val*>> getAllDependencyChainsTo(Val* dependency);
 };
 
 } // namespace fuser

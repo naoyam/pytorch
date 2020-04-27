@@ -103,15 +103,15 @@ void IterVisitor::traverse(
     TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
 
   std::vector<Val*> outputs;
-  if (from_outputs_only) {
-    for (Val* out : fusion->outputs()) {
-      outputs.push_back(out);
-    }
-    // Search for Vals with no uses (output edges)
-  } else
+  for (Val* out : fusion->outputs()) {
+    outputs.push_back(out);
+  }
+  // Search for Vals with no uses (output edges)
+  if (!from_outputs_only)
     for (Val* val : fusion->vals()) {
       if (!fusion->used(val))
-        outputs.push_back(val);
+        if (!fusion->hasOutput(val))
+          outputs.push_back(val);
     }
 
   traverseFrom(fusion, outputs, false);
@@ -126,15 +126,15 @@ void IterVisitor::traverseAllPaths(
     TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
 
   std::vector<Val*> outputs;
-  if (from_outputs_only) {
-    for (Val* out : fusion->outputs()) {
-      outputs.push_back(out);
-    }
-    // Search for Vals with no uses (output edges)
-  } else
+  for (Val* out : fusion->outputs()) {
+    outputs.push_back(out);
+  }
+  // Search for Vals with no uses (output edges)
+  if (!from_outputs_only)
     for (Val* val : fusion->vals()) {
       if (!fusion->used(val))
-        outputs.push_back(val);
+        if (!fusion->hasOutput(val))
+          outputs.push_back(val);
     }
 
   traverseFrom(fusion, outputs, true);
@@ -168,6 +168,14 @@ struct DependencyChains : public IterVisitor {
     traverseFrom(_of->fusion(), {_of}, all_chains_);
   }
 
+  DependencyChains(Val* _dependency, bool all_chains_ = false)
+      : dependency_(_dependency) {
+    if (all_chains_)
+      traverseAllPaths(_dependency->fusion(), false);
+    else
+      traverse(_dependency->fusion(), false);
+  }
+
   static std::deque<Val*> getDependencyChain(Val* dependency, Val* of) {
     DependencyChains dp(dependency, of, false);
     if (dp.dep_chains.empty())
@@ -179,6 +187,13 @@ struct DependencyChains : public IterVisitor {
       Val* dependency,
       Val* of) {
     DependencyChains dp(dependency, of, true);
+    if (dp.dep_chains.empty())
+      return std::deque<std::deque<Val*>>();
+    return dp.dep_chains;
+  }
+
+  static std::deque<std::deque<Val*>> getDependencyChainsTo(Val* dependency) {
+    DependencyChains dp(dependency, true);
     if (dp.dep_chains.empty())
       return std::deque<std::deque<Val*>>();
     return dp.dep_chains;
@@ -201,6 +216,11 @@ std::deque<std::deque<Val*>> DependencyCheck::getAllDependencyChains(
     Val* dependency,
     Val* of) {
   return DependencyChains::getDependencyChains(dependency, of);
+}
+
+std::deque<std::deque<Val*>> DependencyCheck::getAllDependencyChainsTo(
+    Val* dependency) {
+  return DependencyChains::getDependencyChainsTo(dependency);
 }
 
 } // namespace fuser
