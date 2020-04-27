@@ -79,11 +79,6 @@ class IrParser {
       out->split(0, nthreads);
       // Split by another 4 which will be our unroll factor
       out->split(0, unroll_factor);
-
-      // Map blocks/threads
-      out->axis(0)->parallelize(ParallelType::BIDx);
-      out->axis(1)->parallelize(ParallelType::Unroll);
-      out->axis(-1)->parallelize(ParallelType::TIDx);
     }
 
     // Run through outputs, grab all inputs of outputs
@@ -99,15 +94,16 @@ class IrParser {
     }
 
     // Run through intermediates, unroll, and bind their axes
-    for (auto entry : value_maps_) {
-      CgValue val = entry.second;
-      if (fusion_->hasInput(val) || fusion_->hasOutput(val))
-        continue;
+    for (auto val : fusion_->vals()) {
       if (val->getValType().value() != ValType::TensorView)
         continue;
       TensorView* tv = static_cast<TensorView*>(val);
-      tv->axis(-2)->parallelize(ParallelType::Unroll);
-      tv->axis(-1)->parallelize(ParallelType::TIDx);
+      if (tv->nDims() ==
+          3) { // Should be true for all intermediates, but if one isn't hooked
+               // up right, skip it and hope for the best for now
+        tv->axis(-2)->parallelize(ParallelType::Unroll);
+        tv->axis(-1)->parallelize(ParallelType::TIDx);
+      }
     }
   }
 

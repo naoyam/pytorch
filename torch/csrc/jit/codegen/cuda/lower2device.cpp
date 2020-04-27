@@ -544,7 +544,7 @@ void validate(Fusion* fusion) {
     if (ir_utils::isTV(val)) {
       TensorView* tv = ir_utils::asTV(val);
       for (decltype(tv->nDims()) i{0}; i < tv->nDims(); i++) {
-        IterDomain* id = tv->getComputeAtAxis(i);
+        IterDomain* id = tv->getComputeAtAxis(i).first;
 
         if (id->isBlockDim())
           TORCH_CHECK(
@@ -557,8 +557,10 @@ void validate(Fusion* fusion) {
   } // for(Val* val : fusion->vals())
 } // validate
 
+} // namespace
+
 // Remove circular computeAt references
-void fixComputeAt(Fusion* fusion) {
+void GPULower::fixComputeAt(Fusion* fusion) {
   FusionGuard fg(fusion);
 
   std::vector<Expr*> exprs = fusion->exprs(true);
@@ -572,14 +574,12 @@ void fixComputeAt(Fusion* fusion) {
     TensorView* ctv = tv->getComputeAtView();
 
     if (ctv != nullptr && visited.find(ctv) == visited.end()) {
-      ctv->computeAt(tv, ctv->getComputeAtAxis());
+      ctv->setComputeAt(tv, ctv->getComputeAtAxis());
       tv->clearComputeAt();
     }
     visited.emplace(tv);
   }
 }
-
-} // namespace
 
 // Traverse through the fusion and print CUDA code associated with it
 std::vector<Expr*> GPULower::getLoweredExprs() {

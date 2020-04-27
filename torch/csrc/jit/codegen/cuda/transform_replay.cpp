@@ -241,9 +241,13 @@ TensorDomain* TransformReplay::runReplay(
 
   TORCH_CHECK(
       compute_at_axis >= 0 && compute_at_axis < int(replay_ref->nDims()) + 1,
-      "Transform replay cannot be performed as the compute_at_axis is not in the valid range, it should be 0 or greater, and less than ",
-      int(replay_ref->nDims()) + 1,
-      ".");
+      "Transform replay ",
+      replay_ref,
+      " on ",
+      replay_target,
+      " with axis ",
+      compute_at_axis,
+      " is an illegal transform.");
 
   this->compute_at_axis = compute_at_axis;
 

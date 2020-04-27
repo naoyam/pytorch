@@ -156,9 +156,9 @@ struct TORCH_CUDA_API TensorView : public Val {
 
   // Will check if an axis is inside computeAtAxis and will fetch the reference
   // to be used in code generation.
-  IterDomain* getComputeAtAxis(int pos) {
+  std::pair<IterDomain*, TensorView*> getComputeAtAxis(int pos) {
     if (!hasComputeAt() || getComputeAtAxis() <= pos)
-      return axis(pos);
+      return std::pair<IterDomain*, TensorView*>(axis(pos), this);
     return compute_at_view_->getComputeAtAxis(pos);
   }
 
@@ -171,7 +171,7 @@ struct TORCH_CUDA_API TensorView : public Val {
   TensorView* computeAt(TensorView* consumer, int axis);
 
   void clearComputeAt() {
-    compute_at_axis_ = -1;
+    compute_at_axis_ = 0;
     compute_at_view_ = nullptr;
   }
 
@@ -215,6 +215,12 @@ struct TORCH_CUDA_API TensorView : public Val {
   }
 
   void setComputeAt(TensorView* computeAtView, int axis) {
+    TORCH_INTERNAL_ASSERT(
+        axis > 0 && axis <= nDims(),
+        "Invalid computeAt on ",
+        this,
+        " tried to set to ",
+        axis);
     compute_at_view_ = computeAtView;
     compute_at_axis_ = axis;
   }

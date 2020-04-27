@@ -147,7 +147,7 @@ void TensorView::copyDomain(const TensorDomain* td) {
 void TensorView::computeAt_impl(TensorView* consumer, int axis) {
   // Reset view otherwise will conflict with replay.
   this->compute_at_view_ = nullptr;
-  this->compute_at_axis_ = -1;
+  this->compute_at_axis_ = 0;
   TransformReplay::replay(consumer, this, axis);
   this->compute_at_view_ = consumer;
   this->compute_at_axis_ = (unsigned int)axis;
@@ -156,8 +156,8 @@ void TensorView::computeAt_impl(TensorView* consumer, int axis) {
 void TensorView::forwardComputeAt_impl(TensorView* producer, int axis) {
   // Reset view otherwise will conflict with replay.
   producer->compute_at_view_ = nullptr;
-  producer->compute_at_axis_ = -1;
-  TransformReplay::replay(this, producer, axis);
+  producer->compute_at_axis_ = 0;
+  TransformReplay::replay(producer, this, axis);
   producer->compute_at_view_ = this;
   producer->compute_at_axis_ = (unsigned int)axis;
 }
@@ -236,7 +236,6 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       "Error computing dependency chain.");
 
   // Replay from consumer to producer
-  dep_chain.pop_back();
   while (dep_chain.size() > 1) {
     Val* consumer_val = dep_chain.back();
     dep_chain.pop_back();

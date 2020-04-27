@@ -86,6 +86,7 @@ struct TORCH_CUDA_API GPULower : public OptOutMutator {
   // the kernel being fetched for shapes, we want to replace input and output
   // tensors to reference the runtime structure containing sizes.
   void replaceSizes();
+  void fixComputeAt(Fusion* fusion);
 
  public:
   // Init printer on ostream

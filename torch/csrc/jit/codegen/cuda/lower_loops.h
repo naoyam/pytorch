@@ -52,6 +52,9 @@ struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
 
   // Keep all for loops conveniently to make unrolling easier
   std::vector<ForLoop*> for_loops;
+  // computeAT scope is determined by the iterat domain, and the tensor view it
+  // belongs to (the final TensorView when following the computeAt path)
+  std::vector<std::pair<IterDomain*, TensorView*>> compute_at_scope;
 
   // Get Register allocation statement for tensorview
   void pushAlloc(TensorView*);
@@ -63,7 +66,7 @@ struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   void setActiveView(const TensorView* const);
 
   // Open a new inner most for loop
-  void openFor(IterDomain*);
+  void openFor(std::pair<IterDomain*, TensorView*>);
 
   // Wrap pushBack in lower_utils if active_scope is null we want it to go
   // straight to lower_exprs

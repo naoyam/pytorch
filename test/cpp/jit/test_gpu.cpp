@@ -1,4 +1,4 @@
-//#if defined(USE_CUDA)
+#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -556,34 +556,36 @@ void testGPU_FusionParser() {
       << "}\n"
       << "\n"
       << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){\n"
-      << "  float T2[4];\n"
-      << "  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
-      << "    for(size_t i94 = 0; i94 < 4; ++i94 ) {\n"
-      << "      T2[ i94 ]\n"
-      << "         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
-      << "         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
-      << "    }\n"
-      << "  } else { \n"
-      << "    for(size_t i94 = 0; i94 < 4; ++i94 ) {\n"
-      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
-      << "        T2[ i94 ]\n"
-      << "           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
-      << "           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i94 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
+      << "  for(size_t i144 = 0; i144 < ( ceilDiv(( ceilDiv(T3.size[0], 128) ), 4) ); ++i144 ) {\n"
+      << "    float T2[4];\n"
+      << "    if ( ( ( ( ( ( i144 * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
+      << "      for(size_t i145 = 0; i145 < 4; ++i145 ) {\n"
+      << "        T2[ i145 ]\n"
+      << "           = T0[ ( ( ( ( ( i144 * 4 ) + i145 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
+      << "           * T1[ ( ( ( ( ( i144 * 4 ) + i145 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
+      << "      }\n"
+      << "    } else { \n"
+      << "      for(size_t i145 = 0; i145 < 4; ++i145 ) {\n"
+      << "        if ( ( ( ( ( ( i144 * 4 ) + i145 ) * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
+      << "          T2[ i145 ]\n"
+      << "             = T0[ ( ( ( ( ( i144 * 4 ) + i145 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
+      << "             * T1[ ( ( ( ( ( i144 * 4 ) + i145 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
+      << "        }\n"
       << "      }\n"
       << "    }\n"
-      << "  }\n"
-      << "  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "    for(size_t i95 = 0; i95 < 4; ++i95 ) {\n"
-      << "      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
-      << "         = T2[ i95 ]\n"
-      << "         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
-      << "    }\n"
-      << "  } else { \n"
-      << "    for(size_t i95 = 0; i95 < 4; ++i95 ) {\n"
-      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
-      << "           = T2[ i95 ]\n"
-      << "           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i95 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
+      << "    if ( ( ( ( ( ( i144 * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
+      << "      for(size_t i146 = 0; i146 < 4; ++i146 ) {\n"
+      << "        T3[ ( ( ( ( ( i144 * 4 ) + i146 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
+      << "           = T2[ i146 ]\n"
+      << "           * T0[ ( ( ( ( ( i144 * 4 ) + i146 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
+      << "      }\n"
+      << "    } else { \n"
+      << "      for(size_t i146 = 0; i146 < 4; ++i146 ) {\n"
+      << "        if ( ( ( ( ( ( i144 * 4 ) + i146 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
+      << "          T3[ ( ( ( ( ( i144 * 4 ) + i146 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
+      << "             = T2[ i146 ]\n"
+      << "             * T0[ ( ( ( ( ( i144 * 4 ) + i146 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
+      << "        }\n"
       << "      }\n"
       << "    }\n"
       << "  }\n"
@@ -682,6 +684,7 @@ void testGPU_FusionCodeGen() {
   new BinaryOp(BinaryOpType::Add, tv0, new Float(0.0), new Float(1.0));
   TensorView* tv1 = static_cast<TensorView*>(add(tv0, new Float(2.0)));
   TensorView* tv2 = static_cast<TensorView*>(add(tv1, new Float(3.0)));
+  fusion.addOutput(tv2);
 
   //[I0, I1, I2]
   tv2 = tv2->split(0, 4);
@@ -692,56 +695,8 @@ void testGPU_FusionCodeGen() {
   //[I0o, I0i{4}*I1, I2o, I2i{2}]
   tv2 = tv2->reorder({{0, 1}, {1, 0}, {3, 2}});
   //[I0i{4}*I1, I0o, I2i{2}, I2o]
-  fusion.addOutput(tv2);
 
   tv0->computeAt(tv2, -1);
-
-  std::stringstream ref;
-  ref << "__device__ int ceilDiv(const int a, const int b) {\n"
-      << "  return (a + b - 1) / b;\n"
-      << "}\n"
-      << "\n"
-      << "__global__ void CUDAGeneratedKernel(Tensor<float, 3> T2){\n"
-      << "  for(size_t i82 = 0; i82 < ( 4 * T2.size[1] ); ++i82 ) {\n"
-      << "    for(size_t i83 = 0; i83 < ( ceilDiv(T2.size[0], 4) ); ++i83 ) {\n"
-      << "      for(size_t i84 = 0; i84 < 2; ++i84 ) {\n"
-      << "        for(size_t i85 = 0; i85 < ( ceilDiv(T2.size[2], 2) ); ++i85 ) {\n"
-      << "          float T0[1];\n"
-      << "          if ( ( ( ( ( ( i83 * 4 ) + ( i82 / T2.size[1] ) ) < T2.size[0] ) && ( ( i82 % T2.size[1] ) < T2.size[1] ) ) && ( ( ( i85 * 2 ) + i84 ) < T2.size[2] ) ) ) { \n"
-      << "            T0[ 0 ]\n"
-      << "               = float(0)\n"
-      << "               + float(1);\n"
-      << "          }\n"
-      << "          float T1[1];\n"
-      << "          if ( ( ( ( ( ( i83 * 4 ) + ( i82 / T2.size[1] ) ) < T2.size[0] ) && ( ( i82 % T2.size[1] ) < T2.size[1] ) ) && ( ( ( i85 * 2 ) + i84 ) < T2.size[2] ) ) ) { \n"
-      << "            T1[ 0 ]\n"
-      << "               = T0[ 0 ]\n"
-      << "               + float(2);\n"
-      << "          }\n"
-      << "          if ( ( ( ( ( ( i83 * 4 ) + ( i82 / T2.size[1] ) ) < T2.size[0] ) && ( ( i82 % T2.size[1] ) < T2.size[1] ) ) && ( ( ( i85 * 2 ) + i84 ) < T2.size[2] ) ) ) { \n"
-      << "            T2[ ( ( ( i83 * 4 ) + ( i82 / T2.size[1] ) ) * T2.stride[0] ) + ( ( i82 % T2.size[1] ) * T2.stride[1] ) + ( ( ( i85 * 2 ) + i84 ) * T2.stride[2] ) ]\n"
-      << "               = T1[ 0 ]\n"
-      << "               + float(3);\n"
-      << "          }\n"
-      << "        }\n"
-      << "      }\n"
-      << "    }\n"
-      << "  }\n"
-      << "}\n";
-
-  GPULower gpulw(&fusion);
-  std::stringstream cdg;
-  gpulw.printKernel(cdg);
-
-  if (ref.str().size() != cdg.str().size() ||
-      ref.str().compare(cdg.str()) != 0) {
-    std::cerr
-        << " Codegen mismatch, codegen possibly changed, or is incorrect. "
-        << " \n ========= REF ========= \n"
-        << ref.str() << "\n========= RESULT ========== \n"
-        << cdg.str() << "\n=================" << std::endl;
-    TORCH_CHECK(false);
-  }
 
   torch::jit::fuser::cuda::CudaKernel prog;
   prog.device_ = 0;
@@ -790,43 +745,6 @@ void testGPU_FusionCodeGen2() {
 
   tv3->axis(0)->parallelize(ParallelType::BIDx);
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
-
-  std::stringstream ref;
-  ref << "__device__ int ceilDiv(const int a, const int b) {\n"
-      << "  return (a + b - 1) / b;\n"
-      << "}\n"
-      << "\n"
-      << "__global__ void CUDAGeneratedKernel(Tensor<float, 3> T0, Tensor<float, 3> T1, Tensor<float, 3> T3){\n"
-      << "  for(size_t i53 = 0; i53 < 4; ++i53 ) {\n"
-      << "    for(size_t i54 = 0; i54 < T3.size[1]; ++i54 ) {\n"
-      << "      float T2[1];\n"
-      << "      if ( ( ( ( blockIdx.x * 4 ) + i53 ) < T3.size[0] ) ) { \n"
-      << "        T2[ 0 ]\n"
-      << "           = T1[ ( ( ( blockIdx.x * 4 ) + i53 ) * T1.stride[0] ) + ( i54 * T1.stride[1] ) + ( threadIdx.x * T1.stride[2] ) ]\n"
-      << "           + float(2);\n"
-      << "      }\n"
-      << "      if ( ( ( ( blockIdx.x * 4 ) + i53 ) < T3.size[0] ) ) { \n"
-      << "        T3[ ( ( ( blockIdx.x * 4 ) + i53 ) * T3.stride[0] ) + ( i54 * T3.stride[1] ) + ( threadIdx.x * T3.stride[2] ) ]\n"
-      << "           = T0[ ( ( ( blockIdx.x * 4 ) + i53 ) * T0.stride[0] ) + ( i54 * T0.stride[1] ) + ( threadIdx.x * T0.stride[2] ) ]\n"
-      << "           + T2[ 0 ];\n"
-      << "      }\n"
-      << "    }\n"
-      << "  }\n"
-      << "}\n";
-
-  GPULower gpulw(&fusion);
-  std::stringstream cdg;
-  gpulw.printKernel(cdg);
-
-  if (ref.str().size() != cdg.str().size() ||
-      ref.str().compare(cdg.str()) != 0) {
-    std::cerr
-        << " Codegen mismatch, codegen possibly changed, or is incorrect. "
-        << " \n ========= REF ========= \n"
-        << ref.str() << "\n========= RESULT ========== \n"
-        << cdg.str() << "\n=================" << std::endl;
-    TORCH_CHECK(false);
-  }
 
   torch::jit::fuser::cuda::CudaKernel prog;
   prog.device_ = 0;
@@ -940,6 +858,8 @@ void testGPU_FusionExecKernel() {
   // Register your outputs
   fusion.addOutput(tv3);
 
+  tv3->merge(0);
+  tv3->split(0, 128);
   tv3->split(0, 4);
 
   // For all inputs, computeAt the output inline, temporaries should be squeezed
@@ -1015,58 +935,179 @@ int ceilDiv_(int a, int b) {
   return (a + b - 1) / b;
 }
 
-void testGPU_FusionLoopUnroll2() {
-  Fusion fusion;
-  FusionGuard fg(&fusion);
+void testGPU_FusionAdvancedComputeAt() {
+  // Case 1
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
 
-  TensorView* tv0 = makeDummyTensor(2);
-  fusion.addInput(tv0);
+    TensorView* tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
 
-  TensorView* tv1 = static_cast<TensorView*>(mul(tv0, new Float(-1.0)));
-  TensorView* tv2 = static_cast<TensorView*>(add(tv0, new Float(3.0)));
-  TensorView* tv3 = static_cast<TensorView*>(add(tv2, tv1));
+    TensorView* tv1 = static_cast<TensorView*>(mul(tv0, new Float(-1.0)));
+    TensorView* tv2 = static_cast<TensorView*>(add(tv0, new Float(3.0)));
+    TensorView* tv3 = static_cast<TensorView*>(mul(tv0, new Float(2.0)));
+    TensorView* tv4 = static_cast<TensorView*>(add(tv2, tv1));
 
-  // t1 = t0 * -1.0
-  // t2 = t0 + 3.0
-  // t3 = t2 t1
+    TensorView* tv5 = static_cast<TensorView*>(add(tv4, tv3));
+    TensorView* tv6 = static_cast<TensorView*>(add(tv0, tv3));
 
-  fusion.addOutput(tv3);
+    fusion.addOutput(tv5);
+    fusion.addOutput(tv6);
 
-  tv3->merge(0);
-  tv3->split(0, 128);
-  tv3->split(0, 4);
+    tv0->computeAt(tv3, 1);
 
-  tv0->computeAt(tv3, 1);
+    // Check propagation of this computeAt.
+    TORCH_INTERNAL_ASSERT(tv0->getComputeAtView() == tv3);
+    TORCH_INTERNAL_ASSERT(tv1->getComputeAtView() == tv4);
+    TORCH_INTERNAL_ASSERT(tv2->getComputeAtView() == tv4);
+    TORCH_INTERNAL_ASSERT(tv3->getComputeAtView() == tv6);
+    TORCH_INTERNAL_ASSERT(tv4->getComputeAtView() == tv5);
+    TORCH_INTERNAL_ASSERT(tv5->getComputeAtView() == tv6);
+    TORCH_INTERNAL_ASSERT(!tv6->hasComputeAt());
 
-  tv3->axis(0)->parallelize(ParallelType::BIDx);
-  tv3->axis(1)->parallelize(ParallelType::Unroll);
-  tv3->axis(-1)->parallelize(ParallelType::TIDx);
+    // Lets setup to actually run
+    tv6->merge(0);
+    tv6->split(0, 128);
+    tv6->split(0, 4);
 
-  tv1->axis(1)->parallelize(ParallelType::Unroll);
-  tv1->axis(-1)->parallelize(ParallelType::TIDx);
+    tv6->axis(0)->parallelize(ParallelType::BIDx);
 
-  tv2->axis(1)->parallelize(ParallelType::Unroll);
-  tv2->axis(-1)->parallelize(ParallelType::TIDx);
+    tv0->computeAt(tv6, 1);
 
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    for (Val* val : fusion.vals()) {
+      if (!fusion.hasInput(val) &&
+          val->getValType().value() == ValType::TensorView) {
+        TensorView* tv = static_cast<TensorView*>(val);
+        tv->axis(1)->parallelize(ParallelType::Unroll);
+        tv->axis(-1)->parallelize(ParallelType::TIDx);
+      }
+    }
 
-  at::Tensor t0 = at::randn({129, 127}, options);
-  auto t1 = t0.mul({-1.0});
-  auto t2 = t0.add({3.0});
-  auto t3 = t2.add(t1);
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-  at::Tensor kernel_out = at::zeros({129, 127}, options);
+    at::Tensor t0 = at::randn({129, 127}, options);
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.device_ = 0;
+    /*
+     * tv1 = tv0 * -1
+     * tv2 = tv0 + 3
+     * tv3 = tv0 * 2
+     * tv4 = tv2 + tv1
+     * tv5 = tv4 + tv3
+     * tv6 = tv0 + tv3
+     */
 
-  int blocks = ceilDiv_(ceilDiv_(129 * 127, 128), 4);
-  prog.grid(blocks); // 1 CTA
-  prog.block(128); // 128 Threads
-  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-  torch::jit::fuser::cuda::runTestKernel(prog, {t0}, {kernel_out});
+    auto t1 = t0.mul({-1.0});
+    auto t2 = t0.add({3.0});
+    auto t3 = t0.mul({2.0});
+    auto t4 = t2.add(t1);
+    auto t5 = t4.add(t3);
+    auto t6 = t0.add(t3);
 
-  TORCH_INTERNAL_ASSERT(at::allclose(kernel_out, t3));
+    at::Tensor kernel_tv5 = at::zeros({129, 127}, options);
+    at::Tensor kernel_tv6 = at::zeros({129, 127}, options);
+
+    torch::jit::fuser::cuda::CudaKernel prog;
+    prog.device_ = 0;
+
+    int blocks = ceilDiv_(
+        ceilDiv_(129 * 127, 128), 4); // numel / unroll factor / threads
+    prog.grid(blocks);
+    prog.block(128);
+    torch::jit::fuser::cuda::compileKernel(fusion, &prog);
+    torch::jit::fuser::cuda::runTestKernel(
+        prog, {t0}, {kernel_tv5, kernel_tv6});
+
+    TORCH_INTERNAL_ASSERT(at::allclose(kernel_tv5, t5));
+    TORCH_INTERNAL_ASSERT(at::allclose(kernel_tv6, t6));
+  }
+  // Case 2
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    TensorView* tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    TensorView* tv1 = static_cast<TensorView*>(mul(tv0, new Float(-1.0)));
+    TensorView* tv2 = static_cast<TensorView*>(add(tv0, new Float(3.0)));
+    TensorView* tv3 = static_cast<TensorView*>(mul(tv0, new Float(2.0)));
+    TensorView* tv4 = static_cast<TensorView*>(add(tv2, tv1));
+
+    TensorView* tv5 = static_cast<TensorView*>(add(tv4, tv3));
+    TensorView* tv6 = static_cast<TensorView*>(add(tv5, tv3));
+
+    fusion.addOutput(tv5);
+    fusion.addOutput(tv6);
+
+    tv2->computeAt(tv4, 1);
+    TORCH_INTERNAL_ASSERT(!tv0->hasComputeAt());
+    TORCH_INTERNAL_ASSERT(!tv1->hasComputeAt());
+    TORCH_INTERNAL_ASSERT(tv2->getComputeAtView() == tv4);
+    TORCH_INTERNAL_ASSERT(!tv3->hasComputeAt());
+    TORCH_INTERNAL_ASSERT(!tv4->hasComputeAt());
+    TORCH_INTERNAL_ASSERT(!tv5->hasComputeAt());
+    TORCH_INTERNAL_ASSERT(!tv6->hasComputeAt());
+
+    // Lets setup to actually run
+    tv6->merge(0);
+    tv6->split(0, 128);
+    tv6->split(0, 4);
+
+    tv6->axis(0)->parallelize(ParallelType::BIDx);
+
+    tv0->computeAt(tv6, 1);
+
+    for (Val* val : fusion.vals()) {
+      if (!fusion.hasInput(val) &&
+          val->getValType().value() == ValType::TensorView) {
+        TensorView* tv = static_cast<TensorView*>(val);
+
+        tv->axis(1)->parallelize(ParallelType::Unroll);
+        tv->axis(-1)->parallelize(ParallelType::TIDx);
+      }
+    }
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::randn({129, 127}, options);
+
+    /*
+     * tv1 = tv0 * -1
+     * tv2 = tv0 + 3
+     * tv3 = tv0 * 2
+     * tv4 = tv2 + tv1
+     * tv5 = tv4 + tv3
+     * tv6 = tv5 + tv3
+     */
+
+    auto t1 = t0.mul({-1.0});
+    auto t2 = t0.add({3.0});
+    auto t3 = t0.mul({2.0});
+    auto t4 = t2.add(t1);
+    auto t5 = t4.add(t3);
+    auto t6 = t5.add(t3);
+
+    at::Tensor kernel_tv5 = at::zeros({129, 127}, options);
+    at::Tensor kernel_tv6 = at::zeros({129, 127}, options);
+
+    torch::jit::fuser::cuda::CudaKernel prog;
+    prog.device_ = 0;
+
+    int blocks = ceilDiv_(
+        ceilDiv_(129 * 127, 128), 4); // numel / unroll factor / threads
+    prog.grid(blocks);
+    prog.block(128);
+    torch::jit::fuser::cuda::compileKernel(fusion, &prog);
+    torch::jit::fuser::cuda::runTestKernel(
+        prog, {t0}, {kernel_tv5, kernel_tv6});
+
+    GPULower gpulw(&fusion);
+    std::stringstream cdg;
+    gpulw.printKernel(cdg);
+
+    TORCH_INTERNAL_ASSERT(at::allclose(kernel_tv5, t5), cdg.str());
+    TORCH_INTERNAL_ASSERT(at::allclose(kernel_tv6, t6));
+  }
 }
 
 void testGPU_FusionLoopUnroll() {
@@ -1195,4 +1236,4 @@ void testGPU_FusionSimpleReduction() {
 
 } // namespace jit
 } // namespace torch
-//#endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)

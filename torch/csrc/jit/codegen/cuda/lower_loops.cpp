@@ -9,6 +9,13 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+
+bool operator==(
+    const std::pair<IterDomain*, TensorView*>& p1,
+    const std::pair<IterDomain*, TensorView*>& p2) {
+  return p1.first->sameAs(p2.first) && p1.second == p2.second;
+}
+
 // all the way in the loop nest, grab predicate
 /*
 for( i : ceil(I/4) ) {
@@ -235,7 +242,7 @@ void LoopNestGenerator::pushAlloc(TensorView* tv) {
       break;
     }
     if (alloc_pos < tv->nDims() &&
-        tv->getComputeAtAxis(alloc_pos)->parallel_method() ==
+        tv->getComputeAtAxis(alloc_pos).first->parallel_method() ==
             ParallelType::Unroll) {
       reset = false;
       break;
@@ -246,7 +253,7 @@ void LoopNestGenerator::pushAlloc(TensorView* tv) {
 
   std::vector<Val*> alloc_dims;
   for (auto i = alloc_pos; i < tv->nDims(); i++) {
-    IterDomain* dim = tv->getComputeAtAxis(i);
+    IterDomain* dim = tv->getComputeAtAxis(i).first;
     if (dim->isThreadDim())
       continue;
     // TORCH_INTERNAL_ASSERT()
@@ -286,7 +293,9 @@ void LoopNestGenerator::setActiveView(const TensorView* const tv) {
   active_view = tv->getComputeAtView();
 }
 
-void LoopNestGenerator::openFor(IterDomain* id) {
+void LoopNestGenerator::openFor(std::pair<IterDomain*, TensorView*> id_pair) {
+  compute_at_scope.push_back(id_pair);
+  IterDomain* id = id_pair.first;
   if (for_loops.size() > 0) {
     ForLoop* new_scope = scope_utils::openFor(for_loops.back(), id);
     for_loops.push_back(new_scope);
@@ -325,38 +334,20 @@ void LoopNestGenerator::pushBack(Expr* expr) {
 
 // Update fors based on tv.
 void LoopNestGenerator::updateToComputeAt(TensorView* tv) {
+  // NEED TO REMOVE ACTIVE VIEW!
   // 1) Reduce loop structure
-  if (active_view != nullptr) {
-    // - Else reduce to active_view_axis if loop_depth > active_view_axis
-    auto depth = for_loops.size();
-    for (auto i = depth; i > active_view_axis; i--) {
-      for_loops.pop_back();
-    }
+  while (!compute_at_scope.empty() &&
+         (compute_at_scope.back() !=
+              tv->getComputeAtAxis(compute_at_scope.size() - 1) ||
+          (compute_at_scope.size() > tv->getComputeAtAxis() &&
+           compute_at_scope.back().second != tv))) {
+    for_loops.pop_back();
+    compute_at_scope.pop_back();
   }
 
-  if (tv->hasComputeAt()) {
-    //  2) Set active_view(_axis)
-    //    - If there is a computeAt set for this TV
-    setActiveView(tv);
-
-    //  3) Open to compute At
-    //    - If there is a computeAt set for this TV
-    auto depth = for_loops.size();
-
-    for (auto i = depth; i < tv->getComputeAtAxis(); i++)
-      openFor(tv->getComputeAtAxis(i));
-  } else {
-    if (active_view != nullptr)
-      // If we're the last computeAt of a block, active view should match this
-      // tv
-      TORCH_INTERNAL_ASSERT(
-          tv->sameAs(active_view),
-          "Error detected in code lowering. Expected ",
-          active_view,
-          " but recieved ",
-          tv);
-
-    clearActiveView();
+  // 2) Open back up to computeAt
+  while (compute_at_scope.size() < tv->getComputeAtAxis()) {
+    openFor(tv->getComputeAtAxis(compute_at_scope.size()));
   }
 }
 
@@ -381,6 +372,7 @@ void LoopNestGenerator::handle(Expr* expr) {
     return;
 
   TensorView* out = static_cast<TensorView*>(expr->output(0));
+
   updateToComputeAt(out);
 
   //  4) Allocate the output.
