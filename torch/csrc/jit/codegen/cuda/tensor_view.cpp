@@ -303,6 +303,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   // Forward compute at through all consumers until common_consumer if there is
   // one
   std::set<TensorView*> output_set;
+  std::vector<TensorView*> ordered_outputs;
   for (auto dep_chain : all_consumer_chains) {
     while (dep_chain.size() > 1) {
       TensorView* running_producer = dep_chain.front();
@@ -313,17 +314,19 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
         break;
 
       running_consumer->forwardComputeAt_impl(running_producer, axis);
-      if (dep_chain.size() == 1) // last one
-        output_set.emplace(running_consumer);
+      if (dep_chain.size() == 1) { // last one
+        if (output_set.find(running_consumer) == output_set.end()) {
+          output_set.emplace(running_consumer);
+          ordered_outputs.push_back(running_consumer);
+        }
+      }
     }
   }
 
-  std::vector<TensorView*> outputs(output_set.begin(), output_set.end());
-
-  for (decltype(outputs.size()) i{0};
-       i < outputs.size() - 1 && outputs.size() > 0;
+  for (decltype(ordered_outputs.size()) i{0};
+       i < ordered_outputs.size() - 1 && ordered_outputs.size() > 0;
        i++) {
-    outputs[i]->computeAt_impl(outputs[i + 1], axis);
+    ordered_outputs[i]->computeAt_impl(ordered_outputs[i + 1], axis);
   }
 
   return this;

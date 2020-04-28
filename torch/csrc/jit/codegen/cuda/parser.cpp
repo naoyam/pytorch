@@ -3,6 +3,7 @@
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/lower2device.h>
 
 #include <torch/csrc/jit/frontend/function_schema_parser.h>
 #include <torch/csrc/jit/ir/constants.h>
@@ -91,6 +92,7 @@ class IrParser {
         if (inp->getValType().value() == ValType::TensorView)
           static_cast<TensorView*>(inp)->computeAt(out, 1);
       }
+      out->axis(0)->parallelize(ParallelType::BIDx);
     }
 
     // Run through intermediates, unroll, and bind their axes
@@ -98,9 +100,10 @@ class IrParser {
       if (val->getValType().value() != ValType::TensorView)
         continue;
       TensorView* tv = static_cast<TensorView*>(val);
-      if (tv->nDims() ==
-          3) { // Should be true for all intermediates, but if one isn't hooked
-               // up right, skip it and hope for the best for now
+
+      // Should be true for all intermediates, but if one isn't hooked
+      // up right, skip it and hope for the best for now
+      if (tv->nDims() == 3) {
         tv->axis(-2)->parallelize(ParallelType::Unroll);
         tv->axis(-1)->parallelize(ParallelType::TIDx);
       }
