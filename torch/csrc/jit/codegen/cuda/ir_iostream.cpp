@@ -119,6 +119,8 @@ void IRPrinter::handle(const IterDomain* const id) {
   }
   print_inline(id->extent());
   os << "}";
+  if(id->isRFactorProduct())
+    os<<"rf";
 }
 
 void IRPrinter::handle(const TensorIndex* const ti) {

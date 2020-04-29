@@ -154,7 +154,8 @@ struct TORCH_CUDA_API IterDomain : public Val {
       Val* _start,
       Val* _extent,
       ParallelType _parallel_method = ParallelType::Serial,
-      bool _reduction_domain = false);
+      bool _reduction_domain = false,
+      bool _rfactor_domain = false);
 
   bool sameAs(const IterDomain* const other) const;
 
@@ -164,6 +165,10 @@ struct TORCH_CUDA_API IterDomain : public Val {
 
   bool isReduction() const noexcept {
     return is_reduction_domain_;
+  }
+
+  bool isRFactorProduct() const noexcept {
+    return is_rfactor_domain_;
   }
 
   bool isParallelized() const {
@@ -240,6 +245,7 @@ struct TORCH_CUDA_API IterDomain : public Val {
   Val* const extent_;
   ParallelType parallel_method_ = ParallelType::Serial;
   bool is_reduction_domain_;
+  bool is_rfactor_domain_;
 };
 /*
  * TensorDomain holds a vector of IterDomains. It holds an IterDomain for every
@@ -277,6 +283,9 @@ struct TORCH_CUDA_API TensorDomain : public Val {
   }
 
   bool hasReduction() const;
+
+  
+  bool hasRFactor() const;
 
   TensorDomain* noReductions() const;
 

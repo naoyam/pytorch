@@ -1425,22 +1425,23 @@ void testGPU_FusionSimpleReduction() {
   tv1->merge(0);
   tv1->merge(-2);
 
-  // std::cout<<"TV1 before rfactor: "<<tv1<<std::endl;
-  TensorDomain* new_domain = TransformRFactor::runReplay(tv1->domain(), {2});
-  TensorDomain* new_domain2 = TransformRFactor::runReplay2(tv1->domain(), {2});
+  // RFactor axis 2:
+  TensorDomain* new_domain = TransformRFactor::runReplay(tv1->domain(), {0});
+  TensorDomain* new_domain2 = TransformRFactor::runReplay2(tv1->domain(), {0});
   TensorDomain* replayed = TransformReplay::fullReplay(new_domain2, new_domain);
-  // std::cout<<tv1<<std::endl;
-  // std::cout<<new_domain<<std::endl;
-  // std::cout<<new_domain2<<std::endl;
-  // std::cout<<new_domain<<" -> "<<replayed<<std::endl;
-  // std::cout<<"========="<<std::endl;
-  // std::cout<<tv1->getRootDomain()<<std::endl;
-  // std::cout<<new_domain->rootDomain()<<std::endl;
-  // std::cout<<new_domain2->rootDomain()<<std::endl;
+  std::cout<<tv1<<std::endl;
+  std::cout<<new_domain<<std::endl;
+  std::cout<<new_domain2<<std::endl;
+  std::cout<<new_domain<<" -> "<<replayed<<std::endl;
+  std::cout<<"========="<<std::endl;
+  std::cout<<tv1->getRootDomain()<<std::endl;
+  std::cout<<new_domain->rootDomain()<<std::endl;
+  std::cout<<new_domain2->rootDomain()<<std::endl;
 
   TORCH_INTERNAL_ASSERT(
       new_domain->nDims() - 1 == new_domain2->nDims(),
       "Error in rfactor, number of dimensions is not correct.");
+  
   TORCH_INTERNAL_ASSERT(
       replayed->nDims() ==
           new_domain->rootDomain()->nDims() +
@@ -1451,11 +1452,14 @@ void testGPU_FusionSimpleReduction() {
       " and ",
       new_domain->rootDomain()->nDims() + 1,
       ".");
+
   TORCH_INTERNAL_ASSERT(
       !replayed->sameAs(new_domain) && !new_domain->sameAs(new_domain2) &&
           !tv1->domain()->sameAs(new_domain) &&
           !tv1->domain()->sameAs(new_domain2),
       "Error in rfactor, number of dimensions is not correct.");
+
+  TORCH_INTERNAL_ASSERT(new_domain->rootDomain()->axis(1)->isRFactorProduct())
 }
 
 } // namespace jit

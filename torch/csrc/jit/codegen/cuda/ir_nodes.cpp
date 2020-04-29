@@ -126,12 +126,14 @@ IterDomain::IterDomain(
     Val* _start,
     Val* _extent,
     ParallelType _parallel_method,
-    bool _reduction_domain)
+    bool _reduction_domain,
+    bool _rfactor_domain)
     : Val(ValType::IterDomain, DataType::Int),
       start_(_start),
       extent_(_extent),
       parallel_method_(_parallel_method),
-      is_reduction_domain_(_reduction_domain) {
+      is_reduction_domain_(_reduction_domain),
+      is_rfactor_domain_(_rfactor_domain) {
   TORCH_INTERNAL_ASSERT(
       _extent->isAnInt(),
       "Cannot create an iter domain over an extent that is not an int but recieved ",
@@ -179,6 +181,12 @@ bool TensorDomain::sameAs(const TensorDomain* const other) const {
 bool TensorDomain::hasReduction() const {
   return std::any_of(domain_.begin(), domain_.end(), [](IterDomain* id) {
     return id->isReduction();
+  });
+}
+
+bool TensorDomain::hasRFactor() const {
+  return std::any_of(domain_.begin(), domain_.end(), [](IterDomain* id) {
+    return id->isRFactorProduct();
   });
 }
 

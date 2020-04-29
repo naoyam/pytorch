@@ -50,17 +50,12 @@ TensorDomain* TransformRFactor::tdReplayBackward(
     if (i == axis) {
       IterDomain* orig_axis = split->in()->axis(saxis);
       // Insert pre-split axis, make sure isReduction matches what is expected
-      if (split->in()->axis(saxis)->isReduction() !=
-          td->axis(axis)->isReduction()) {
-        new_domain.push_back(new IterDomain(
-            orig_axis->start(),
-            orig_axis->extent(),
-            orig_axis->parallel_method(),
-            td->axis(axis)->isReduction()));
-      } else {
-        // preserve orig axis if it matches
-        new_domain.push_back(orig_axis);
-      }
+      new_domain.push_back(new IterDomain(
+        orig_axis->start(),
+        orig_axis->extent(),
+        orig_axis->parallel_method(),
+        td->axis(axis)->isReduction(),
+        td->axis(axis)->isRFactorProduct()));
     } else if (i != axis_p_1) {
       // Add in all other axes, these may not match the input td to the split.
       new_domain.push_back(td->axis(i));
@@ -112,9 +107,21 @@ TensorDomain* TransformRFactor::tdReplayBackward(
   std::vector<IterDomain*> new_domain;
   for (decltype(td->nDims()) i{0}; i < td->nDims(); i++) {
     if (i == axis) {
-      // Insert pre-split axis
-      new_domain.push_back(merge->in()->axis(maxis));
-      new_domain.push_back(merge->in()->axis(maxis + 1));
+      IterDomain* td_axis = td->axis(axis);
+      IterDomain* maxis_1 = merge->in()->axis(maxis);
+      IterDomain* maxis_2 = merge->in()->axis(maxis + 1);
+      new_domain.push_back(new IterDomain(
+          maxis_1->start(),
+          maxis_1->extent(),
+          ParallelType::Serial,
+          td_axis->isReduction(),
+          td_axis->isRFactorProduct()));
+      new_domain.push_back(new IterDomain(
+          maxis_2->start(),
+          maxis_2->extent(),
+          ParallelType::Serial,
+          td_axis->isReduction(),
+          td_axis->isRFactorProduct()));
     } else {
       // Add in all other axes, these may not match the input td to the split.
       new_domain.push_back(td->axis(i));
@@ -239,32 +246,44 @@ TensorDomain* TransformRFactor::runReplay(
   std::set<int> axes_set(axes.begin(), axes.end());
 
   // Make a copy of in_td as we're going to change its history:
+  bool found_rfactor = false;
   std::vector<IterDomain*> domain_copy;
   for (int i{0}; i < ndims; i++) {
-    if (axes_set.find(i) != axes_set.end()) {
-      IterDomain* orig_axis = in_td->axis(i);
+    IterDomain* orig_axis = in_td->axis(i);
+    if (axes_set.find(i) != axes_set.end())
       TORCH_CHECK(
           orig_axis->isReduction(),
           "Tried to rFactor an axis that is not a reduction.");
-      domain_copy.push_back(new IterDomain(
-          orig_axis->start(),
-          orig_axis->extent(),
-          orig_axis->parallel_method(),
-          false));
+
+    if (orig_axis->isReduction()) {
+      if (axes_set.find(i) == axes_set.end()) {
+        domain_copy.push_back(new IterDomain(
+            orig_axis->start(),
+            orig_axis->extent(),
+            orig_axis->parallel_method(),
+            false,
+            true));
+        found_rfactor = true;
+      } else {
+        domain_copy.push_back(new IterDomain(
+            orig_axis->start(),
+            orig_axis->extent(),
+            orig_axis->parallel_method(),
+            true,
+            true));
+      }
     } else {
       domain_copy.push_back(in_td->axis(i));
     }
   }
+  TORCH_CHECK(found_rfactor, "Could not find axis to rfactor out.");
 
   // TD that we will actually modify
   TensorDomain* td = new TensorDomain(domain_copy);
 
   TransformRFactor trf;
   trf.axis_map.resize(ndims);
-
-  for (decltype(ndims) i{0}; i < ndims; i++) {
-    trf.axis_map[i] = axes_set.find(i) == axes_set.end() ? i : -1;
-  }
+  std::iota(trf.axis_map.begin(), trf.axis_map.end(), 0);
 
   trf.replayBackward(td, TransformIter::getHistory(in_td));
 
@@ -293,19 +312,22 @@ TensorDomain* TransformRFactor::runReplay2(
   TransformRFactor trf;
   trf.axis_map.resize(ndims);
 
-  for (decltype(ndims) i{0}; i < ndims; i++) {
-    trf.axis_map[i] = axes_set.find(i) == axes_set.end() ? i : -1;
-  }
-
   // Make a copy of in_td as we're going to change its history:
   std::vector<IterDomain*> domain_copy;
+  bool found_rfactor = false;
   int it = 0;
   for (int i{0}; i < ndims; i++) {
     IterDomain* orig_axis = in_td->axis(i);
-    if (axes_set.find(i) != axes_set.end()) {
+    if(axes_set.find(i) != axes_set.end())
+      TORCH_CHECK(
+          orig_axis->isReduction(),
+          "Tried to rFactor an axis that is not a reduction.");
+    
+    if (orig_axis->isReduction() && axes_set.find(i) == axes_set.end()) {
       domain_copy.push_back(orig_axis);
       trf.axis_map[i] = -1;
       it++;
+      found_rfactor = true;
     } else if (!orig_axis->isReduction()) {
       domain_copy.push_back(orig_axis);
       trf.axis_map[i] = it++;
@@ -313,6 +335,9 @@ TensorDomain* TransformRFactor::runReplay2(
       trf.axis_map[i] = -1;
     }
   }
+
+  TORCH_CHECK(found_rfactor, "Could not find axis to rfactor out.");
+
   // TD that we will actually modify
   TensorDomain* td = new TensorDomain(domain_copy);
 
