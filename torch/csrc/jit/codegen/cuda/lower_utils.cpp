@@ -444,6 +444,13 @@ bool isTVOp(const Expr* expr) {
   return false;
 }
 
+bool isScalarOp(const Expr* expr) {
+  for(auto out : expr->outputs())
+    if(!out->isScalar())
+      return false;
+  return true;
+}
+
 void ASSERT_EXPR(Statement* stmt) {
   TORCH_INTERNAL_ASSERT(
       stmt->isExpr(),

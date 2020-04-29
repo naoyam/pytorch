@@ -328,9 +328,23 @@ void IRPrinter::handle(const IfThenElse* const ite) {
 
 void IRPrinter::handle(const Allocate* const a) {
   indent();
-  os << a->buf_type() << " T" << a->buffer()->name() << "[";
-  print_inline(a->extent());
-  os << "];" << std::endl;
+  os << a->buf_type();
+  if(a->buffer()->getValType() == ValType::TensorView){
+    os << " T" << a->buffer()->name() << "[";
+    print_inline(a->extent());
+    os << "];\n";
+  }else{
+    if(a->extent()->isOneInt()){
+      os<< " " << a->buffer() << ";\n";
+    }else{
+      TORCH_INTERNAL_ASSERT(
+          false,
+          "Received unexpected allocation: ",
+          a->buffer(),
+          " with alloc of ",
+          a->extent());
+    }
+  }
 }
 
 void IRPrinter::handle(const Split* const s) {

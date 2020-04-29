@@ -36,6 +36,9 @@ struct KernelArgsReq {
 
 class CudaKernel {
  public:
+  std::deque<Val*> inputs;
+  std::deque<Val*> outputs;
+
   CudaKernel() = default;
 
   CUmodule& getModule() {
@@ -82,8 +85,10 @@ TORCH_CUDA_API void runKernel(
 // Facility API to run kernel in tests.
 TORCH_CUDA_API void runTestKernel(
     CudaKernel& entry,
-    const std::vector<at::Tensor> inputs,
-    std::vector<at::Tensor> outputs);
+    std::deque<at::Tensor> tensor_inputs,
+    std::deque<float> float_inputs,
+    std::deque<at::Tensor> tensor_outputs,
+    std::deque<float> float_outputs);
 
 } // namespace cuda
 } // namespace fuser

@@ -537,8 +537,8 @@ Val* TensorIndex::index(int i) const {
   return indices_[i];
 }
 
-Allocate::Allocate(TensorView* _tv, Val* _size)
-    : Expr(ExprType::Allocate), buffer_(_tv), extent_{_size} {
+Allocate::Allocate(Val* _val, Val* _size)
+    : Expr(ExprType::Allocate), buffer_(_val), extent_{_size} {
   if (!_size->isAnInt() || !_size->isConstScalar()) {
     std::stringstream flat_size;
     IRPrinter irp(flat_size);
@@ -546,13 +546,13 @@ Allocate::Allocate(TensorView* _tv, Val* _size)
     TORCH_INTERNAL_ASSERT(
         false,
         "Allocations must be based on constant integers but tried to alloc ",
-        _tv,
+        _val,
         " with size ",
         flat_size.str(),
         ".");
   }
   addInput(_size);
-  addInput(_tv);
+  addInput(_val);
   this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 

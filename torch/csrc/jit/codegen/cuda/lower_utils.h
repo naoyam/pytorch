@@ -58,6 +58,8 @@ bool isTV(const Val* const);
 
 bool isTVOp(const Expr*);
 
+bool isScalarOp(const Expr*);
+
 void ASSERT_EXPR(Statement*);
 
 bool isScope(const Expr*);

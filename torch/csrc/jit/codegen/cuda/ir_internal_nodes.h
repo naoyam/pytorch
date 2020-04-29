@@ -587,20 +587,20 @@ struct TORCH_CUDA_API Allocate : public Expr {
   Allocate(Allocate&& other) = delete;
   Allocate& operator=(Allocate&& other) = delete;
 
-  Allocate(TensorView* _tv, Val* size);
+  Allocate(Val* _tv, Val* size);
 
   DataType buf_type() const;
   Val* extent() const noexcept {
     return extent_;
   }
-  TensorView* buffer() const noexcept {
+  Val* buffer() const noexcept {
     return buffer_;
   }
 
   bool sameAs(const Allocate* other) const;
 
  private:
-  TensorView* buffer_;
+  Val* buffer_;
   Val* extent_;
 };
 

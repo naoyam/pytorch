@@ -101,8 +101,7 @@ struct KernelArgumentHolder {
     changed = true;
     TORCH_INTERNAL_ASSERT(
         val.isScalar(),
-        "Tried to push an arg to run in a fused kernel, expected a scalar but got, ",
-        val);
+        "Tried to push an arg to run in a fused kernel, expected a scalar but got something else.");
     switch (val.toScalar().type()) {
       case (c10::ScalarType::Double):
         arguments.push_back(new FloatArg((float)val.toDouble()));
@@ -166,6 +165,13 @@ void compileKernel(Fusion& fusion, CudaKernel* entry) {
   std::string code;
   std::string func_name;
   std::tie(func_name, code) = codeGeneration(fusion);
+
+  // Keep input and output reference to validate/line up arguments
+  for(auto inp : fusion.inputs())
+    entry->inputs.push_back(inp);
+
+  for(auto out : fusion.outputs())
+    entry->outputs.push_back(out);
 
   // vvv NVRTC COMPILATION vvv
 
@@ -268,6 +274,8 @@ void runKernel(
     kernel_args.push(output);
   }
 
+  // TODO validate input and output types/nDims
+
   // launch kernel;
   AT_CUDA_DRIVER_CHECK(nvrtc().cuLaunchKernel(
       entry->function_,
@@ -290,8 +298,11 @@ void runKernel(
 // This function is here for testing purposes only
 void runTestKernel(
     CudaKernel& entry,
-    const std::vector<at::Tensor> inputs,
-    std::vector<at::Tensor> outputs) {
+    std::deque<at::Tensor> tensor_inputs,
+    std::deque<float> float_inputs,
+    std::deque<at::Tensor> tensor_outputs,
+    std::deque<float> float_outputs){
+
   const auto prior_device = at::cuda::current_device();
   at::cuda::set_device(entry.device_);
   auto stream = at::cuda::getCurrentCUDAStream();
@@ -301,12 +312,31 @@ void runTestKernel(
   // Naive I/O setup, I'm ignoring all the potential transformation (i.e. I/O
   // allocated here from the subgraph could be, and very likely are, different
   // from I/O expected by the generated CUDA kernel.
-  for (auto& input : inputs) {
-    kernel_args.push(input, outputs[0].sizes());
+  
+  for (auto input : entry.inputs) {
+    if(input->getValType().value() == ValType::TensorView){
+      TORCH_INTERNAL_ASSERT(tensor_outputs.size() > 0, "Expected at least one tensor to be output.");
+      kernel_args.push(tensor_inputs.front(), tensor_outputs[0].sizes());
+      tensor_inputs.pop_front();
+    } else if (input->getValType().value() == ValType::Scalar && input->getDataType().value() == DataType::Float){
+      kernel_args.push(c10::Scalar(float_inputs.front()));
+      float_inputs.pop_front();
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Received unexpected input: ", input);
+    }
   }
 
-  for (auto& output : outputs) {
-    kernel_args.push(output);
+  for (auto& output : entry.outputs) {
+        if(output->getValType().value() == ValType::TensorView){
+      TORCH_INTERNAL_ASSERT(tensor_outputs.size() > 0, "Expected at least one tensor to be output.");
+      kernel_args.push(tensor_outputs.front());
+      tensor_outputs.pop_front();
+    } else if (output->getValType().value() == ValType::Scalar && output->getDataType().value() == DataType::Float){
+      kernel_args.push(c10::Scalar(float_outputs.front()));
+      float_outputs.pop_front();
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Received unexpected output: ", output);
+    }
   }
 
   // launch kernel;

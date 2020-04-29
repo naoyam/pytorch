@@ -596,7 +596,8 @@ std::vector<Expr*> GPULower::getLoweredExprs() {
   validate(fusion_);
   replaceSizes();
 
-  auto loop_nests = LoopNestGenerator::getLoopNest(fusion_);
+
+  auto loop_nests = LoopNestGenerator::getLoopNest(fusion_,  fusion_->exprs(true));
   auto unrolled_loops = UnrollPass::runPass(fusion_, loop_nests);
 
   // Run through loop nests and further lower the expressions
