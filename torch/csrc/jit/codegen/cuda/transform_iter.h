@@ -54,11 +54,22 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
     return ti.runBackward(td);
   }
 
+  // Takes influence vector of bools, tracks them back to propagate true to root
+  // axes that were modified into td axes matching marked influence vector
   static std::vector<bool> getRootInfluence(
       TensorDomain* td,
-      std::vector<bool> td_influence);
+      std::vector<bool> influence);
 
+  // Goes through history and applies it to td, with the axis_map provided.
+  // Axis_map entries of -1 mean those axes won't be modified
   static TensorDomain* replay(
+      TensorDomain* td,
+      std::vector<Expr*> history,
+      std::vector<int> axis_map);
+
+  // Takes td, and replays history backwards on it to create a new root tensor
+  // domain using axis_map. Entries in axis_map == -1 will not be modified
+  static TensorDomain* replayBackward(
       TensorDomain* td,
       std::vector<Expr*> history,
       std::vector<int> axis_map);

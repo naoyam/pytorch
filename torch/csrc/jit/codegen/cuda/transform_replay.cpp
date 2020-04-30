@@ -82,7 +82,18 @@ TensorDomain* TransformReplay::runReplay(
   std::vector<int> axis_map(ref_root->nDims(), -1);
   decltype(replay_target->nDims()) it = 0, ir = 0;
   while(it < replay_target->nDims() && ir < ref_root->nDims()){
-    if(include_reductions || !replay_target->axis(it)->isReduction()){
+    bool isreduction = replay_target->axis(it)->isReduction();
+    bool isrfactor = replay_target->axis(it)->isRFactorProduct();
+    if( !isreduction || ( include_reductions && isreduction ) ){
+      TORCH_CHECK(
+          !isrfactor,
+          "Invalid transformation found, an rfactor axis cannot be modified during replay.",
+          " There likely is an invalid compute at. Found during replay of ",
+          replay_ref,
+          " onto ",
+          replay_target,
+          " at comptue at axis ",
+          compute_at_axis);
       if(root_influence_vector[ir]){
         axis_map[ir++] = it++;
       }else{

@@ -14,27 +14,7 @@ namespace fuser {
 
 // TODO: Only replay dispatch is really borrowed from TransformIter, we should
 // reevaluate the reuse of dispatch for classes that inherit TransformIter.
-struct TORCH_CUDA_API TransformRFactor : public TransformIter {
- private:
-  /*
-   * Functions to backward propagate influence from split/merge/reorder
-   *
-   * We can't override TransformIter in this case as we're trying to produce a
-   * new root tensor domain, so we want a return value.
-   */
-  TensorDomain* replayBackward(Split*, TensorDomain*) override;
-  TensorDomain* replayBackward(Merge*, TensorDomain*) override;
-  TensorDomain* replayBackward(Reorder*, TensorDomain*) override;
-
-  // Have to have our own dispatch because of ther return type
-  TensorDomain* replayBackward(Expr*, TensorDomain*);
-
-  // Entry for backward influence propagation on td following record, this
-  // transformation is in place on td
-  void replayBackward(TensorDomain* td, std::vector<Expr*> history);
-
-  std::vector<int> axis_map;
-
+struct TORCH_CUDA_API TransformRFactor{
  public:
   // Create a copy of td, change its history by presrving axes so they appear in
   // the root domain
