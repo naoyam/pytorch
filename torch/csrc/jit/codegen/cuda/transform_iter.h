@@ -48,11 +48,20 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
   // Returns transformation exprs in reverse order (as seen processing
   // backwards)
   static std::vector<Expr*> getHistory(TensorDomain*);
-  
+
   static TensorDomain* getRoot(TensorDomain* td) {
     TransformIter ti;
     return ti.runBackward(td);
   }
+
+  static std::vector<bool> getRootInfluence(
+      TensorDomain* td,
+      std::vector<bool> td_influence);
+
+  static TensorDomain* replay(
+      TensorDomain* td,
+      std::vector<Expr*> history,
+      std::vector<int> axis_map);
 };
 
 } // namespace fuser
