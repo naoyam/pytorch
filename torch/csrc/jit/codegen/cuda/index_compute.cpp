@@ -6,30 +6,32 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-void IndexCompute::replayBackward(Split* expr) {
-  int ax = expr->axis();
+TensorDomain* IndexCompute::replayBackward(Split* split, TensorDomain* td) {
+  int ax = split->axis();
   TORCH_INTERNAL_ASSERT(
       ax >= 0 && ax + 1 < indices.size(),
       "Hit an invalid Split transformation during IndexCompute, axis is not within bounds.");
-  indices[ax] = add(mul(indices[ax], expr->factor()), indices[ax + 1]);
+  indices[ax] = add(mul(indices[ax], split->factor()), indices[ax + 1]);
   indices.erase(indices.begin() + ax + 1);
+  return split->in();
 }
 
-void IndexCompute::replayBackward(Merge* expr) {
-  int ax = expr->axis();
+TensorDomain* IndexCompute::replayBackward(Merge* merge, TensorDomain* td) {
+  int ax = merge->axis();
   TORCH_INTERNAL_ASSERT(
       ax >= 0 && ax < indices.size(),
       "Hit an invalid MERGE transformation during IndexCompute, axis is not within bounds.");
 
-  Val* I = expr->in()->axis(ax + 1)->extent();
+  Val* I = merge->in()->axis(ax + 1)->extent();
   Val* ind = indices[ax];
   indices[ax] = div(ind, I);
   indices.insert(indices.begin() + ax + 1, mod(ind, I));
+  return merge->in();
 }
 
-void IndexCompute::replayBackward(Reorder* expr) {
+TensorDomain* IndexCompute::replayBackward(Reorder* reorder, TensorDomain* td) {
   // pos2axis[new_pos] = old_pos Generate new axis2pos map
-  const std::vector<int>& pos2axis = expr->pos2axis();
+  const std::vector<int>& pos2axis = reorder->pos2axis();
 
   std::vector<Val*> reordered_indices;
 
@@ -55,6 +57,7 @@ void IndexCompute::replayBackward(Reorder* expr) {
   }
 
   indices = reordered_indices;
+  return reorder->in();
 }
 
 IndexCompute::IndexCompute(const TensorView* tv, std::vector<Val*> _indices) {
@@ -80,7 +83,7 @@ IndexCompute::IndexCompute(const TensorView* tv, std::vector<Val*> _indices) {
   // Run the split/merge/reorder operations backwards. This will
   // Modify std::vector<Int*> indices so it can be used to index
   // the root TensorDomain which should now match the physical axes.
-  TensorDomain* root = TransformIter::runBackward(td, true);
+  TensorDomain* root = TransformIter::runBackward(td);
 
   TORCH_INTERNAL_ASSERT(
       root->nDims() == indices.size(),

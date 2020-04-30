@@ -5,26 +5,29 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-void TransformIter::replayBackward(Split* expr) {}
+TensorDomain* TransformIter::replayBackward(Split* split, TensorDomain* td) {
+  return split->in();
+}
 
-void TransformIter::replayBackward(Merge* expr) {}
+TensorDomain* TransformIter::replayBackward(Merge* merge, TensorDomain* td) {
+  return merge->in();
+}
 
-void TransformIter::replayBackward(Reorder* expr) {}
+TensorDomain* TransformIter::replayBackward(Reorder* reorder, TensorDomain* td) {
+  return reorder->in();
+}
 
-void TransformIter::replayBackward(Expr* expr) {
+TensorDomain* TransformIter::replayBackward(Expr* expr, TensorDomain* td) {
   TORCH_INTERNAL_ASSERT(
       expr->isExpr(),
       "Dispatch in transform iteration is expecting Exprs only.");
   switch (*(expr->getExprType())) {
     case (ExprType::Split):
-      replayBackward(static_cast<Split*>(expr));
-      break;
+      return replayBackward(static_cast<Split*>(expr), td);
     case (ExprType::Merge):
-      replayBackward(static_cast<Merge*>(expr));
-      break;
+      return replayBackward(static_cast<Merge*>(expr), td);
     case (ExprType::Reorder):
-      replayBackward(static_cast<Reorder*>(expr));
-      break;
+      return replayBackward(static_cast<Reorder*>(expr), td);
     default:
       TORCH_INTERNAL_ASSERT(
           false, "Could not detect expr type in replayBackward.");
@@ -63,34 +66,24 @@ std::vector<Expr*> TransformIter::getHistory(TensorDomain* td) {
         orig = fusion->origin(root);
       }
   }
-  return ops;
+  return std::vector<Expr*>(ops.rbegin(), ops.rend());
 }
 
-TensorDomain* TransformIter::runBackward(
-    TensorDomain* td,
-    bool generate_record) {
+TensorDomain* TransformIter::runBackward(TensorDomain* td) {
+
   std::vector<Expr*> ops = getHistory(td);
 
-  if (generate_record)
-    record = std::vector<Expr*>(ops.rbegin(), ops.rend());
+  // We want to iterate backwards, reverse history.
+  ops = std::vector<Expr*>(ops.rbegin(), ops.rend());
 
   Fusion* fusion = FusionGuard::getCurFusion();
 
+  TensorDomain* running_td = td;
   for (Expr* op : ops)
-    replayBackward(op);
+    running_td = replayBackward(op, running_td);
 
-  if (ops.size() > 0) {
-    for (auto inp : ops[ops.size() - 1]->inputs())
-      if (inp->getValType() &&
-          inp->getValType().value() == ValType::TensorDomain)
-        return static_cast<TensorDomain*>(inp);
-  } else {
-    return td;
-  }
+  return running_td;
 
-  TORCH_INTERNAL_ASSERT(
-      false,
-      "Issue found when running tensor transform backwards. Could not find a root domain.");
 }
 
 TensorDomain* TransformIter::replay(Split* expr, TensorDomain* td) {
@@ -123,9 +116,9 @@ TensorDomain* TransformIter::replay(Expr* expr, TensorDomain* td) {
   }
 }
 
-TensorDomain* TransformIter::runReplay(TensorDomain* td) {
-  for (auto it = record.begin(); it < record.end(); ++it) {
-    td = TransformIter::replay(*it, td);
+TensorDomain* TransformIter::runReplay(TensorDomain* td, std::vector<Expr*> history) {
+  for (Expr* op : history) {
+    td = TransformIter::replay(op, td);
   }
   return td;
 }

@@ -22,12 +22,12 @@ struct TORCH_CUDA_API TransformRFactor : public TransformIter {
    * We can't override TransformIter in this case as we're trying to produce a
    * new root tensor domain, so we want a return value.
    */
-  TensorDomain* tdReplayBackward(Split*, TensorDomain*);
-  TensorDomain* tdReplayBackward(Merge*, TensorDomain*);
-  TensorDomain* tdReplayBackward(Reorder*, TensorDomain*);
+  TensorDomain* replayBackward(Split*, TensorDomain*) override;
+  TensorDomain* replayBackward(Merge*, TensorDomain*) override;
+  TensorDomain* replayBackward(Reorder*, TensorDomain*) override;
 
   // Have to have our own dispatch because of ther return type
-  TensorDomain* tdReplayBackward(Expr*, TensorDomain*);
+  TensorDomain* replayBackward(Expr*, TensorDomain*);
 
   // Entry for backward influence propagation on td following record, this
   // transformation is in place on td

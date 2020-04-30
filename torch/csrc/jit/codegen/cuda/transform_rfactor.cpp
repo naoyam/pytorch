@@ -13,7 +13,7 @@ namespace fuser {
 // axis_map needs to be updated
 // should_modify needs to be updated
 // axis_map goes from the transform position to the position in our modified td.
-TensorDomain* TransformRFactor::tdReplayBackward(
+TensorDomain* TransformRFactor::replayBackward(
     Split* split,
     TensorDomain* td) {
   int saxis = split->axis();
@@ -67,7 +67,7 @@ TensorDomain* TransformRFactor::tdReplayBackward(
   return replayed_inp;
 }
 
-TensorDomain* TransformRFactor::tdReplayBackward(
+TensorDomain* TransformRFactor::replayBackward(
     Merge* merge,
     TensorDomain* td) {
   /*
@@ -133,7 +133,7 @@ TensorDomain* TransformRFactor::tdReplayBackward(
   return replayed_inp;
 }
 
-TensorDomain* TransformRFactor::tdReplayBackward(
+TensorDomain* TransformRFactor::replayBackward(
     Reorder* reorder,
     TensorDomain* td) {
   const std::vector<int>& pos2axis_orig = reorder->pos2axis();
@@ -198,20 +198,20 @@ TensorDomain* TransformRFactor::tdReplayBackward(
   return replayed_inp;
 }
 
-TensorDomain* TransformRFactor::tdReplayBackward(Expr* expr, TensorDomain* td) {
+TensorDomain* TransformRFactor::replayBackward(Expr* expr, TensorDomain* td) {
   TORCH_INTERNAL_ASSERT(
       expr->isExpr(),
       "Dispatch in transform iteration is expecting Exprs only.");
   switch (*(expr->getExprType())) {
     case (ExprType::Split):
-      return tdReplayBackward(static_cast<Split*>(expr), td);
+      return replayBackward(static_cast<Split*>(expr), td);
     case (ExprType::Merge):
-      return tdReplayBackward(static_cast<Merge*>(expr), td);
+      return replayBackward(static_cast<Merge*>(expr), td);
     case (ExprType::Reorder):
-      return tdReplayBackward(static_cast<Reorder*>(expr), td);
+      return replayBackward(static_cast<Reorder*>(expr), td);
     default:
       TORCH_INTERNAL_ASSERT(
-          false, "Could not detect expr type in tdReplayBackward.");
+          false, "Could not detect expr type in replayBackward.");
   }
 }
 
@@ -221,9 +221,9 @@ void TransformRFactor::replayBackward(
     TensorDomain* td,
     std::vector<Expr*> history) {
   TensorDomain* running_td = td;
-
+  history = std::vector<Expr*>(history.rbegin(), history.rend());
   for (Expr* op : history)
-    running_td = tdReplayBackward(op, running_td);
+    running_td = replayBackward(op, running_td);
 }
 
 TensorDomain* TransformRFactor::runReplay(

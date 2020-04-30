@@ -2,31 +2,40 @@
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
+#include <vector>
+
 namespace torch {
 namespace jit {
 namespace fuser {
 
-/*
- * Functions to backward propagate influence from split/merge/reorder
- */
-void TransformReplay::replayBackward(Split* split) {
+namespace{
+
+struct Influence  : public TransformIter {
+private:
+  /*
+   * Functions to backward propagate influence from split/merge/reorder
+   */
+
+TensorDomain* replayBackward(Split* split, TensorDomain* td) override {
   int axis = split->axis();
   TORCH_INTERNAL_ASSERT(
       axis + 1 < influence.size(),
       "Error during replay backwards, influence is not sized correctly.");
   influence[axis] = influence[axis] | influence[axis + 1];
   influence.erase(influence.begin() + axis + 1);
+  return split->in();
 }
 
-void TransformReplay::replayBackward(Merge* merge) {
+TensorDomain* replayBackward(Merge* merge, TensorDomain* td) override {
   int axis = merge->axis();
   TORCH_INTERNAL_ASSERT(
       axis < influence.size(),
       "Error during replay backwards, influence is not sized correctly.");
   influence.insert(influence.begin() + axis + 1, influence[axis]);
+  return merge->in();
 }
 
-void TransformReplay::replayBackward(Reorder* reorder) {
+TensorDomain* replayBackward(Reorder* reorder, TensorDomain* td) override {
   // pos2axis[new_pos] = old_pos Generate new axis2pos map
   const std::vector<int>& pos2axis = reorder->pos2axis();
 
@@ -41,173 +50,182 @@ void TransformReplay::replayBackward(Reorder* reorder) {
   }
 
   influence = reorder_influence;
+  return reorder->in();
 }
 
-// Entry for backward influence propagation on td following record
-TensorDomain* TransformReplay::runBackward(
-    TensorDomain* td,
-    bool create_record) {
-  influence = std::vector<bool>(td->nDims(), false);
-  for (int i = 0; i < compute_at_axis; i++)
-    influence[i] = true;
-  return TransformIter::runBackward(td, create_record);
+std::vector<bool> influence;
+
+Influence(TensorDomain* td, std::vector<bool> td_influence):influence(td_influence){
+  TransformIter::runBackward(td);
 }
+
+public:
+
+static std::vector<bool> compute(TensorDomain* td, std::vector<bool> td_influence){
+  TORCH_INTERNAL_ASSERT(
+      td_influence.size() == td->nDims(),
+      "Tried to compute backward influence computation, but recieved an influence vector that does not match the TensorDomain size.");
+  Influence inf(td, td_influence);
+  return inf.influence;
+}
+
+}; //struct Influence
+
+
+
+struct Replay : public TransformIter {
 
 /*
  * Replay functions, takes a TensorDomain and steps through the operations in
  * "record" based on influence axes. Will also update influence and propagate
  * it forward.
  */
-TensorDomain* TransformReplay::replay(Split* expr, TensorDomain* td) {
-  int axis = expr->axis();
-  bool run_split = influence[axis];
+TensorDomain* replay(Split* split, TensorDomain* td) {
+  int saxis = split->axis();
 
-  // Propagate influence
-  influence.insert(influence.begin() + axis + 1, influence[axis]);
+  TORCH_INTERNAL_ASSERT(
+      saxis >= 0 && saxis < axis_map.size(),
+      "TransformReplay tried to modify an axis out of range, recieved ",
+      saxis,
+      " but this value should be >=0 and <",
+      axis_map.size());
 
-  // Forward prop influence
-  if (run_split) {
-    // Make sure split axis is real.
-    int real_axis = axis_map[expr->axis()];
-    TORCH_INTERNAL_ASSERT(
-        real_axis != -1,
-        "During transformation replay attempted to split an imaginary axis.");
-    TORCH_INTERNAL_ASSERT(
-        td->axis(real_axis)->start()->isZeroInt(),
-        "Transform Replay tried to split an IterDomain with a start value that is not 0,",
-        " this is not currently supported.");
-    // Inserted a real axis, push everything in axis_map over to the right
-    // after this inserted axis
-    for (decltype(axis_map.size()) i{0}; i < axis_map.size(); i++)
-      if (axis_map[i] > real_axis)
-        axis_map[i] = axis_map[i] + 1;
-
-    axis_map.insert(
-        axis_map.begin() + expr->axis() + 1,
-        real_axis + 1); // insert axis at position axis.
-
-    // Replay split
-    return td->split(real_axis, *(expr->factor()->value()));
-  } else {
-    // Fake it
-    axis_map.insert(axis_map.begin() + expr->axis() + 1, -1);
+  if (axis_map[saxis] == -1) {
+    // don't modify path, we need an extra axis as there would have been one
+    // there, but we shouldn't modify it.
+    axis_map.insert(axis_map.begin() + saxis + 1, -1);
+    return td;
   }
 
+  // Recreate the merge, axis is relative to the td
+  int axis = axis_map[saxis];
+  // Move indices up as we now have an extra axis
+  std::transform(
+      axis_map.begin(), axis_map.end(), axis_map.begin(), [axis](int i) {
+        return i > axis ? i + 1 : i;
+      });
+
+  // Insert new axis in map
+  axis_map.insert(axis_map.begin() + saxis + 1, axis_map[saxis] + 1);
+
+  TORCH_INTERNAL_ASSERT(
+      split->factor()->isConst(),
+      "Cannot replay split as it's not based on a const value.");
+  td = td->split(axis, split->factor()->value().value());
+  
   return td;
 }
 
-TensorDomain* TransformReplay::replay(Merge* expr, TensorDomain* td) {
-  int axis = expr->axis();
-  bool merge = influence[axis] || influence[axis + 1];
-  axis_map.erase(axis_map.begin() + expr->axis() + 1);
+TensorDomain* replay(Merge* merge, TensorDomain* td) {
 
-  for (decltype(axis_map.size()) i = expr->axis() + 1; i < axis_map.size(); i++)
-    if (axis_map[i] != -1)
-      axis_map[i]--;
+  int maxis = merge->axis();
 
-  // Forward prop influence
-  influence[axis] = influence[axis] || influence[axis + 1];
-  influence.erase(influence.begin() + axis + 1);
+  TORCH_INTERNAL_ASSERT(
+      maxis >= 0 && maxis < axis_map.size(),
+      "TransformReplay tried to modify an axis out of range, recieved ",
+      maxis,
+      " but this value should be >= 0 and < axis_map.size()");
 
-  if (merge) {
-    // Make sure both merge axes are real.
-    TORCH_INTERNAL_ASSERT(
-        axis_map[axis] != -1 && axis_map[axis + 1] != -1,
-        "During transformation replay attempted to merge an imaginary axis.");
-    // Replay merge
-    TORCH_INTERNAL_ASSERT(
-        td->axis(axis)->start()->isZeroInt() &&
-            td->axis(axis + 1)->start()->isZeroInt(),
-        "Transform Replay tried to Merge IterDomains with a start value that is not 0,",
-        " this is not currently supported.");
-    return td->merge(axis_map[axis]);
-  } else {
-    // If we aren't applying the merge, we won't change any following axis
-    // Doesn't matter which axis we propagate for the merge in the axis_map
-    assert(axis_map[axis + 1] == -1);
+  // Get axis relative to what we actually have in td.
+  int axis = axis_map[maxis];
+  int axis_p_1 = axis_map[maxis + 1];
+  // If either dim is not to be touch, set both not to be touched
+  axis = axis_p_1 == -1 ? -1 : axis;
+  axis_map[maxis] = axis;
+
+  // Remove axis from axis_map as in original transformations it didn't exist
+  axis_map.erase(axis_map.begin() + maxis + 1);
+
+  // Don't modify:
+  if (axis == -1)
     return td;
-  }
-}
 
-TensorDomain* TransformReplay::replay(Reorder* expr, TensorDomain* td) {
-  // axis2pos[old_pos] = new_pos is sent to reorder, Reorder holds
-  // pos2axis[new_pos] = old_pos Generate new axis2pos map
-  std::unordered_map<int, int> axis2pos;
-  const std::vector<int>& pos2axis = expr->pos2axis();
-
-  std::vector<int> reordered_axis_map(axis_map.size(), -1);
-  std::vector<bool> reordered_influence(pos2axis.size(), false);
-
-  // We have
-  // axis_map[old_fake_pos] -> old_real_pos
-  // pos2axis[new_fake_pos] -> old_fake_pos
-  // f2r[new_fake_pos] -> new_real_pos
-  //
-  // We want:
-  // axis2pos[old_real_pos] -> new_real_pos
-  // axis_map[new_fake_pos] -> new_real_pos
-
-  std::vector<std::pair<int, int>> needed_real_reorder;
-  for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
-    int new_fake_axis = i;
-    int old_fake_axis = pos2axis[i];
-    int old_real_axis = axis_map[old_fake_axis];
-    bool is_real_axis = old_real_axis != -1;
-    // If a real axis
-    if (is_real_axis)
-      if (influence[old_fake_axis]) {
-        needed_real_reorder.push_back({old_real_axis, new_fake_axis});
-      }
-  }
-
-  // Sort needed_real_reorder by new_fake_axis.
-  std::sort(
-      needed_real_reorder.begin(),
-      needed_real_reorder.end(),
-      [](std::pair<int, int> a, std::pair<int, int> b) -> bool {
-        return a.second < b.second;
+  // Move indices down as we're removing an axis
+  std::transform(
+      axis_map.begin(), axis_map.end(), axis_map.begin(), [axis](int i) {
+        return i > axis ? i - 1 : i;
       });
 
-  // axis2pos[old_real_axis] -> new_real_axis
-  int axis = 0;
-  for (auto entry : needed_real_reorder) {
-    axis2pos[entry.first] = axis++;
+  return td->merge(axis);
+
+}
+
+
+TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
+  const std::vector<int>& pos2axis_orig = reorder->pos2axis();
+
+  // We want to convert pos2axis to something with td->nDims which it isn't
+  // guarenteed to be
+  // pos2axis[new_position] = old_position
+  std::vector<int> pos2axis(td->nDims(), -1);
+
+  std::set<int> old_pos_left;
+  for (decltype(axis_map.size()) i{0}; i < axis_map.size(); i++)
+    old_pos_left.emplace(i);
+
+  for (decltype(pos2axis_orig.size()) i{0}; i < pos2axis_orig.size(); i++) {
+    int old_pos = axis_map[i];
+    int new_pos = pos2axis_orig[i];
+
+    if (old_pos != -1) {
+      pos2axis[new_pos] = old_pos;
+      TORCH_INTERNAL_ASSERT(
+          old_pos_left.find(old_pos) != old_pos_left.end(),
+          "Internal error, duplicate in reorder map found.");
+      old_pos_left.erase(old_pos);
+    }
   }
 
-  for (decltype(td->nDims()) i{0}; i < td->nDims(); i++) {
-    if (axis2pos.find(i) == axis2pos.end())
-      axis2pos[i] = axis++;
+  for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
+    if (pos2axis[i] == -1 || pos2axis[i] >= td->nDims()) {
+      pos2axis[i] = *(old_pos_left.begin());
+      old_pos_left.erase(old_pos_left.begin());
+    }
   }
 
-  // replay reorder
-  TensorDomain* reordered_td = td->reorder(axis2pos);
+  pos2axis.erase(pos2axis.begin() + td->nDims(), pos2axis.end());
 
-  // Fake transform:
-  for (decltype(pos2axis.size()) i = 0; i < pos2axis.size(); i++) {
-    int new_pos = i;
-    int old_pos = pos2axis[i];
-    // Forward prop influence
-    reordered_influence[new_pos] = influence[old_pos];
-    if (axis_map[old_pos] != -1)
-      reordered_axis_map[new_pos] = axis2pos[axis_map[old_pos]];
+  bool nullopt = true;
+  std::unordered_map<int, int> axis2pos;
+  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
+    int old_pos = i;
+    int new_pos = pos2axis[i];
+    if(old_pos != new_pos)
+      nullopt = false;
+    axis2pos[old_pos] = new_pos;
   }
-  influence = reordered_influence;
-  axis_map = reordered_axis_map;
+  if(nullopt)
+    return td;
 
-  return reordered_td;
+  return td->reorder(axis2pos);
+
+}
+
+  std::vector<int> axis_map;
+  Replay(std::vector<int> _axis_map):axis_map(_axis_map){}
+
+public:
+ // Replays history provided on td, axis_map is the mapping from td axes to
+ // those expected in history, if an axis shouldn't be transformed, it needs to
+ // be marked as -1 in the axis_map
+ static TensorDomain* replay(TensorDomain* td, std::vector<Expr*> history, std::vector<int> axis_map) {
+   Replay r(axis_map);
+   return r.runReplay(td, history);
+ }
+
+}; //struct Replay
+
+} // namespace
+
+std::vector<bool> TransformReplay::getRootInfluence(TensorDomain* td, std::vector<bool> td_influence){
+  return Influence::compute(td, td_influence);
+}
+
+TensorDomain* TransformReplay::replay(TensorDomain* td, std::vector<Expr*> history, std::vector<int> axis_map) {
+  return Replay::replay(td, history, axis_map);
 }
 
 /*
- * TODO: When we compare root axes, we should ignore reduction axes in the
- * producer. Reduction axes are owned by a consumer.
- *
- * TODO: We should be able to relax the constraints of replay a bit. Right now
- * it requires that the root domain of the target and replay are completely
- * the same. However, we should only require that the root derived from the
- * axes < compute_at_axis match. We could even go further and look for those
- * matching axes as they don't necessairly need to be in the same order.
- * However, once they're replayed they should be.
- *
  * 1) Take the reference, trace back its domain history to get all the
  * split/merge/reorder calls, as well as its original domain. Get the
  * original domain of the target as well.
@@ -249,8 +267,6 @@ TensorDomain* TransformReplay::runReplay(
       compute_at_axis,
       " is an illegal transform.");
 
-  this->compute_at_axis = compute_at_axis;
-
   /* STEP 1 */
   // Reset the tensor domain of the target, this is the only way we can be
   // certain That we can actually replay the ops of ref.
@@ -263,10 +279,15 @@ TensorDomain* TransformReplay::runReplay(
   // produce these axis
   // As we trace the ref, record the operations to go from replay_ref ->
   // ref_root, save in "record"
-  TensorDomain* ref_root = runBackward(replay_ref, true);
+  TensorDomain* ref_root = replay_ref->rootDomain();
+
+  std::vector<bool> root_influence_vector(replay_ref->nDims(), false);
+  for(int i=0; i<compute_at_axis; i++)
+    root_influence_vector[i] = true;
+
   // We're going to save a copy of this vector, class member influnce will be
   // used during replay to forward propagate influence.
-  std::vector<bool> root_influence_vector = influence;
+  root_influence_vector = getRootInfluence(replay_ref, root_influence_vector);
 
   // In lowering code we replay domains on to copies of themselves. This is done
   // during the replacement of symbolic sizes for inputs and outputs (i.e. TV0[
@@ -275,21 +296,19 @@ TensorDomain* TransformReplay::runReplay(
   // Otherwise assume consumer/producer relationship and ignore reduction axes
   // on target.
   bool include_reductions = replay_target->nDims() == ref_root->nDims();
-
-  // Remove isReduction from the axis_map of a producer isReduction is only
-  // impactful when its on a consumer (subject to comment directly above)
-  auto init_size = replay_target->nDims();
-  for (decltype(init_size) i = 0; i < init_size; i++)
-    if (include_reductions || !replay_target->axis(i)->isReduction())
-      axis_map.push_back(i);
-
-  // Domain sizes must match at root for replay.
-  if (axis_map.size() != ref_root->nDims()) {
-    std::stringstream err_msg;
-    err_msg
-        << "Transforms cannot be replayed as source and destinations do not have the same root sizes."
-        << " " << ref_root << " vs " << replay_target << std::endl;
-    TORCH_CHECK(false, err_msg.str());
+  std::vector<int> axis_map(ref_root->nDims(), -1);
+  decltype(replay_target->nDims()) it = 0, ir = 0;
+  while(it < replay_target->nDims() && ir < ref_root->nDims()){
+    if(include_reductions || !replay_target->axis(it)->isReduction()){
+      if(root_influence_vector[ir]){
+        axis_map[ir++] = it++;
+      }else{
+        axis_map[ir++] = -1;
+        it++;
+      }
+    }else{
+      it++;
+    }
   }
 
   /* STEP 3 */
@@ -301,8 +320,8 @@ TensorDomain* TransformReplay::runReplay(
   // actually execute those based on influence. If we didn't track all
   // axes, we wouldn't know what axis split/merge/reorder are referencing
   // as they're relative to the "full" replay that produced the reference.
-  TensorDomain* replayed = TransformIter::runReplay(replay_target);
-
+  TensorDomain* replayed = replay(replay_target, TransformIter::getHistory(replay_ref), axis_map);
+  
   for (decltype(replayed->nDims()) i{0}; i < compute_at_axis; i++)
     if (!include_reductions && replayed->axis(i)->isReduction())
       TORCH_CHECK(

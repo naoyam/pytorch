@@ -60,9 +60,9 @@ namespace fuser {
 struct IndexCompute : public TransformIter {
  protected:
   // Replay overrides which modify indices
-  void replayBackward(Split* expr) override;
-  void replayBackward(Merge* expr) override;
-  void replayBackward(Reorder* expr) override;
+  TensorDomain* replayBackward(Split*, TensorDomain*) override;
+  TensorDomain* replayBackward(Merge*, TensorDomain*) override;
+  TensorDomain* replayBackward(Reorder*, TensorDomain*) override;
 
   // Axis_map for
   std::vector<Val*> indices;

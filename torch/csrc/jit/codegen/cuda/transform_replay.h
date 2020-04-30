@@ -118,27 +118,8 @@ namespace fuser {
  *
  */
 
-struct TORCH_CUDA_API TransformReplay : public TransformIter {
+struct TORCH_CUDA_API TransformReplay {
  private:
-  /*
-   * Functions to backward propagate influence from split/merge/reorder
-   */
-  void replayBackward(Split*) override;
-  void replayBackward(Merge*) override;
-  void replayBackward(Reorder*) override;
-
-  // Entry for backward influence propagation on td following record
-  TensorDomain* runBackward(TensorDomain* td, bool generate_record = false)
-      override;
-
-  /*
-   * Replay functions, takes a TensorView and steps through the operations in
-   * "record" based on influence axes. Will also update influence and propagate
-   * it forward.
-   */
-  TensorDomain* replay(Split*, TensorDomain*) override;
-  TensorDomain* replay(Merge*, TensorDomain*) override;
-  TensorDomain* replay(Reorder*, TensorDomain*) override;
 
   /*
    * Takes replay_ref and replays its transformations on replay_target
@@ -164,21 +145,19 @@ struct TORCH_CUDA_API TransformReplay : public TransformIter {
       TensorView* replay_target,
       int compute_at_axis);
 
-  // Running influence vector
-  std::vector<bool> influence;
-
-  // compute_at_axis
-  int compute_at_axis;
-
-  // In the replay we won't apply all transformations, but will need relative
-  // axes for later transformations. axis_map[full transform position] = partial
-  // transform position Full transform position is relative to if we played all
-  // transformations if full transform position is not in partial transform
-  // position it will return -1
-  // axis_map[fake_pos] = real_pos
-  std::vector<int> axis_map;
-
  public:
+  // td_influence marks which axes of td to track when running backward to td's
+  // root. Returned vector will be the size of td's root, with td_influence
+  // propagated backwards
+  std::vector<bool> getRootInfluence(
+      TensorDomain* td,
+      std::vector<bool> td_influence);
+
+  TensorDomain* replay(
+      TensorDomain* td,
+      std::vector<Expr*> history,
+      std::vector<int> axis_map);
+
   // Replay Target as reference.
   static TensorView* replay(
       TensorView* replay_ref,
