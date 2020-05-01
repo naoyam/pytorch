@@ -23,12 +23,12 @@ namespace jit {
 
 using namespace torch::jit::fuser;
 
-TensorView* makeDummyTensor(int nDims) {
+TensorView* makeDummyTensor(int nDims, DataType dtype = DataType::Float) {
   std::vector<IterDomain*> dom;
   for (int i = 0; i < nDims; i++)
     dom.push_back(new IterDomain(new Int(0), new Int()));
 
-  return new TensorView(new TensorDomain(dom), DataType::Float);
+  return new TensorView(new TensorDomain(dom), dtype);
 }
 
 // 1. Test cases are void() functions.
@@ -939,14 +939,9 @@ void testGPU_FusionSimplePWise() {
   // dimensionality of the problem
   int nDims = 3;
 
-  // Set up symbolic sizes for the axes should be dimensionality of the problem
-  std::vector<IterDomain*> dom;
-  for (int i = 0; i < nDims; i++)
-    dom.push_back(new IterDomain(new Int(0), new Int()));
-
   // Set up your input tensor views
-  TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
-  TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
+  TensorView* tv0 = makeDummyTensor(nDims);
+  TensorView* tv1 = makeDummyTensor(nDims);
 
   // Register your inputs
   fusion.addInput(tv0);
@@ -1233,11 +1228,7 @@ void testGPU_FusionUnaryOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2);
     TensorView* tv1 = static_cast<TensorView*>(unaryOp(uop_types[i], tv0));
 
     fusion.addInput(tv0);
@@ -1298,12 +1289,8 @@ void testGPU_FusionBinaryLogicalOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
-    TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2);
+    TensorView* tv1 = makeDummyTensor(2);
     TensorView* tv2 = static_cast<TensorView*>(binaryOp(bop_types[i], tv0, tv1));
 
     fusion.addInput(tv0);
@@ -1375,12 +1362,8 @@ void testGPU_FusionBinaryMathOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
-    TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2);
+    TensorView* tv1 = makeDummyTensor(2);
     TensorView* tv2 = static_cast<TensorView*>(binaryOp(bop_types[i], tv0, tv1));
 
     fusion.addInput(tv0);
@@ -1435,11 +1418,9 @@ void testGPU_FusionMultiInputOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
     Float*       f1 = new Float(1.f);
+    TensorView* tv0 = makeDummyTensor(2);
+    TensorView* tv1 = makeDummyTensor(2);
     TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
     TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
     TensorView* tv2 = static_cast<TensorView*>(miop_types[i].first(tv0, tv1, f1));
@@ -1485,13 +1466,9 @@ void testGPU_FusionMultiInputOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
-    TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
-    TensorView* tv2 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2);
+    TensorView* tv1 = makeDummyTensor(2);
+    TensorView* tv2 = makeDummyTensor(2);
     TensorView* tv3 = static_cast<TensorView*>(lerp(tv0, tv1, tv2));
 
     fusion.addInput(tv0);
@@ -1539,14 +1516,10 @@ void testGPU_FusionMultiInputOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
     Float*       f1 = new Float(1.f);
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
-    TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
-    TensorView* tv2 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2);
+    TensorView* tv1 = makeDummyTensor(2);
+    TensorView* tv2 = makeDummyTensor(2);
     TensorView* tv3 = static_cast<TensorView*>(addcmul(tv0, tv1, tv2, f1));
 
     fusion.addInput(tv0);
@@ -1597,13 +1570,9 @@ void testGPU_FusionTernaryOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
     Float*       f0 = new Float(0.f);
     Float*       f1 = new Float(1.f);
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2);
     TensorView* tv1 = static_cast<TensorView*>(clamp(tv0, f0, f1));
 
     fusion.addInput(tv0);
@@ -1643,13 +1612,9 @@ void testGPU_FusionTernaryOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
     Float*       f0 = new Float(0.f);
     Float*       f1 = new Float(1.f);
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2);
     TensorView* tv1 = static_cast<TensorView*>(threshold(tv0, f0, f1));
 
     fusion.addInput(tv0);
@@ -1689,13 +1654,9 @@ void testGPU_FusionTernaryOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    std::vector<IterDomain*> dom;
-    for (int i = 0; i < 2; i++)
-      dom.push_back(new IterDomain(new Int(0), new Int()));
-
-    TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Bool);
-    TensorView* tv1 = new TensorView(new TensorDomain(dom), DataType::Float);
-    TensorView* tv2 = new TensorView(new TensorDomain(dom), DataType::Float);
+    TensorView* tv0 = makeDummyTensor(2, DataType::Bool);
+    TensorView* tv1 = makeDummyTensor(2);
+    TensorView* tv2 = makeDummyTensor(2);
     TensorView* tv3 = static_cast<TensorView*>(where(tv0, tv1, tv2));
 
     fusion.addInput(tv0);
@@ -1744,11 +1705,7 @@ void testGPU_FusionCastOps() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  std::vector<IterDomain*> dom;
-  for (int i = 0; i < 2; i++)
-    dom.push_back(new IterDomain(new Int(0), new Int()));
-
-  TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Half);
+  TensorView* tv0 = makeDummyTensor(2, DataType::Half);
 
   Val*     intrm1 = castOp(DataType::Float, tv0);
   TensorView* out = static_cast<TensorView*>(castOp(DataType::Half, intrm1));
@@ -1791,11 +1748,7 @@ void testGPU_FusionRandLike() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  std::vector<IterDomain*> dom;
-  for (int i = 0; i < 2; i++)
-    dom.push_back(new IterDomain(new Int(0), new Int()));
-
-  TensorView* tv0 = new TensorView(new TensorDomain(dom), DataType::Float);
+  TensorView* tv0 = makeDummyTensor(2);
   TensorView* tv1 = static_cast<TensorView*>(unaryOp(UnaryOpType::RandLike, tv0));
 
   fusion.addInput(tv0);
