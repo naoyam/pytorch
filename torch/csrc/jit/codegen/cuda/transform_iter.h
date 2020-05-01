@@ -45,8 +45,7 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
 
  public:
 
-  // Returns transformation exprs in reverse order (as seen processing
-  // backwards)
+  // Returns transformation exprs in forward order
   static std::vector<Expr*> getHistory(TensorDomain*);
 
   static TensorDomain* getRoot(TensorDomain* td) {
@@ -59,6 +58,11 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
   static std::vector<bool> getRootInfluence(
       TensorDomain* td,
       std::vector<bool> influence);
+
+  // Runs through history, applying only on influence to track how modifications would influence the original axes.
+  static std::vector<bool> replayInfluence(
+      std::vector<Expr*> history,
+      std::vector<bool> td_influence);
 
   // Goes through history and applies it to td, with the axis_map provided.
   // Axis_map entries of -1 mean those axes won't be modified
@@ -73,7 +77,7 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
       TensorDomain* td,
       std::vector<Expr*> history,
       std::vector<int> axis_map);
-};
+  };
 
 } // namespace fuser
 } // namespace jit

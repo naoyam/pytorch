@@ -117,9 +117,8 @@ TensorDomain* TransformIter::replay(Expr* expr, TensorDomain* td) {
 }
 
 TensorDomain* TransformIter::runReplay(TensorDomain* td, std::vector<Expr*> history) {
-  for (Expr* op : history) {
+  for (Expr* op : history)
     td = TransformIter::replay(op, td);
-  }
   return td;
 }
 
@@ -128,15 +127,14 @@ namespace{
 
 struct Influence  : public TransformIter {
 private:
-  /*
-   * Functions to backward propagate influence from split/merge/reorder
-   */
+
+// BACKWARD INFLUENCE
 
 TensorDomain* replayBackward(Split* split, TensorDomain* td) override {
   int axis = split->axis();
   TORCH_INTERNAL_ASSERT(
       axis + 1 < influence.size(),
-      "Error during replay backwards, influence is not sized correctly.");
+      "Error during replay backwards, td/influence size mismatch.");
   influence[axis] = influence[axis] | influence[axis + 1];
   influence.erase(influence.begin() + axis + 1);
   return split->in();
@@ -146,7 +144,7 @@ TensorDomain* replayBackward(Merge* merge, TensorDomain* td) override {
   int axis = merge->axis();
   TORCH_INTERNAL_ASSERT(
       axis < influence.size(),
-      "Error during replay backwards, influence is not sized correctly.");
+      "Error during replay backwards, td/influence size mismatch.");
   influence.insert(influence.begin() + axis + 1, influence[axis]);
   return merge->in();
 }
@@ -161,7 +159,7 @@ TensorDomain* replayBackward(Reorder* reorder, TensorDomain* td) override {
     int old_pos = pos2axis[i];
     TORCH_INTERNAL_ASSERT(
         new_pos < influence.size() && old_pos < reorder_influence.size(),
-        "Error during replay backwards, influence is not sized correctly.");
+        "Error during replay backwards, td/influence size mismatch.");
     reorder_influence[old_pos] = influence[new_pos];
   }
 
@@ -169,19 +167,77 @@ TensorDomain* replayBackward(Reorder* reorder, TensorDomain* td) override {
   return reorder->in();
 }
 
+// FORWARD INFLUENCE
+
+TensorDomain* replay(Split* split, TensorDomain* td) {
+  int axis = split->axis();
+  TORCH_INTERNAL_ASSERT(
+      axis < influence.size(),
+      "Error during replay backwards, td/influence size mismatch.");
+  influence.insert(influence.begin() + axis + 1, influence[axis]);
+  return nullptr;
+}
+
+TensorDomain* replay(Merge* merge, TensorDomain* td) {
+  int axis = merge->axis();
+  TORCH_INTERNAL_ASSERT(
+      axis > 0 && axis + 1 < influence.size(),
+      "Error during replay backwards, td/influence size mismatch.");
+  influence[axis] = influence[axis] | influence[axis + 1];
+  influence.erase(influence.begin() + axis + 1);
+  return nullptr;
+}
+
+TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
+  // pos2axis[new_pos] = old_pos Generate new axis2pos map
+  const std::vector<int>& pos2axis = reorder->pos2axis();
+
+  std::vector<bool> reorder_influence(influence.size(), false);
+  for (decltype(pos2axis.size()) i = 0; i < pos2axis.size(); i++) {
+    int new_pos = i;
+    int old_pos = pos2axis[i];
+    TORCH_INTERNAL_ASSERT(
+        new_pos < influence.size() && old_pos < reorder_influence.size(),
+        "Error during replay backwards, td/influence size mismatch.");
+    reorder_influence[new_pos] = influence[old_pos];
+  }
+
+  influence = reorder_influence;
+  return nullptr;
+}
+
+// INTERFACE
+
 std::vector<bool> influence;
 
+// BACKWARD INTERFACE
 Influence(TensorDomain* td, std::vector<bool> td_influence):influence(td_influence){
   TransformIter::runBackward(td);
 }
 
+// FORWARD INTERFACE
+Influence(std::vector<Expr*> history, std::vector<bool> td_influence):influence(td_influence){
+  TransformIter::runReplay(nullptr, history);
+}
+
 public:
 
-static std::vector<bool> compute(TensorDomain* td, std::vector<bool> td_influence){
+static std::vector<bool> computeBackward(TensorDomain* td, std::vector<bool> td_influence){
   TORCH_INTERNAL_ASSERT(
       td_influence.size() == td->nDims(),
-      "Tried to compute backward influence computation, but recieved an influence vector that does not match the TensorDomain size.");
+      "Tried to compute backward influence, but recieved an influence vector that does not match the TensorDomain size.");
   Influence inf(td, td_influence);
+  return inf.influence;
+}
+
+static std::vector<bool> computeForward(std::vector<Expr*> history, std::vector<bool> td_influence){
+  if(history.empty())
+    return td_influence;
+
+  TORCH_INTERNAL_ASSERT(
+      history[0]->input(0)->getValType().value() == ValType::TensorDomain &&  static_cast<TensorDomain*>(history[0]->input(0))->nDims() == td_influence.size(),
+      "Tried to compute influence, but recieved an influence vector that does not match the expected size.");
+  Influence inf(history, td_influence);
   return inf.influence;
 }
 
@@ -206,15 +262,16 @@ TensorDomain* replay(Split* split, TensorDomain* td) {
       " but this value should be >=0 and <",
       axis_map.size());
 
-  if (axis_map[saxis] == -1) {
+  // Axis relative to td
+  int axis = axis_map[saxis];
+
+  if (axis == -1) {
     // don't modify path, we need an extra axis as there would have been one
     // there, but we shouldn't modify it.
     axis_map.insert(axis_map.begin() + saxis + 1, -1);
     return td;
   }
 
-  // Recreate the merge, axis is relative to the td
-  int axis = axis_map[saxis];
   // Move indices up as we now have an extra axis
   std::transform(
       axis_map.begin(), axis_map.end(), axis_map.begin(), [axis](int i) {
@@ -222,7 +279,7 @@ TensorDomain* replay(Split* split, TensorDomain* td) {
       });
 
   // Insert new axis in map
-  axis_map.insert(axis_map.begin() + saxis + 1, axis_map[saxis] + 1);
+  axis_map.insert(axis_map.begin() + saxis + 1, axis + 1);
 
   TORCH_INTERNAL_ASSERT(
       split->factor()->isConst(),
@@ -268,6 +325,7 @@ TensorDomain* replay(Merge* merge, TensorDomain* td) {
 
 
 TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
+
   const std::vector<int>& pos2axis_orig = reorder->pos2axis();
 
   // We want to convert pos2axis to something with td->nDims which it isn't
@@ -275,32 +333,105 @@ TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
   // pos2axis[new_position] = old_position
   std::vector<int> pos2axis(td->nDims(), -1);
 
-  std::set<int> old_pos_left;
-  for (decltype(axis_map.size()) i{0}; i < axis_map.size(); i++)
-    old_pos_left.emplace(i);
+  std::set<int> new_pos_used;
+  auto extent = pos2axis_orig.size() > td->nDims() ? pos2axis_orig.size() : td->nDims();
 
   for (decltype(pos2axis_orig.size()) i{0}; i < pos2axis_orig.size(); i++) {
     int old_pos = axis_map[i];
     int new_pos = pos2axis_orig[i];
 
     if (old_pos != -1) {
-      pos2axis[new_pos] = old_pos;
       TORCH_INTERNAL_ASSERT(
-          old_pos_left.find(old_pos) != old_pos_left.end(),
-          "Internal error, duplicate in reorder map found.");
-      old_pos_left.erase(old_pos);
+          new_pos >= 0 && new_pos < pos2axis.size(),
+          "Error in reorder replay. New position outside range.");
+      TORCH_INTERNAL_ASSERT(
+          new_pos_used.find(new_pos) == new_pos_used.end(),
+          "During reorder replay, tried to put two axes in same position.");
+      new_pos_used.emplace(new_pos);
+      pos2axis[new_pos] = old_pos;
     }
   }
 
-  for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
-    if (pos2axis[i] == -1 || pos2axis[i] >= td->nDims()) {
-      pos2axis[i] = *(old_pos_left.begin());
-      old_pos_left.erase(old_pos_left.begin());
+  // We want to shift entries to the left as much as possible:
+  std::vector<int> shift_down(extent, 1);
+  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
+    if(pos2axis[i] != -1)
+      shift_down[i] = 0;
+
+  // prefix sum shift_down
+  int p_sum = 0;
+  for(decltype(shift_down.size()) i{0}; i<shift_down.size(); i++){
+    int tmp = p_sum;
+    p_sum += shift_down[i];
+    shift_down[i] = tmp;
+  }
+  {
+    std::vector<int> adjusted_pos2axis(pos2axis.size(), -1);
+    // Shift entries left as much as possible
+    // pos2axis[new_position] = old_position
+    for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
+      int new_pos = i;
+      int old_pos = pos2axis[i];
+      if (old_pos != -1) {
+        TORCH_INTERNAL_ASSERT(
+            new_pos - shift_down[i] >= 0 &&
+                new_pos - shift_down[i] < pos2axis.size(),
+            "Error shifting values in replay reorder.");
+        adjusted_pos2axis[new_pos - shift_down[i]] = pos2axis[i];
+      }
     }
+    pos2axis = adjusted_pos2axis;
   }
 
+  std::set<int> new_pos_avail;
+  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
+    new_pos_avail.emplace(i);
+  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
+    if(pos2axis[i] != -1){
+      TORCH_INTERNAL_ASSERT(new_pos_avail.find(i) != new_pos_avail.end(), "Error in reorder replay.");
+      new_pos_avail.erase(i);
+    }
+
+  {
+    std::vector<int> adjusted_pos2axis(pos2axis.size(), -1);
+    int new_pos = 0;
+    for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
+      if (pos2axis[i] == -1) {
+        int old_pos = pos2axis[i];
+        while (new_pos_avail.find(new_pos) == new_pos_avail.end()) {
+          TORCH_INTERNAL_ASSERT(
+              new_pos < pos2axis.size(),
+              "Ran out of new positions for reorder replay.");
+          new_pos++;
+        }
+        adjusted_pos2axis[new_pos] = old_pos;
+      }
+    }
+    pos2axis = adjusted_pos2axis;
+  }
+
+  // Find the last position we left off on
+  int max_new_pos = -1;
+  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
+    max_new_pos = pos2axis[i] > max_new_pos ? pos2axis[i] : max_new_pos;
+  
+  // Fill in positions that are still -1
+  for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++)
+    if(pos2axis[i] == -1)
+      pos2axis[i] = ++max_new_pos;
+  
+  // Trim off pos2axis so it matches td
   pos2axis.erase(pos2axis.begin() + td->nDims(), pos2axis.end());
 
+  TORCH_INTERNAL_ASSERT(
+      !std::any_of(
+          pos2axis.begin(),
+          pos2axis.end(),
+          [td](int i) { return i < 0 || i >= td->nDims(); }),
+      "Error during reorder replay, tried to modify axis out of range.");
+
+  // Create new axis2pos map, so we can reply, it's just reverse of pos2axis
+  // Check if this reorder is a null operation
   bool nullopt = true;
   std::unordered_map<int, int> axis2pos;
   for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
@@ -310,9 +441,11 @@ TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
       nullopt = false;
     axis2pos[old_pos] = new_pos;
   }
+  
   if(nullopt)
     return td;
 
+  // Rerun reorder
   return td->reorder(axis2pos);
 
 }
@@ -325,6 +458,20 @@ public:
  // those expected in history, if an axis shouldn't be transformed, it needs to
  // be marked as -1 in the axis_map
  static TensorDomain* replay(TensorDomain* td, std::vector<Expr*> history, std::vector<int> axis_map) {
+   if (history.empty())
+     return td;
+
+   TORCH_INTERNAL_ASSERT(
+       history[0]->input(0)->getValType().value() == ValType::TensorDomain &&
+           static_cast<TensorDomain*>(history[0]->input(0))->nDims() ==
+               axis_map.size(),
+       "Tried to replay transforms, but received an invalid axis_map.");
+
+   for (auto ent : axis_map)
+     TORCH_INTERNAL_ASSERT(
+         ent >= -1 && ent < (int) td->nDims(),
+         "Tried to replay transforms, but received an invalid axis_map.");
+
    Replay r(axis_map);
    return r.runReplay(td, history);
  }
@@ -563,7 +710,11 @@ public:
 } // namespace
 
 std::vector<bool> TransformIter::getRootInfluence(TensorDomain* td, std::vector<bool> td_influence){
-  return Influence::compute(td, td_influence);
+  return Influence::computeBackward(td, td_influence);
+}
+
+std::vector<bool> TransformIter::replayInfluence(std::vector<Expr*> history, std::vector<bool> td_influence){
+  return Influence::computeForward(history, td_influence);
 }
 
 TensorDomain* TransformIter::replay(TensorDomain* td, std::vector<Expr*> history, std::vector<int> axis_map) {
