@@ -102,6 +102,7 @@ TensorDomain* TransformReplay::runReplay(
     replay_axis_map[i] = new_position[ax];
   }
 
+  // Run replay covering compute at axes.
   TensorDomain* replayed = TransformIter::replay(replay_target, TransformIter::getHistory(replay_ref), replay_axis_map);
   
   for (decltype(replayed->nDims()) i{0}; i < compute_at_axis; i++)

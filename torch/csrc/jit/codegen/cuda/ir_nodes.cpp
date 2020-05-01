@@ -245,12 +245,12 @@ TensorDomain* TensorDomain::split(int axis_, int factor) {
 
       // outer loop IterDomain
       IterDomain* ido = new IterDomain(
-          new Int(0), so, id->parallel_method(), id->isReduction());
+          new Int(0), so, id->parallel_method(), id->isReduction(), id->isRFactorProduct());
       new_domain.push_back(ido);
 
       // inner loop IterDomain
       IterDomain* idi = new IterDomain(
-          new Int(0), fact, id->parallel_method(), id->isReduction());
+          new Int(0), fact, id->parallel_method(), id->isReduction(), id->isRFactorProduct());
       new_domain.push_back(idi);
     }
   }
@@ -287,7 +287,8 @@ TensorDomain* TensorDomain::merge(int axis_) {
       new Int(0),
       static_cast<Int*>(merged_id_size),
       first->parallel_method(),
-      first->isReduction());
+      first->isReduction(),
+      first->isRFactorProduct() || second->isRFactorProduct());
 
   std::vector<IterDomain*> new_domain;
   for (decltype(nDims()) i = 0; i < nDims(); i++) {

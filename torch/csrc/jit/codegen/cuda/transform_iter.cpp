@@ -324,47 +324,51 @@ TensorDomain* replay(Merge* merge, TensorDomain* td) {
 }
 
 
+// This is, maybe surprisingly, one of the more difficult transforms to replay
 TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
 
+  // pos2axis[new_position] = old_position
   const std::vector<int>& pos2axis_orig = reorder->pos2axis();
 
   // We want to convert pos2axis to something with td->nDims which it isn't
   // guarenteed to be
-  // pos2axis[new_position] = old_position
   std::vector<int> pos2axis(td->nDims(), -1);
+  auto extent =
+      pos2axis_orig.size() > td->nDims() ? pos2axis_orig.size() : td->nDims();
 
-  std::set<int> new_pos_used;
-  auto extent = pos2axis_orig.size() > td->nDims() ? pos2axis_orig.size() : td->nDims();
+  // Grab initial transformation, ignoring if old_pos == -1
+  {
+    std::set<int> new_pos_used;
 
-  for (decltype(pos2axis_orig.size()) i{0}; i < pos2axis_orig.size(); i++) {
-    int old_pos = axis_map[i];
-    int new_pos = pos2axis_orig[i];
+    for (decltype(pos2axis_orig.size()) i{0}; i < pos2axis_orig.size(); i++) {
+      int old_pos = axis_map[i];
+      int new_pos = pos2axis_orig[i];
 
-    if (old_pos != -1) {
-      TORCH_INTERNAL_ASSERT(
-          new_pos >= 0 && new_pos < pos2axis.size(),
-          "Error in reorder replay. New position outside range.");
-      TORCH_INTERNAL_ASSERT(
-          new_pos_used.find(new_pos) == new_pos_used.end(),
-          "During reorder replay, tried to put two axes in same position.");
-      new_pos_used.emplace(new_pos);
-      pos2axis[new_pos] = old_pos;
+      if (old_pos != -1) {
+        TORCH_INTERNAL_ASSERT(
+            new_pos >= 0 && new_pos < pos2axis.size(),
+            "Error in reorder replay. New position outside range.");
+        TORCH_INTERNAL_ASSERT(
+            new_pos_used.find(new_pos) == new_pos_used.end(),
+            "During reorder replay, tried to put two axes in same position.");
+        new_pos_used.emplace(new_pos);
+        pos2axis[new_pos] = old_pos;
+      }
     }
   }
 
-  // We want to shift entries to the left as much as possible:
+  // We want to shift new_pos entries to the left as much as possible:
+  // shift down is based on old_pos
   std::vector<int> shift_down(extent, 1);
   for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
     if(pos2axis[i] != -1)
       shift_down[i] = 0;
 
   // prefix sum shift_down
-  int p_sum = 0;
-  for(decltype(shift_down.size()) i{0}; i<shift_down.size(); i++){
-    int tmp = p_sum;
-    p_sum += shift_down[i];
-    shift_down[i] = tmp;
-  }
+  for(decltype(shift_down.size()) i{1}; i<shift_down.size(); i++)
+    shift_down[i] += shift_down[i-1];
+  
+  // Shift values in pos2axis map
   {
     std::vector<int> adjusted_pos2axis(pos2axis.size(), -1);
     // Shift entries left as much as possible
@@ -383,44 +387,47 @@ TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
     pos2axis = adjusted_pos2axis;
   }
 
+  // We need to fill in missing peices of the puzzle, as we've only added axes
+  // that get reordered, not the axes we're supposed to leave alone. Lets see what
+  // we have left to fill back in.
   std::set<int> new_pos_avail;
-  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
+  std::set<int> old_pos_left;
+  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
     new_pos_avail.emplace(i);
+    old_pos_left.emplace(i);
+  }
   for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
     if(pos2axis[i] != -1){
-      TORCH_INTERNAL_ASSERT(new_pos_avail.find(i) != new_pos_avail.end(), "Error in reorder replay.");
-      new_pos_avail.erase(i);
+      TORCH_INTERNAL_ASSERT(new_pos_avail.find(pos2axis[i]) != new_pos_avail.end(), "Error in reorder replay.");
+      new_pos_avail.erase(pos2axis[i]);
+      TORCH_INTERNAL_ASSERT(old_pos_left.find(i) != old_pos_left.end(), "Error in reorder replay.");
+      old_pos_left.erase(i);
     }
 
+  // Now that we have sets of what needs to be added back in, lets add it back in.
   {
     std::vector<int> adjusted_pos2axis(pos2axis.size(), -1);
     int new_pos = 0;
     for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
-      if (pos2axis[i] == -1) {
-        int old_pos = pos2axis[i];
+      int old_pos = i;
+      if (old_pos_left.find(old_pos) != old_pos_left.end()){
         while (new_pos_avail.find(new_pos) == new_pos_avail.end()) {
           TORCH_INTERNAL_ASSERT(
               new_pos < pos2axis.size(),
               "Ran out of new positions for reorder replay.");
           new_pos++;
         }
+        new_pos_avail.erase(new_pos);
+        old_pos_left.erase(old_pos);
         adjusted_pos2axis[new_pos] = old_pos;
+      } else {
+        adjusted_pos2axis[old_pos] = pos2axis[old_pos];
       }
     }
     pos2axis = adjusted_pos2axis;
   }
-
-  // Find the last position we left off on
-  int max_new_pos = -1;
-  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
-    max_new_pos = pos2axis[i] > max_new_pos ? pos2axis[i] : max_new_pos;
   
-  // Fill in positions that are still -1
-  for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++)
-    if(pos2axis[i] == -1)
-      pos2axis[i] = ++max_new_pos;
-  
-  // Trim off pos2axis so it matches td
+  // Trim off pos2axis so it matches td, we could still be larger.
   pos2axis.erase(pos2axis.begin() + td->nDims(), pos2axis.end());
 
   TORCH_INTERNAL_ASSERT(
@@ -430,8 +437,8 @@ TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
           [td](int i) { return i < 0 || i >= td->nDims(); }),
       "Error during reorder replay, tried to modify axis out of range.");
 
-  // Create new axis2pos map, so we can reply, it's just reverse of pos2axis
-  // Check if this reorder is a null operation
+  // Create new axis2pos map, so we can reply with TensorDomain::reorder, it's
+  // just reverse of pos2axis Check if this reorder is a null operation.
   bool nullopt = true;
   std::unordered_map<int, int> axis2pos;
   for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
@@ -442,6 +449,7 @@ TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
     axis2pos[old_pos] = new_pos;
   }
   
+  // If null operation, don't replay, just return.
   if(nullopt)
     return td;
 
