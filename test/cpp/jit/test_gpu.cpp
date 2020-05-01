@@ -1245,7 +1245,7 @@ void testGPU_FusionUnaryOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1);
     at::Tensor ref_output = at::empty_like(input1);
 
@@ -1309,8 +1309,8 @@ void testGPU_FusionBinaryLogicalOps() {
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     auto options_out = at::TensorOptions().dtype(at::kBool).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
-    at::Tensor input2     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
+    at::Tensor input2     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1, options_out);
     at::Tensor ref_output = at::empty_like(input1, options_out);
 
@@ -1381,8 +1381,8 @@ void testGPU_FusionBinaryMathOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
-    at::Tensor input2     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
+    at::Tensor input2     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1);
     at::Tensor ref_output = at::empty_like(input1);
 
@@ -1441,8 +1441,8 @@ void testGPU_FusionMultiInputOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
-    at::Tensor input2     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
+    at::Tensor input2     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1);
     at::Tensor ref_output = at::empty_like(input1);
 
@@ -1489,9 +1489,9 @@ void testGPU_FusionMultiInputOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
-    at::Tensor input2     = at::rand({1,4}, options);
-    at::Tensor input3     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
+    at::Tensor input2     = at::rand({128,128}, options);
+    at::Tensor input3     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1);
     at::Tensor ref_output = at::empty_like(input1);
 
@@ -1515,8 +1515,9 @@ void testGPU_FusionMultiInputOps() {
   {
     Fusion fusion;
     FusionGuard fg(&fusion);
+    float factor = 0.5f;
 
-    Float*       f1 = new Float(1.f);
+    Float*       f1 = new Float(factor);
     TensorView* tv0 = makeDummyTensor(2);
     TensorView* tv1 = makeDummyTensor(2);
     TensorView* tv2 = makeDummyTensor(2);
@@ -1540,9 +1541,9 @@ void testGPU_FusionMultiInputOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
-    at::Tensor input2     = at::rand({1,4}, options);
-    at::Tensor input3     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
+    at::Tensor input2     = at::rand({128,128}, options);
+    at::Tensor input3     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1);
     at::Tensor ref_output = at::empty_like(input1);
 
@@ -1552,7 +1553,7 @@ void testGPU_FusionMultiInputOps() {
     torch::jit::fuser::cuda::compileKernel(fusion, &prog);
     torch::jit::fuser::cuda::runTestKernel(&prog, inputs, outputs);
 
-    ref_output = at::addcmul(input1, input2, input3, 1.f);
+    ref_output = at::addcmul(input1, input2, input3, factor);
 
     TORCH_CHECK(output.allclose(ref_output),
                 "\nOp Type: -- ", "addcmul",
@@ -1570,8 +1571,11 @@ void testGPU_FusionTernaryOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    Float*       f0 = new Float(0.f);
-    Float*       f1 = new Float(1.f);
+    float        lo = 0.25f;
+    float        hi = 0.75f;
+
+    Float*       f0 = new Float(lo);
+    Float*       f1 = new Float(hi);
     TensorView* tv0 = makeDummyTensor(2);
     TensorView* tv1 = static_cast<TensorView*>(clamp(tv0, f0, f1));
 
@@ -1589,7 +1593,7 @@ void testGPU_FusionTernaryOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1);
     at::Tensor ref_output = at::empty_like(input1);
 
@@ -1599,7 +1603,7 @@ void testGPU_FusionTernaryOps() {
     torch::jit::fuser::cuda::compileKernel(fusion, &prog);
     torch::jit::fuser::cuda::runTestKernel(&prog, inputs, outputs);
 
-    ref_output = at::clamp(input1, 0.f, 1.f);
+    ref_output = at::clamp(input1, lo, hi);
 
     TORCH_CHECK(output.equal(ref_output),
                 "\nOp Type: -- ", "clamp",
@@ -1612,8 +1616,11 @@ void testGPU_FusionTernaryOps() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    Float*       f0 = new Float(0.f);
-    Float*       f1 = new Float(1.f);
+    float        th = 0.25f;
+    float       val = 2.25f;
+
+    Float*       f0 = new Float(th);
+    Float*       f1 = new Float(val);
     TensorView* tv0 = makeDummyTensor(2);
     TensorView* tv1 = static_cast<TensorView*>(threshold(tv0, f0, f1));
 
@@ -1631,7 +1638,7 @@ void testGPU_FusionTernaryOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input1);
     at::Tensor ref_output = at::empty_like(input1);
 
@@ -1641,7 +1648,7 @@ void testGPU_FusionTernaryOps() {
     torch::jit::fuser::cuda::compileKernel(fusion, &prog);
     torch::jit::fuser::cuda::runTestKernel(&prog, inputs, outputs);
 
-    ref_output = at::threshold(input1, 0.f, 1.f);
+    ref_output = at::threshold(input1, th, val);
 
     TORCH_CHECK(output.equal(ref_output),
                 "\nOp Type: -- ", "threshold",
@@ -1677,9 +1684,9 @@ void testGPU_FusionTernaryOps() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    at::Tensor input1     = at::rand({1,4}, options).to(at::kBool);
-    at::Tensor input2     = at::rand({1,4}, options);
-    at::Tensor input3     = at::rand({1,4}, options);
+    at::Tensor input1     = at::rand({128,128}, options).to(at::kBool);
+    at::Tensor input2     = at::rand({128,128}, options);
+    at::Tensor input3     = at::rand({128,128}, options);
     at::Tensor output     = at::empty_like(input2);
     at::Tensor ref_output = at::empty_like(input2);
 
@@ -1724,7 +1731,7 @@ void testGPU_FusionCastOps() {
 
   auto options = at::TensorOptions().dtype(at::kHalf).device(at::kCUDA, 0);
 
-  at::Tensor input1     = at::rand({1,4}, options);
+  at::Tensor input1     = at::rand({128,128}, options);
   at::Tensor output     = at::empty_like(input1);
   at::Tensor ref_output = at::empty_like(input1);
 
@@ -1765,7 +1772,7 @@ void testGPU_FusionRandLike() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-  at::Tensor input1     = at::rand({1,4}, options);
+  at::Tensor input1     = at::rand({128,128}, options);
   at::Tensor output     = at::empty_like(input1);
 
   std::vector<at::Tensor> inputs{{input1}};
