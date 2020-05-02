@@ -50,7 +50,8 @@ TensorDomain* TransformReplay::runReplay(
     bool isreduction = target_root->axis(it)->isReduction();
     bool isrfactor = target_root->axis(it)->isRFactorProduct();
     if( !isreduction || ( include_reductions && isreduction ) ){
-      TORCH_CHECK(
+      if (ref_influence[ir]) {
+        TORCH_CHECK(
           !isrfactor,
           "Invalid transformation found, an rfactor axis cannot be modified during replay.",
           " There likely is an invalid compute at. Found during replay of ",
@@ -59,7 +60,6 @@ TensorDomain* TransformReplay::runReplay(
           target_root,
           " at comptue at axis ",
           compute_at_axis);
-      if (ref_influence[ir]) {
         replay_axis_map[ir] = it;
       } else {
         replay_axis_map[ir] = -1;
@@ -132,6 +132,15 @@ TensorView* TransformReplay::runReplay(
 TensorView* TransformReplay::replay(
     TensorView* replay_ref,
     TensorView* replay_target,
+    int compute_at_axis) {
+  TransformReplay tr;
+  tr.runReplay(replay_ref, replay_target, compute_at_axis);
+  return replay_target;
+}
+
+TensorDomain* TransformReplay::replay(
+    TensorDomain* replay_ref,
+    TensorDomain* replay_target,
     int compute_at_axis) {
   TransformReplay tr;
   tr.runReplay(replay_ref, replay_target, compute_at_axis);

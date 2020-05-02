@@ -170,6 +170,12 @@ struct TORCH_CUDA_API TransformReplay {
       TensorView* replay_target);
 
   // Replay Target as reference.
+  static TensorDomain* replay(
+      TensorDomain* replay_ref,
+      TensorDomain* replay_target,
+      int compute_at_axis);
+
+  // Replay Target as reference.
   static TensorDomain* fullReplay(
       TensorDomain* replay_ref,
       TensorDomain* replay_target);

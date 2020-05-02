@@ -1,5 +1,6 @@
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
 namespace torch {
 namespace jit {
@@ -326,135 +327,81 @@ TensorDomain* replay(Merge* merge, TensorDomain* td) {
 
 // This is, maybe surprisingly, one of the more difficult transforms to replay
 TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
+  // pos2axis is new2old lets convert to old2new as it makes this easier to do,
+  // and we need that map anyways in the end to replay reorder
+  const std::vector<int>& new2old_orig = reorder->pos2axis();
+  std::vector<int> old2new_orig(new2old_orig.size());
+  for(decltype(new2old_orig.size()) i{0}; i<new2old_orig.size(); i++)
+    old2new_orig[new2old_orig[i]] = i;
 
-  // pos2axis[new_position] = old_position
-  const std::vector<int>& pos2axis_orig = reorder->pos2axis();
-
-  // We want to convert pos2axis to something with td->nDims which it isn't
-  // guarenteed to be
-  std::vector<int> pos2axis(td->nDims(), -1);
-  auto extent =
-      pos2axis_orig.size() > td->nDims() ? pos2axis_orig.size() : td->nDims();
-
-  // Grab initial transformation, ignoring if old_pos == -1
-  {
-    std::set<int> new_pos_used;
-
-    for (decltype(pos2axis_orig.size()) i{0}; i < pos2axis_orig.size(); i++) {
-      int old_pos = axis_map[i];
-      int new_pos = pos2axis_orig[i];
-
-      if (old_pos != -1) {
-        TORCH_INTERNAL_ASSERT(
-            new_pos >= 0 && new_pos < pos2axis.size(),
-            "Error in reorder replay. New position outside range.");
-        TORCH_INTERNAL_ASSERT(
-            new_pos_used.find(new_pos) == new_pos_used.end(),
-            "During reorder replay, tried to put two axes in same position.");
-        new_pos_used.emplace(new_pos);
-        pos2axis[new_pos] = old_pos;
-      }
-    }
-  }
-
-  // We want to shift new_pos entries to the left as much as possible:
-  // shift down is based on old_pos
-  std::vector<int> shift_down(extent, 1);
-  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
-    if(pos2axis[i] != -1)
-      shift_down[i] = 0;
-
-  // prefix sum shift_down
-  for(decltype(shift_down.size()) i{1}; i<shift_down.size(); i++)
-    shift_down[i] += shift_down[i-1];
-  
-  // Shift values in pos2axis map
-  {
-    std::vector<int> adjusted_pos2axis(pos2axis.size(), -1);
-    // Shift entries left as much as possible
-    // pos2axis[new_position] = old_position
-    for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
-      int new_pos = i;
-      int old_pos = pos2axis[i];
-      if (old_pos != -1) {
-        TORCH_INTERNAL_ASSERT(
-            new_pos - shift_down[i] >= 0 &&
-                new_pos - shift_down[i] < pos2axis.size(),
-            "Error shifting values in replay reorder.");
-        adjusted_pos2axis[new_pos - shift_down[i]] = pos2axis[i];
-      }
-    }
-    pos2axis = adjusted_pos2axis;
-  }
-
-  // We need to fill in missing peices of the puzzle, as we've only added axes
-  // that get reordered, not the axes we're supposed to leave alone. Lets see what
-  // we have left to fill back in.
-  std::set<int> new_pos_avail;
-  std::set<int> old_pos_left;
-  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
-    new_pos_avail.emplace(i);
-    old_pos_left.emplace(i);
-  }
-  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++)
-    if(pos2axis[i] != -1){
-      TORCH_INTERNAL_ASSERT(new_pos_avail.find(pos2axis[i]) != new_pos_avail.end(), "Error in reorder replay.");
-      new_pos_avail.erase(pos2axis[i]);
-      TORCH_INTERNAL_ASSERT(old_pos_left.find(i) != old_pos_left.end(), "Error in reorder replay.");
-      old_pos_left.erase(i);
-    }
-
-  // Now that we have sets of what needs to be added back in, lets add it back in.
-  {
-    std::vector<int> adjusted_pos2axis(pos2axis.size(), -1);
-    int new_pos = 0;
-    for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
-      int old_pos = i;
-      if (old_pos_left.find(old_pos) != old_pos_left.end()){
-        while (new_pos_avail.find(new_pos) == new_pos_avail.end()) {
-          TORCH_INTERNAL_ASSERT(
-              new_pos < pos2axis.size(),
-              "Ran out of new positions for reorder replay.");
-          new_pos++;
-        }
-        new_pos_avail.erase(new_pos);
-        old_pos_left.erase(old_pos);
-        adjusted_pos2axis[new_pos] = old_pos;
-      } else {
-        adjusted_pos2axis[old_pos] = pos2axis[old_pos];
-      }
-    }
-    pos2axis = adjusted_pos2axis;
+  // Convert map with our axis maping, ignore if old_pos == -1
+  std::vector<int> old2new(old2new_orig.size(), -1);
+  for(decltype(old2new.size()) i{0}; i<old2new.size(); i++){
+    int old_pos = axis_map[i];
+    int new_pos = old2new_orig[i];
+    if(old_pos != -1)
+      old2new[old_pos] = new_pos;
   }
   
-  // Trim off pos2axis so it matches td, we could still be larger.
-  pos2axis.erase(pos2axis.begin() + td->nDims(), pos2axis.end());
+  // Going to move all new_pos to the left so there's no gaps, compute offset
+  std::vector<int> offset(old2new.size(), 0);
+  for(decltype(offset.size()) i{0}; i<offset.size(); i++){
+    offset[i] = old2new[i] == -1 ? -1 : 0;
+  }
+  
+  // Prefix sum offset
+  for(decltype(offset.size()) i{1}; i<offset.size(); i++){
+    offset[i] = offset[i-1];
+  }
 
-  TORCH_INTERNAL_ASSERT(
-      !std::any_of(
-          pos2axis.begin(),
-          pos2axis.end(),
-          [td](int i) { return i < 0 || i >= td->nDims(); }),
-      "Error during reorder replay, tried to modify axis out of range.");
+  // move positions over
+  for(decltype(old2new.size()) i{0}; i<old2new.size(); i++){
+    if (old2new[i] == -1)
+      continue;
 
-  // Create new axis2pos map, so we can reply with TensorDomain::reorder, it's
-  // just reverse of pos2axis Check if this reorder is a null operation.
+    int new_pos = old2new[i] - offset[i];
+    TORCH_INTERNAL_ASSERT(
+        new_pos >= 0 && new_pos < old2new.size(),
+        "Error in offset calculation in replay reorder.");
+    old2new[i] = new_pos;
+  }
+
+  // We have missing entries in our map as old_pos could have been -1 which
+  // means we ignored the reordering for them, fill these values in order in the
+  // empty spots in the right side
+  int max_new_pos = -1;
+  for(decltype(old2new.size()) i{0}; i<old2new.size(); i++)
+    max_new_pos = max_new_pos > old2new[i] ? max_new_pos : old2new[i];
+
+  for(decltype(old2new.size()) i{0}; i<old2new.size(); i++)
+    if(old2new[i] == -1)
+      old2new[i] = ++max_new_pos;
+
+  // Reorder the axis_map based on this reorder
+  std::vector<int> reordered_axis_map(axis_map.size());
+  for(decltype(reordered_axis_map.size())i{0}; i<reordered_axis_map.size(); i++)
+    reordered_axis_map[old2new[i]] = axis_map[i];
+  axis_map = reordered_axis_map;
+
+  // Check if this is a null opt (no actual reordering done), create map, make
+  // sure we don't have entries > td->nDims which we could have
   bool nullopt = true;
-  std::unordered_map<int, int> axis2pos;
-  for(decltype(pos2axis.size()) i{0}; i<pos2axis.size(); i++){
-    int old_pos = i;
-    int new_pos = pos2axis[i];
-    if(old_pos != new_pos)
+  std::unordered_map<int, int> old2new_map;
+  for(decltype(td->nDims()) i{0}; i<td->nDims(); i++){
+    if(old2new[i] != i){
       nullopt = false;
-    axis2pos[old_pos] = new_pos;
+      break;
+    }
+      old2new_map[i] = old2new[i];
   }
   
-  // If null operation, don't replay, just return.
+  // If null opt do nothing, return td
   if(nullopt)
     return td;
 
   // Rerun reorder
-  return td->reorder(axis2pos);
+  auto reordered = td->reorder(old2new_map);
+  return reordered;
 
 }
 
