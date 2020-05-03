@@ -119,7 +119,7 @@ namespace jit {
   _(GPU_FusionExecKernel)        \
   _(GPU_FusionForLoop)           \
   _(GPU_FusionLoopUnroll)        \
-  _(GPU_FusionSimpleReduction)   \
+  _(GPU_FusionRFactorReplay)     \
   _(GPU_FusionAdvancedComputeAt) \
   _(GPU_FusionScalarInputs)
 #else

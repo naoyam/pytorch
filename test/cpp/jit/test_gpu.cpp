@@ -1,4 +1,4 @@
-//#if defined(USE_CUDA)
+#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -756,7 +756,8 @@ void testGPU_FusionCodeGen2() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-  torch::jit::fuser::cuda::runTestKernel(prog, {input1, input2}, {}, {output}, {});
+  torch::jit::fuser::cuda::runTestKernel(
+      prog, {input1, input2}, {}, {output}, {});
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
@@ -822,7 +823,8 @@ void testGPU_FusionSimplePWise() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-  torch::jit::fuser::cuda::runTestKernel(prog, {input1, input2}, {}, {output}, {});
+  torch::jit::fuser::cuda::runTestKernel(
+      prog, {input1, input2}, {}, {output}, {});
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
@@ -879,7 +881,8 @@ void testGPU_FusionExecKernel() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-  torch::jit::fuser::cuda::runTestKernel(prog, {input1, input2}, {}, {output}, {});
+  torch::jit::fuser::cuda::runTestKernel(
+      prog, {input1, input2}, {}, {output}, {});
 
   at::Tensor check = at::full({1, 128}, 4, options);
   ;
@@ -955,7 +958,7 @@ void testGPU_FusionAdvancedComputeAt() {
 
     tv0->computeAt(tv3, 1);
 
-    // Check propagation of this computeAt.
+    // // Check propagation of this computeAt.
     TORCH_INTERNAL_ASSERT(tv0->getComputeAtView() == tv3);
     TORCH_INTERNAL_ASSERT(tv1->getComputeAtView() == tv4);
     TORCH_INTERNAL_ASSERT(tv2->getComputeAtView() == tv4);
@@ -972,6 +975,14 @@ void testGPU_FusionAdvancedComputeAt() {
     tv6->axis(0)->parallelize(ParallelType::BIDx);
 
     tv0->computeAt(tv6, 1);
+
+    TORCH_INTERNAL_ASSERT(tv0->getComputeAtView() == tv3 && tv0->nDims() == 3);
+    TORCH_INTERNAL_ASSERT(tv1->getComputeAtView() == tv4 && tv1->nDims() == 3);
+    TORCH_INTERNAL_ASSERT(tv2->getComputeAtView() == tv4 && tv2->nDims() == 3);
+    TORCH_INTERNAL_ASSERT(tv3->getComputeAtView() == tv6 && tv3->nDims() == 3);
+    TORCH_INTERNAL_ASSERT(tv4->getComputeAtView() == tv5 && tv4->nDims() == 3);
+    TORCH_INTERNAL_ASSERT(tv5->getComputeAtView() == tv6 && tv5->nDims() == 3);
+    TORCH_INTERNAL_ASSERT(!tv6->hasComputeAt());
 
     for (Val* val : fusion.vals()) {
       if (!fusion.hasInput(val) &&
@@ -1155,7 +1166,8 @@ void testGPU_FusionAdvancedComputeAt() {
     prog.grid(blocks);
     prog.block(128);
     torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-    torch::jit::fuser::cuda::runTestKernel(prog, {t0, t1}, {}, {kernel_tv3}, {});
+    torch::jit::fuser::cuda::runTestKernel(
+        prog, {t0, t1}, {}, {kernel_tv3}, {});
 
     GPULower gpulw(&fusion);
     std::stringstream cdg;
@@ -1247,93 +1259,92 @@ void testGPU_FusionAdvancedComputeAt() {
 
 void testGPU_FusionScalarInputs() {
   Fusion fusion;
-    FusionGuard fg(&fusion);
+  FusionGuard fg(&fusion);
 
-    TensorView* tv0 = makeDummyTensor(2);
-    fusion.addInput(tv0);
-    TensorView* tv1 = makeDummyTensor(2);
-    fusion.addInput(tv1);
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+  TensorView* tv1 = makeDummyTensor(2);
+  fusion.addInput(tv1);
 
-    Float* f0 = new Float();
-    fusion.addInput(f0);
-    Float* f1 = new Float();
-    fusion.addInput(f1);
-    Float* f2 = new Float();
-    fusion.addInput(f2);
-    Float* f3 = new Float();
-    fusion.addInput(f3);
-    Val* f4 = mul(f0, f1);
-    Val* f5 = sub(f2, f3);
+  Float* f0 = new Float();
+  fusion.addInput(f0);
+  Float* f1 = new Float();
+  fusion.addInput(f1);
+  Float* f2 = new Float();
+  fusion.addInput(f2);
+  Float* f3 = new Float();
+  fusion.addInput(f3);
+  Val* f4 = mul(f0, f1);
+  Val* f5 = sub(f2, f3);
 
+  TensorView* tv2 = static_cast<TensorView*>(sub(tv1, f4));
+  TensorView* tv3 = static_cast<TensorView*>(add(tv0, f5));
+  TensorView* tv4 = static_cast<TensorView*>(mul(tv3, tv2));
 
-    TensorView* tv2 = static_cast<TensorView*>(sub(tv1, f4));
-    TensorView* tv3 = static_cast<TensorView*>(add(tv0, f5));
-    TensorView* tv4 = static_cast<TensorView*>(mul(tv3, tv2));
+  fusion.addOutput(tv4);
 
-    fusion.addOutput(tv4);
+  // Lets setup to actually run
+  while (tv4->nDims() > 1)
+    tv4->merge(0);
+  tv4->split(0, 128);
+  tv4->split(0, 4);
 
-    // Lets setup to actually run
-    while (tv4->nDims() > 1)
-      tv4->merge(0);
-    tv4->split(0, 128);
-    tv4->split(0, 4);
+  tv0->computeAt(tv4, 1);
+  tv1->computeAt(tv4, 1);
 
-    tv0->computeAt(tv4, 1);
-    tv1->computeAt(tv4, 1);
+  tv4->axis(0)->parallelize(ParallelType::BIDx);
 
-    tv4->axis(0)->parallelize(ParallelType::BIDx);
+  for (Val* val : fusion.vals()) {
+    if (!fusion.hasInput(val) &&
+        val->getValType().value() == ValType::TensorView) {
+      TensorView* tv = static_cast<TensorView*>(val);
 
-    for (Val* val : fusion.vals()) {
-      if (!fusion.hasInput(val) &&
-          val->getValType().value() == ValType::TensorView) {
-        TensorView* tv = static_cast<TensorView*>(val);
-
-        tv->axis(1)->parallelize(ParallelType::Unroll);
-        tv->axis(-1)->parallelize(ParallelType::TIDx);
-      }
+      tv->axis(1)->parallelize(ParallelType::Unroll);
+      tv->axis(-1)->parallelize(ParallelType::TIDx);
     }
+  }
 
-    // f4 = f0 * f1
-    // f5 = f2 - f3
-    // t2 = t1 - f4
-    // t3 = t0 + f5
-    // t4 = t3 * t2
+  // f4 = f0 * f1
+  // f5 = f2 - f3
+  // t2 = t1 - f4
+  // t3 = t0 + f5
+  // t4 = t3 * t2
 
-    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-    float fl0 = 0.1;
-    float fl1 = -0.2;
-    float fl2 = 0.3;
-    float fl3 = -0.4;
-    float fl4 = fl0 * fl1;
-    float fl5 = fl2 - fl3;
+  float fl0 = 0.1;
+  float fl1 = -0.2;
+  float fl2 = 0.3;
+  float fl3 = -0.4;
+  float fl4 = fl0 * fl1;
+  float fl5 = fl2 - fl3;
 
-    at::Tensor t0 = at::randn({129, 127}, options);
-    at::Tensor t1 = at::rand_like(t0, options);
-    
-    auto t2 = t1.sub(fl4);
-    auto t3 = t0.add(fl5);
-    auto t4 = t3.mul(t2);
+  at::Tensor t0 = at::randn({129, 127}, options);
+  at::Tensor t1 = at::rand_like(t0, options);
 
-    at::Tensor kernel_tv4 = at::empty_like(t0, options);
+  auto t2 = t1.sub(fl4);
+  auto t3 = t0.add(fl5);
+  auto t4 = t3.mul(t2);
 
-    torch::jit::fuser::cuda::CudaKernel prog;
-    prog.device_ = 0;
+  at::Tensor kernel_tv4 = at::empty_like(t0, options);
 
-    int blocks = ceilDiv_(
-        ceilDiv_(t0.numel(), 128), 4); // numel / unroll factor / threads
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.device_ = 0;
 
-    prog.grid(blocks);
-    prog.block(128);
-    torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-    torch::jit::fuser::cuda::runTestKernel(
-        prog, {t0, t1, t2, t3}, {fl0, fl1, fl2, fl3}, {kernel_tv4}, {});
+  int blocks =
+      ceilDiv_(ceilDiv_(t0.numel(), 128), 4); // numel / unroll factor / threads
 
-    GPULower gpulw(&fusion);
-    std::stringstream cdg;
-    gpulw.printKernel(cdg);
+  prog.grid(blocks);
+  prog.block(128);
+  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
+  torch::jit::fuser::cuda::runTestKernel(
+      prog, {t0, t1, t2, t3}, {fl0, fl1, fl2, fl3}, {kernel_tv4}, {});
 
-    TORCH_INTERNAL_ASSERT(at::allclose(kernel_tv4, t4), cdg.str());
+  GPULower gpulw(&fusion);
+  std::stringstream cdg;
+  gpulw.printKernel(cdg);
+
+  TORCH_INTERNAL_ASSERT(at::allclose(kernel_tv4, t4), cdg.str());
 }
 
 void testGPU_FusionLoopUnroll() {
@@ -1373,9 +1384,6 @@ void testGPU_FusionLoopUnroll() {
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
   tv3->axis(0)->parallelize(ParallelType::BIDx);
 
-  // GPULower lower(&fusion);
-  // lower.printKernel(std::cout);
-
   int inp_size = 129;
 
   torch::jit::fuser::cuda::CudaKernel prog;
@@ -1391,7 +1399,8 @@ void testGPU_FusionLoopUnroll() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-  torch::jit::fuser::cuda::runTestKernel(prog, {input1, input2}, {}, {output}, {});
+  torch::jit::fuser::cuda::runTestKernel(
+      prog, {input1, input2}, {}, {output}, {});
 
   at::Tensor check = at::full({inp_size}, 4, options);
 
@@ -1400,7 +1409,7 @@ void testGPU_FusionLoopUnroll() {
 
 // We want split/merge/reorder all tested both on and off rfactor domains, also
 // want compute at into the rfactor domain, and into its consumer
-void testGPU_FusionSimpleReduction() {
+void testGPU_FusionRFactorReplay() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -1413,7 +1422,6 @@ void testGPU_FusionSimpleReduction() {
   // Do math with it, it returns a `Val*` but can be static_casted back to
   // TensorView
   TensorView* tv1 = static_cast<TensorView*>(sum(tv0, {1}));
-  // std::cout<<"Orig tv1: "<<tv1<<std::endl;
 
   tv1->split(0, 32);
   tv1->split(0, 16);
@@ -1427,34 +1435,22 @@ void testGPU_FusionSimpleReduction() {
 
   // RFactor axis 2:
   TensorDomain* new_domain = TransformRFactor::runReplay(tv1->domain(), {0});
+  new_domain = new_domain->reorder({{0, -1}, {2, 2}});
   TensorDomain* new_domain2 = TransformRFactor::runReplay2(tv1->domain(), {0});
-  TensorDomain* replayed = TransformReplay::fullReplay(new_domain2, new_domain);
-  std::cout<<tv1<<std::endl;
-  std::cout<<new_domain<<std::endl;
-  std::cout<<new_domain2<<std::endl;
-  std::cout<<new_domain<<" -> "<<replayed<<std::endl;
-  std::cout<<"========="<<std::endl;
-  std::cout<<tv1->getRootDomain()<<std::endl;
-  std::cout<<new_domain->rootDomain()<<std::endl;
-  std::cout<<new_domain2->rootDomain()<<std::endl;
+
+  TensorDomain* casp = TransformReplay::replayCasP(new_domain2, new_domain, 2);
+  casp = casp->split(1, 4);
+  TensorDomain* pasc = TransformReplay::replayPasC(new_domain, casp, 2);
 
   TORCH_INTERNAL_ASSERT(
       new_domain->nDims() - 1 == new_domain2->nDims(),
+      casp->nDims() == new_domain2->nDims() + 1,
+      pasc->nDims() == new_domain->nDims() + 1,
       "Error in rfactor, number of dimensions is not correct.");
-  
-  TORCH_INTERNAL_ASSERT(
-      replayed->nDims() ==
-          new_domain->rootDomain()->nDims() +
-              1, // +1 because orig iter domain goes from 1 -> 2, 2 splits
-                 // split, then merge
-      "Error in rfactor, number of dimensions is not correct, was expecting matching but got ",
-      replayed->nDims(),
-      " and ",
-      new_domain->rootDomain()->nDims() + 1,
-      ".");
 
   TORCH_INTERNAL_ASSERT(
-      !replayed->sameAs(new_domain) && !new_domain->sameAs(new_domain2) &&
+      !casp->sameAs(new_domain2) && !pasc->sameAs(new_domain) &&
+          !new_domain->sameAs(new_domain2) &&
           !tv1->domain()->sameAs(new_domain) &&
           !tv1->domain()->sameAs(new_domain2),
       "Error in rfactor, number of dimensions is not correct.");
@@ -1464,4 +1460,4 @@ void testGPU_FusionSimpleReduction() {
 
 } // namespace jit
 } // namespace torch
-//#endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)

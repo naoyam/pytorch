@@ -4,6 +4,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
+#include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
 namespace torch {
@@ -148,7 +149,9 @@ void TensorView::computeAt_impl(TensorView* consumer, int axis) {
   // Reset view otherwise will conflict with replay.
   this->compute_at_view_ = nullptr;
   this->compute_at_axis_ = 0;
-  TransformReplay::replay(consumer, this, axis);
+  // replay this as consumer / producer as consumer
+  // TransformReplay::replay(consumer, this, axis);
+  TransformReplay::replayPasC(this, consumer, axis);
   this->compute_at_view_ = consumer;
   this->compute_at_axis_ = (unsigned int)axis;
 }
@@ -157,7 +160,7 @@ void TensorView::forwardComputeAt_impl(TensorView* producer, int axis) {
   // Reset view otherwise will conflict with replay.
   producer->compute_at_view_ = nullptr;
   producer->compute_at_axis_ = 0;
-  TransformReplay::replay(producer, this, axis);
+  TransformReplay::replayCasP(this, producer, axis);
   producer->compute_at_view_ = this;
   producer->compute_at_axis_ = (unsigned int)axis;
 }

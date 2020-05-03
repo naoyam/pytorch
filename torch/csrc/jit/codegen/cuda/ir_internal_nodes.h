@@ -284,7 +284,6 @@ struct TORCH_CUDA_API TensorDomain : public Val {
 
   bool hasReduction() const;
 
-  
   bool hasRFactor() const;
 
   TensorDomain* noReductions() const;

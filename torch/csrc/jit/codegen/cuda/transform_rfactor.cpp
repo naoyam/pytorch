@@ -43,7 +43,7 @@ TensorDomain* TransformRFactor::runReplay(
             orig_axis->extent(),
             orig_axis->parallel_method(),
             false,
-            true));
+            false));
         found_rfactor = true;
       } else {
         domain_copy.push_back(new IterDomain(
@@ -96,11 +96,11 @@ TensorDomain* TransformRFactor::runReplay2(
   int it = 0;
   for (int i{0}; i < ndims; i++) {
     IterDomain* orig_axis = in_td->axis(i);
-    if(axes_set.find(i) != axes_set.end())
+    if (axes_set.find(i) != axes_set.end())
       TORCH_CHECK(
           orig_axis->isReduction(),
           "Tried to rFactor an axis that is not a reduction.");
-    
+
     if (orig_axis->isReduction() && axes_set.find(i) == axes_set.end()) {
       domain_copy.push_back(orig_axis);
       axis_map[i] = -1;

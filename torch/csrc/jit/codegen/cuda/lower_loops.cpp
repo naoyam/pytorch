@@ -311,7 +311,6 @@ void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val) {
     for_loops.pop_back();
 }
 
-
 /*
  *  This is one of the most complex parts of the code lowering logic. what we
  * need to do is:
@@ -326,9 +325,9 @@ void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val) {
  *  7) Close to computeAt
  */
 void LoopNestGenerator::handle(Expr* expr) {
-  if (!ir_utils::isTVOp(expr)){
-    for(auto out : expr->outputs() )
-      pushBack(new Allocate(out, new Int(1)) );
+  if (!ir_utils::isTVOp(expr)) {
+    for (auto out : expr->outputs())
+      pushBack(new Allocate(out, new Int(1)));
     pushBack(expr);
     return;
   }
@@ -367,11 +366,11 @@ void LoopNestGenerator::handle(Expr* expr) {
   pushBack(expr);
 
   // 7) Reduce loop structure back to computeAt
-  while (!compute_at_scope.empty() && compute_at_scope.size() > out->getComputeAtAxis()){
+  while (!compute_at_scope.empty() &&
+         compute_at_scope.size() > out->getComputeAtAxis()) {
     for_loops.pop_back();
     compute_at_scope.pop_back();
   }
-
 }
 
 // Generate the loop nest structure and place it in lowered_exprs
@@ -383,7 +382,6 @@ void LoopNestGenerator::generate(std::vector<Expr*> exprs) {
 
   for (auto* expr : exprs)
     handle(expr);
-
 }
 
 } // namespace fuser

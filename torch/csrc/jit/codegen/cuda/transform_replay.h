@@ -2,9 +2,6 @@
 
 #include <torch/csrc/WindowsTorchApiMacro.h>
 
-#include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
-#include <torch/csrc/jit/codegen/cuda/transform_iter.h>
-
 #include <algorithm>
 #include <vector>
 
@@ -118,16 +115,18 @@ namespace fuser {
  *
  */
 
+struct TensorDomain;
+struct TensorView;
+
 struct TORCH_CUDA_API TransformReplay {
  private:
-
   /*
    * Takes replay_ref and replays its transformations on replay_target
    * Replays from begining of both TensorDomains. could be more efficient to try
    * and find a common ancestor to start from, but likely not a worthwhile
    * optimization.
    */
-  TensorDomain* runReplay(
+  static TensorDomain* runReplay(
       TensorDomain* replay_ref,
       TensorDomain* replay_target,
       int compute_at_axis);
@@ -140,24 +139,12 @@ struct TORCH_CUDA_API TransformReplay {
    *
    * Replay Target as reference.
    */
-  TensorView* runReplay(
+  static TensorView* runReplay(
       TensorView* replay_ref,
       TensorView* replay_target,
       int compute_at_axis);
 
  public:
-  // td_influence marks which axes of td to track when running backward to td's
-  // root. Returned vector will be the size of td's root, with td_influence
-  // propagated backwards
-  std::vector<bool> getRootInfluence(
-      TensorDomain* td,
-      std::vector<bool> td_influence);
-
-  TensorDomain* replay(
-      TensorDomain* td,
-      std::vector<Expr*> history,
-      std::vector<int> axis_map);
-
   // Replay Target as reference.
   static TensorView* replay(
       TensorView* replay_ref,
@@ -167,7 +154,33 @@ struct TORCH_CUDA_API TransformReplay {
   // Replay Target as reference.
   static TensorView* fullReplay(
       TensorView* replay_ref,
-      TensorView* replay_target);
+      TensorView* replay_target) {
+    return TransformReplay::runReplay(replay_ref, replay_target, -1);
+  }
+
+  // Replay producer as consumer.
+  static TensorDomain* replayPasC(
+      TensorDomain* producer,
+      TensorDomain* consumer,
+      int compute_at_axis);
+
+  // Replay producer as consumer.
+  static TensorView* replayPasC(
+      TensorView* producer,
+      TensorView* consumer,
+      int compute_at_axis);
+
+  // Replay producer as consumer.
+  static TensorDomain* replayCasP(
+      TensorDomain* consumer,
+      TensorDomain* producer,
+      int compute_at_axis);
+
+  // Replay producer as consumer.
+  static TensorView* replayCasP(
+      TensorView* consumer,
+      TensorView* producer,
+      int compute_at_axis);
 
   // Replay Target as reference.
   static TensorDomain* replay(
@@ -178,7 +191,9 @@ struct TORCH_CUDA_API TransformReplay {
   // Replay Target as reference.
   static TensorDomain* fullReplay(
       TensorDomain* replay_ref,
-      TensorDomain* replay_target);
+      TensorDomain* replay_target) {
+    return TransformReplay::runReplay(replay_ref, replay_target, -1);
+  }
 };
 
 } // namespace fuser

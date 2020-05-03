@@ -245,12 +245,20 @@ TensorDomain* TensorDomain::split(int axis_, int factor) {
 
       // outer loop IterDomain
       IterDomain* ido = new IterDomain(
-          new Int(0), so, id->parallel_method(), id->isReduction(), id->isRFactorProduct());
+          new Int(0),
+          so,
+          id->parallel_method(),
+          id->isReduction(),
+          id->isRFactorProduct());
       new_domain.push_back(ido);
 
       // inner loop IterDomain
       IterDomain* idi = new IterDomain(
-          new Int(0), fact, id->parallel_method(), id->isReduction(), id->isRFactorProduct());
+          new Int(0),
+          fact,
+          id->parallel_method(),
+          id->isReduction(),
+          id->isRFactorProduct());
       new_domain.push_back(idi);
     }
   }

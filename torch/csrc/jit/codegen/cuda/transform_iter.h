@@ -40,11 +40,11 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
   // dispatch
   virtual TensorDomain* replay(Expr*, TensorDomain*);
 
-  // Runs through operations in history and applies them to TD, runs exprs from begining to end
+  // Runs through operations in history and applies them to TD, runs exprs from
+  // begining to end
   virtual TensorDomain* runReplay(TensorDomain*, std::vector<Expr*>);
 
  public:
-
   // Returns transformation exprs in forward order
   static std::vector<Expr*> getHistory(TensorDomain*);
 
@@ -59,7 +59,8 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
       TensorDomain* td,
       std::vector<bool> influence);
 
-  // Runs through history, applying only on influence to track how modifications would influence the original axes.
+  // Runs through history, applying only on influence to track how modifications
+  // would influence the original axes.
   static std::vector<bool> replayInfluence(
       std::vector<Expr*> history,
       std::vector<bool> td_influence);
@@ -77,7 +78,10 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
       TensorDomain* td,
       std::vector<Expr*> history,
       std::vector<int> axis_map);
-  };
+
+  // Replays backwards all non-rfactor axes
+  static TensorDomain* replayRFactor2Root(TensorDomain* td);
+};
 
 } // namespace fuser
 } // namespace jit

@@ -119,8 +119,8 @@ void IRPrinter::handle(const IterDomain* const id) {
   }
   print_inline(id->extent());
   os << "}";
-  if(id->isRFactorProduct())
-    os<<"rf";
+  if (id->isRFactorProduct())
+    os << "rf";
 }
 
 void IRPrinter::handle(const TensorIndex* const ti) {
@@ -331,14 +331,14 @@ void IRPrinter::handle(const IfThenElse* const ite) {
 void IRPrinter::handle(const Allocate* const a) {
   indent();
   os << a->buf_type();
-  if(a->buffer()->getValType() == ValType::TensorView){
+  if (a->buffer()->getValType() == ValType::TensorView) {
     os << " T" << a->buffer()->name() << "[";
     print_inline(a->extent());
     os << "];\n";
-  }else{
-    if(a->extent()->isOneInt()){
-      os<< " " << a->buffer() << ";\n";
-    }else{
+  } else {
+    if (a->extent()->isOneInt()) {
+      os << " " << a->buffer() << ";\n";
+    } else {
       TORCH_INTERNAL_ASSERT(
           false,
           "Received unexpected allocation: ",

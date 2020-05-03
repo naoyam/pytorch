@@ -167,10 +167,10 @@ void compileKernel(Fusion& fusion, CudaKernel* entry) {
   std::tie(func_name, code) = codeGeneration(fusion);
 
   // Keep input and output reference to validate/line up arguments
-  for(auto inp : fusion.inputs())
+  for (auto inp : fusion.inputs())
     entry->inputs.push_back(inp);
 
-  for(auto out : fusion.outputs())
+  for (auto out : fusion.outputs())
     entry->outputs.push_back(out);
 
   // vvv NVRTC COMPILATION vvv
@@ -301,8 +301,7 @@ void runTestKernel(
     std::deque<at::Tensor> tensor_inputs,
     std::deque<float> float_inputs,
     std::deque<at::Tensor> tensor_outputs,
-    std::deque<float> float_outputs){
-
+    std::deque<float> float_outputs) {
   const auto prior_device = at::cuda::current_device();
   at::cuda::set_device(entry.device_);
   auto stream = at::cuda::getCurrentCUDAStream();
@@ -312,13 +311,17 @@ void runTestKernel(
   // Naive I/O setup, I'm ignoring all the potential transformation (i.e. I/O
   // allocated here from the subgraph could be, and very likely are, different
   // from I/O expected by the generated CUDA kernel.
-  
+
   for (auto input : entry.inputs) {
-    if(input->getValType().value() == ValType::TensorView){
-      TORCH_INTERNAL_ASSERT(tensor_outputs.size() > 0, "Expected at least one tensor to be output.");
+    if (input->getValType().value() == ValType::TensorView) {
+      TORCH_INTERNAL_ASSERT(
+          tensor_outputs.size() > 0,
+          "Expected at least one tensor to be output.");
       kernel_args.push(tensor_inputs.front(), tensor_outputs[0].sizes());
       tensor_inputs.pop_front();
-    } else if (input->getValType().value() == ValType::Scalar && input->getDataType().value() == DataType::Float){
+    } else if (
+        input->getValType().value() == ValType::Scalar &&
+        input->getDataType().value() == DataType::Float) {
       kernel_args.push(c10::Scalar(float_inputs.front()));
       float_inputs.pop_front();
     } else {
@@ -327,11 +330,15 @@ void runTestKernel(
   }
 
   for (auto& output : entry.outputs) {
-        if(output->getValType().value() == ValType::TensorView){
-      TORCH_INTERNAL_ASSERT(tensor_outputs.size() > 0, "Expected at least one tensor to be output.");
+    if (output->getValType().value() == ValType::TensorView) {
+      TORCH_INTERNAL_ASSERT(
+          tensor_outputs.size() > 0,
+          "Expected at least one tensor to be output.");
       kernel_args.push(tensor_outputs.front());
       tensor_outputs.pop_front();
-    } else if (output->getValType().value() == ValType::Scalar && output->getDataType().value() == DataType::Float){
+    } else if (
+        output->getValType().value() == ValType::Scalar &&
+        output->getDataType().value() == DataType::Float) {
       kernel_args.push(c10::Scalar(float_outputs.front()));
       float_outputs.pop_front();
     } else {
