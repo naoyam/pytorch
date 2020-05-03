@@ -182,8 +182,8 @@ struct TORCH_CUDA_API TensorView : public Val {
   // Merge "axis" and "axis+1" into 1 dimension
   TensorView* merge(int axis);
 
-  // Reorder axes according to axis2pos[old_pos] = new_pos
-  TensorView* reorder(const std::unordered_map<int, int>& axis2pos);
+  // Reorder axes according to old2new[old_pos] = new_pos
+  TensorView* reorder(const std::unordered_map<int, int>& old2new);
 
   /*
    * Take reduction axes out of this domain, and create a new domain. New domain

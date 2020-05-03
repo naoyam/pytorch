@@ -300,7 +300,7 @@ struct TORCH_CUDA_API TensorDomain : public Val {
   TensorDomain* merge(int axis);
 
   // Reorder axes according to map[old_pos] = new_pos
-  TensorDomain* reorder(const std::unordered_map<int, int>& axis2pos);
+  TensorDomain* reorder(const std::unordered_map<int, int>& old2new);
 
   TensorDomain* rootDomain();
 
@@ -382,11 +382,11 @@ struct TORCH_CUDA_API Merge : public Expr {
 
 /*
  * Reorder the IterDomains of a tensor domain with the map
- * pos2axis[new_position] = old_position
+ * new2old[new_position] = old_position
  */
 struct TORCH_CUDA_API Reorder : public Expr {
   ~Reorder() = default;
-  Reorder(TensorDomain* _out, TensorDomain* _in, std::vector<int> _pos2axis);
+  Reorder(TensorDomain* _out, TensorDomain* _in, std::vector<int> _new2old);
 
   Reorder(const Reorder& other) = delete;
   Reorder& operator=(const Reorder& other) = delete;
@@ -400,8 +400,8 @@ struct TORCH_CUDA_API Reorder : public Expr {
   TensorDomain* in() const noexcept {
     return in_;
   }
-  const std::vector<int>& pos2axis() const noexcept {
-    return pos2axis_;
+  const std::vector<int>& new2old() const noexcept {
+    return new2old_;
   }
 
   bool sameAs(const Reorder* const other) const;
@@ -409,7 +409,7 @@ struct TORCH_CUDA_API Reorder : public Expr {
  private:
   TensorDomain* const out_;
   TensorDomain* const in_;
-  const std::vector<int> pos2axis_;
+  const std::vector<int> new2old_;
 };
 
 /*

@@ -153,7 +153,7 @@ Statement* OptOutMutator::mutate(Reorder* ro) {
     return ro;
 
   FusionGuard::getCurFusion()->removeExpr(ro);
-  return new Reorder(o, i, ro->pos2axis());
+  return new Reorder(o, i, ro->new2old());
 }
 
 Statement* OptOutMutator::mutate(UnaryOp* uop) {

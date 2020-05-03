@@ -313,19 +313,19 @@ TensorDomain* TensorDomain::merge(int axis_) {
 
 // Reorder axes according to map[old_pos] = new_pos
 TensorDomain* TensorDomain::reorder(
-    const std::unordered_map<int, int>& axis2pos_) {
+    const std::unordered_map<int, int>& old2new_) {
   // START VALIDATION CHECKS
   // Eventhough these checks are already in TensorView, we want to redo them as
   // we can enter this function from other places, not through TensorView
 
   // adjust based on negative values (any negative values gets nDims added to
   // it)
-  std::unordered_map<int, int> axis2pos;
+  std::unordered_map<int, int> old2new;
   auto ndims = nDims();
   std::transform(
-      axis2pos_.begin(),
-      axis2pos_.end(),
-      std::inserter(axis2pos, axis2pos.begin()),
+      old2new_.begin(),
+      old2new_.end(),
+      std::inserter(old2new, old2new.begin()),
       [ndims](std::unordered_map<int, int>::value_type entry) {
         return std::unordered_map<int, int>::value_type({
             entry.first < 0 ? entry.first + ndims : entry.first,
@@ -335,8 +335,8 @@ TensorDomain* TensorDomain::reorder(
 
   // Check if any adjusted values are < 0, or >= nDims, which are invalid
   bool out_of_range = std::any_of(
-      axis2pos.begin(),
-      axis2pos.end(),
+      old2new.begin(),
+      old2new.end(),
       [ndims](std::unordered_map<int, int>::value_type entry) {
         return entry.first < 0 || entry.first >= ndims || entry.second < 0 ||
             entry.second >= ndims;
@@ -350,8 +350,8 @@ TensorDomain* TensorDomain::reorder(
 
   std::set<int> old_pos_set;
   std::transform(
-      axis2pos.begin(),
-      axis2pos.end(),
+      old2new.begin(),
+      old2new.end(),
       std::inserter(old_pos_set, old_pos_set.begin()),
       [](std::unordered_map<int, int>::value_type entry) {
         return entry.first;
@@ -359,8 +359,8 @@ TensorDomain* TensorDomain::reorder(
 
   std::set<int> new_pos_set;
   std::transform(
-      axis2pos.begin(),
-      axis2pos.end(),
+      old2new.begin(),
+      old2new.end(),
       std::inserter(new_pos_set, new_pos_set.begin()),
       [](std::unordered_map<int, int>::value_type entry) {
         return entry.first;
@@ -368,32 +368,31 @@ TensorDomain* TensorDomain::reorder(
 
   // Error out if duplicate values are found.
   TORCH_CHECK(
-      old_pos_set.size() == axis2pos.size() &&
-          new_pos_set.size() == axis2pos.size(),
+      old_pos_set.size() == old2new.size() &&
+          new_pos_set.size() == old2new.size(),
       "Duplicate entries in transformation map sent to TensorView reorder.");
 
   // END VALIDATION CHECKS
 
-  // Map to save, from previous order, to new order.
-  std::vector<int> pos2axis(ndims, -1);
+  std::vector<int> new2old(ndims, -1);
 
   // Go through each old and new position, make sure they're within 0-ndims
-  for (std::pair<int, int> elem : axis2pos) {
+  for (std::pair<int, int> elem : old2new) {
     int old_pos = elem.first;
     int new_pos = elem.second;
 
     assert(old_pos >= 0 && old_pos < ndims && new_pos >= 0 && new_pos < ndims);
 
-    if (pos2axis[new_pos] != -1)
+    if (new2old[new_pos] != -1)
       TORCH_CHECK(false, "Reorder found duplicate destination positions.");
 
-    pos2axis[new_pos] = old_pos;
+    new2old[new_pos] = old_pos;
   }
 
-  std::set<int> old_positions(pos2axis.begin(), pos2axis.end());
+  std::set<int> old_positions(new2old.begin(), new2old.end());
   old_positions.erase(-1);
 
-  if (old_positions.size() != axis2pos.size())
+  if (old_positions.size() != old2new.size())
     TORCH_INTERNAL_ASSERT(
         false, "Reorder found duplicate destination positions.");
 
@@ -412,22 +411,22 @@ TensorDomain* TensorDomain::reorder(
 
   // Fill in positions that weren't specified, in relative order,
   // in empty spots in the set of new positions.
-  // pos2axis[new_position] = old_position
+  // new2old[new_position] = old_position
   auto it = positions_left.begin(); // old positions left
   std::transform(
-      pos2axis.begin(), pos2axis.end(), pos2axis.begin(), [&it](int i) -> int {
+      new2old.begin(), new2old.end(), new2old.begin(), [&it](int i) -> int {
         return i == -1 ? *it++ : i;
       });
 
   std::vector<IterDomain*> reordered_domain;
   std::transform(
-      pos2axis.begin(),
-      pos2axis.end(),
+      new2old.begin(),
+      new2old.end(),
       std::back_inserter(reordered_domain),
       [this](int i) -> IterDomain* { return this->axis(i); });
 
   TensorDomain* reordered_td = new TensorDomain(reordered_domain);
-  Reorder* merge_node = new Reorder(reordered_td, this, pos2axis);
+  Reorder* merge_node = new Reorder(reordered_td, this, new2old);
   return reordered_td;
 }
 
@@ -468,18 +467,18 @@ bool Merge::sameAs(const Merge* const other) const {
 Reorder::Reorder(
     TensorDomain* _out,
     TensorDomain* _in,
-    std::vector<int> _pos2axis)
+    std::vector<int> _new2old)
     : Expr(ExprType::Reorder),
       out_{_out},
       in_{_in},
-      pos2axis_{std::move(_pos2axis)} {
+      new2old_{std::move(_new2old)} {
   addOutput(_out);
   addInput(_in);
   this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 bool Reorder::sameAs(const Reorder* const other) const {
-  // Implicitly in and out matching means pos2axis matches
+  // Implicitly in and out matching means new2old matches
   return (out()->sameAs(other->out()) && in()->sameAs(other->in()));
 }
 

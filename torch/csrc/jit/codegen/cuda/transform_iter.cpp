@@ -97,10 +97,10 @@ TensorDomain* TransformIter::replay(Merge* expr, TensorDomain* td) {
 }
 
 TensorDomain* TransformIter::replay(Reorder* expr, TensorDomain* td) {
-  std::unordered_map<int, int> axis2pos;
-  for (decltype(expr->pos2axis().size()) i{0}; i < expr->pos2axis().size(); i++)
-    axis2pos[expr->pos2axis()[i]] = i;
-  return td->reorder(axis2pos);
+  std::unordered_map<int, int> old2new;
+  for (decltype(expr->new2old().size()) i{0}; i < expr->new2old().size(); i++)
+    old2new[expr->new2old()[i]] = i;
+  return td->reorder(old2new);
 }
 
 TensorDomain* TransformIter::replay(Expr* expr, TensorDomain* td) {
@@ -154,13 +154,13 @@ struct Influence : public TransformIter {
   }
 
   TensorDomain* replayBackward(Reorder* reorder, TensorDomain* td) override {
-    // pos2axis[new_pos] = old_pos Generate new axis2pos map
-    const std::vector<int>& pos2axis = reorder->pos2axis();
+    // new2old[new_pos] = old_pos Generate new old2new map
+    const std::vector<int>& new2old = reorder->new2old();
 
     std::vector<bool> reorder_influence(influence.size(), false);
-    for (decltype(pos2axis.size()) i = 0; i < pos2axis.size(); i++) {
+    for (decltype(new2old.size()) i = 0; i < new2old.size(); i++) {
       int new_pos = i;
-      int old_pos = pos2axis[i];
+      int old_pos = new2old[i];
       TORCH_INTERNAL_ASSERT(
           new_pos < influence.size() && old_pos < reorder_influence.size(),
           "Error during replay backwards, td/influence size mismatch.");
@@ -193,13 +193,13 @@ struct Influence : public TransformIter {
   }
 
   TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
-    // pos2axis[new_pos] = old_pos Generate new axis2pos map
-    const std::vector<int>& pos2axis = reorder->pos2axis();
+    // new2old[new_pos] = old_pos Generate new old2new map
+    const std::vector<int>& new2old = reorder->new2old();
 
     std::vector<bool> reorder_influence(influence.size(), false);
-    for (decltype(pos2axis.size()) i = 0; i < pos2axis.size(); i++) {
+    for (decltype(new2old.size()) i = 0; i < new2old.size(); i++) {
       int new_pos = i;
-      int old_pos = pos2axis[i];
+      int old_pos = new2old[i];
       TORCH_INTERNAL_ASSERT(
           new_pos < influence.size() && old_pos < reorder_influence.size(),
           "Error during replay backwards, td/influence size mismatch.");
@@ -342,9 +342,9 @@ struct Replay : public TransformIter {
   // the relative order specified by reorder. Remaining axes should be placed in
   // the inner most dimensions maintaining their original relative positioning.
   TensorDomain* replay(Reorder* reorder, TensorDomain* td) {
-    // pos2axis is new2old lets convert to old2new as it makes this easier to
-    // do, and we need that map anyways in the end to replay reorder
-    const std::vector<int>& new2old_orig = reorder->pos2axis();
+    // convert to old2new as it makes this easier to do, and we need that map
+    // anyways in the end to replay reorder
+    const std::vector<int>& new2old_orig = reorder->new2old();
     std::vector<int> old2new_orig(new2old_orig.size());
     for (decltype(new2old_orig.size()) i{0}; i < new2old_orig.size(); i++)
       old2new_orig[new2old_orig[i]] = i;
@@ -641,22 +641,22 @@ struct TORCH_CUDA_API TransformBackward : public TransformIter {
   }
 
   TensorDomain* replayBackward(Reorder* reorder, TensorDomain* td) {
-    const std::vector<int>& pos2axis_orig = reorder->pos2axis();
+    const std::vector<int>& new2old_orig = reorder->new2old();
 
-    // We want to convert pos2axis to something with td->nDims which it isn't
+    // We want to convert new2old to something with td->nDims which it isn't
     // guarenteed to be
-    std::vector<int> pos2axis(td->nDims(), -1);
+    std::vector<int> new2old(td->nDims(), -1);
 
     std::set<int> old_pos_left;
     for (decltype(axis_map.size()) i{0}; i < axis_map.size(); i++)
       old_pos_left.emplace(i);
 
-    for (decltype(pos2axis_orig.size()) i{0}; i < pos2axis_orig.size(); i++) {
+    for (decltype(new2old_orig.size()) i{0}; i < new2old_orig.size(); i++) {
       int new_pos = axis_map[i]; // position in td
-      int old_pos = pos2axis_orig[i]; // position it should be at before td
+      int old_pos = new2old_orig[i]; // position it should be at before td
 
       if (new_pos != -1) {
-        pos2axis[new_pos] = old_pos;
+        new2old[new_pos] = old_pos;
         TORCH_INTERNAL_ASSERT(
             old_pos_left.find(old_pos) != old_pos_left.end(),
             "Internal error, duplicate in reorder map found.");
@@ -664,26 +664,26 @@ struct TORCH_CUDA_API TransformBackward : public TransformIter {
       }
     }
 
-    for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
-      if (pos2axis[i] == -1 || pos2axis[i] >= td->nDims()) {
-        pos2axis[i] = *(old_pos_left.begin());
+    for (decltype(new2old.size()) i{0}; i < new2old.size(); i++) {
+      if (new2old[i] == -1 || new2old[i] >= td->nDims()) {
+        new2old[i] = *(old_pos_left.begin());
         old_pos_left.erase(old_pos_left.begin());
       }
     }
 
-    pos2axis.erase(pos2axis.begin() + td->nDims(), pos2axis.end());
+    new2old.erase(new2old.begin() + td->nDims(), new2old.end());
 
-    // pos2axis_orig[reorder->out()->pos] = reorder->in()->pos
+    // new2old_orig[reorder->out()->pos] = reorder->in()->pos
     // axis_map[reorder->out()->pos] = td->pos
-    // pos2axis[td->pos] = old_td->pos
+    // new2old[td->pos] = old_td->pos
     // NEED: new_axis_map[reorder->in()->pos] = old_td->pos
 
     std::vector<int> new_axis_map(axis_map.size(), -1);
     for (decltype(new_axis_map.size()) i{0}; i < new_axis_map.size(); i++) {
       int reorder_out_pos = i;
-      int reorder_in_pos = pos2axis_orig[reorder_out_pos];
+      int reorder_in_pos = new2old_orig[reorder_out_pos];
       int td_pos = axis_map[reorder_out_pos];
-      int old_td_pos = td_pos == -1 ? -1 : pos2axis[td_pos];
+      int old_td_pos = td_pos == -1 ? -1 : new2old[td_pos];
 
       new_axis_map[reorder_in_pos] = old_td_pos;
     }
@@ -691,15 +691,15 @@ struct TORCH_CUDA_API TransformBackward : public TransformIter {
     axis_map = new_axis_map;
 
     std::vector<IterDomain*> old_td(td->nDims(), nullptr);
-    for (decltype(pos2axis.size()) i{0}; i < pos2axis.size(); i++) {
-      // pos2axis[new] = old relative to td
+    for (decltype(new2old.size()) i{0}; i < new2old.size(); i++) {
+      // new2old[new] = old relative to td
       int new_pos = i; // position in td
-      int old_pos = pos2axis[i]; // position it should be at before td
+      int old_pos = new2old[i]; // position it should be at before td
       old_td[old_pos] = td->axis(new_pos);
     }
 
     TensorDomain* replayed_inp = new TensorDomain(old_td);
-    Reorder* replayed_split = new Reorder(td, replayed_inp, pos2axis);
+    Reorder* replayed_split = new Reorder(td, replayed_inp, new2old);
     return replayed_inp;
   }
 

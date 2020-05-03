@@ -30,27 +30,27 @@ TensorDomain* IndexCompute::replayBackward(Merge* merge, TensorDomain* td) {
 }
 
 TensorDomain* IndexCompute::replayBackward(Reorder* reorder, TensorDomain* td) {
-  // pos2axis[new_pos] = old_pos Generate new axis2pos map
-  const std::vector<int>& pos2axis = reorder->pos2axis();
+  // new2old[new_pos] = old_pos Generate new old2new map
+  const std::vector<int>& new2old = reorder->new2old();
 
   std::vector<Val*> reordered_indices;
 
   // Reverse the map so we can simply push back into reordered_indices
-  // axis2pos[old_pos] = new_pos
-  std::vector<int> axis2pos(pos2axis.size(), -1);
+  // old2new[old_pos] = new_pos
+  std::vector<int> old2new(new2old.size(), -1);
 
-  for (decltype(pos2axis.size()) i = 0; i < pos2axis.size(); i++) {
+  for (decltype(new2old.size()) i = 0; i < new2old.size(); i++) {
     int new_pos = i;
-    int old_pos = pos2axis[i];
+    int old_pos = new2old[i];
     TORCH_INTERNAL_ASSERT(
         new_pos >= 0 && new_pos < indices.size() && old_pos >= 0 &&
             old_pos < indices.size(),
         "Hit an invalid reorder transformation during IndexCompute,"
         " at least one move position is not within bounds.");
-    axis2pos[old_pos] = new_pos;
+    old2new[old_pos] = new_pos;
   }
-  for (decltype(axis2pos.size()) i = 0; i < axis2pos.size(); i++) {
-    int new_pos = axis2pos[i];
+  for (decltype(old2new.size()) i = 0; i < old2new.size(); i++) {
+    int new_pos = old2new[i];
     int old_pos = i;
     // reordered_indices[old_pos] = indices[new_pos];
     reordered_indices.push_back(indices[new_pos]);
