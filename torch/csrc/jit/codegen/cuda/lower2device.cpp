@@ -39,7 +39,7 @@ TensorIndex* GPULower::getGlobalProducerIndex(
   // Get new reference so replay inline doesn't change the original.
   TensorView* cloned_tv = producer->clone();
   // This replay will ignore reduction dimensions on the producer
-  TransformReplay::fullReplay(consumer, cloned_tv);
+  TransformReplay::replayCasP(consumer, cloned_tv, -1);
   TORCH_INTERNAL_ASSERT(
       scope_utils::getLoopIndices(active_scope).size() == cloned_tv->nDims(),
       "Dimensionality error in code generator while computing indexing.");
@@ -507,7 +507,7 @@ void GPULower::replaceSizes() {
     }
 
     TensorDomain* old_domain = tv->domain();
-    TensorDomain* new_domain = TransformReplay::fullReplay(
+    TensorDomain* new_domain = TransformReplay::fullSelfReplay(
         old_domain, new TensorDomain(new_domain_iters));
 
     TORCH_INTERNAL_ASSERT(
