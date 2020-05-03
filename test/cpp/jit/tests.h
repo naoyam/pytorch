@@ -119,9 +119,10 @@ namespace jit {
   _(GPU_FusionExecKernel)        \
   _(GPU_FusionForLoop)           \
   _(GPU_FusionLoopUnroll)        \
-  _(GPU_FusionRFactorReplay)     \
   _(GPU_FusionAdvancedComputeAt) \
-  _(GPU_FusionScalarInputs)
+  _(GPU_FusionScalarInputs)      \
+  _(GPU_FusionRFactorReplay)     \
+  _(GPU_FusionSimpleReduction)     
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
   _(ArgumentSpec)               \

@@ -168,6 +168,7 @@ Val* reductionOp(
       v1->getValType().value() == ValType::TensorView,
       "Cannot reduce on values that are not TensorViews, but recieved type ",
       v1->getValType().value());
+
   TORCH_CHECK(
       init->isConstScalar(),
       "Cannot create a reduction operation where the initial value is not a const scalar.");
@@ -193,12 +194,11 @@ Val* reductionOp(
 
     uint_axes.push_back((unsigned int)axis);
   }
-
+  
   Val* out = tv->newForReduction(uint_axes);
   if (init->getDataType().value() != v1->getDataType().value())
     init = castOp(v1->getDataType().value(), init);
   new ReductionOp(reduction_op_type, init, out, v1);
-
   return out;
 }
 

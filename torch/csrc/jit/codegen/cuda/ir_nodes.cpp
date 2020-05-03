@@ -3,6 +3,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
+#include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
 
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
@@ -428,6 +429,30 @@ TensorDomain* TensorDomain::reorder(
   TensorDomain* reordered_td = new TensorDomain(reordered_domain);
   Reorder* merge_node = new Reorder(reordered_td, this, new2old);
   return reordered_td;
+}
+
+// pair is in order where second is the consumer of first
+std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(const std::vector<int> axes){
+  std::set<int> axes_set(axes.begin(), axes.end());
+  bool rfactor_found = false;
+  bool reduction_found = false;
+  for(decltype(nDims()) i{0}; i<nDims(); i++){
+    if(axis(i)->isReduction()){
+      if(axes_set.find(i) != axes_set.end())
+        rfactor_found = true;
+      else
+        reduction_found = true;
+    }
+  }
+
+  TORCH_CHECK(
+      rfactor_found && reduction_found,
+      "Invalid rfactor found, rfactor must be provided at least one reduction axis, but not all reduction axes.");
+
+  return std::pair<TensorDomain*, TensorDomain*> {
+    TransformRFactor::runReplay(this, axes),
+    TransformRFactor::runReplay2(this, axes)
+  };
 }
 
 TensorDomain* TensorDomain::rootDomain() {

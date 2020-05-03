@@ -43,7 +43,7 @@ TensorDomain* TransformRFactor::runReplay(
             orig_axis->extent(),
             orig_axis->parallel_method(),
             false,
-            false));
+            true));
         found_rfactor = true;
       } else {
         domain_copy.push_back(new IterDomain(

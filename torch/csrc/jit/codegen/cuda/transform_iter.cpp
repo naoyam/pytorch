@@ -610,7 +610,7 @@ struct TORCH_CUDA_API TransformBackward : public TransformIter {
     // Insert pre-merged axis back into map
     axis_map.insert(axis_map.begin() + maxis + 1, axis_map[maxis] + 1);
 
-    // Create new domain reflecting pre-split
+    // Create new domain reflecting pre-merge
     std::vector<IterDomain*> new_domain;
     for (decltype(td->nDims()) i{0}; i < td->nDims(); i++) {
       if (i == axis) {
@@ -771,6 +771,18 @@ TensorDomain* TransformIter::replayBackward(
     TensorDomain* td,
     std::vector<Expr*> history,
     std::vector<int> axis_map) {
+  if (history.empty())
+    return td;
+
+  auto val = history[history.size() - 1]->output(0);
+  TORCH_INTERNAL_ASSERT(
+      val->getValType().value() == ValType::TensorDomain,
+      "Invalid history vector for replay backward.");
+
+  TORCH_INTERNAL_ASSERT(
+      axis_map.size() == static_cast<TensorDomain*>(val)->nDims(),
+      "Invalid axis map for replay backward.");
+
   return TransformBackward::replay(td, history, axis_map);
 }
 

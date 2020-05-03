@@ -1,4 +1,4 @@
-#if defined(USE_CUDA)
+//#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -1439,7 +1439,9 @@ void testGPU_FusionRFactorReplay() {
   TensorDomain* new_domain2 = TransformRFactor::runReplay2(tv1->domain(), {0});
 
   TensorDomain* casp = TransformReplay::replayCasP(new_domain2, new_domain, 2);
+
   casp = casp->split(1, 4);
+
   TensorDomain* pasc = TransformReplay::replayPasC(new_domain, casp, 2);
 
   TORCH_INTERNAL_ASSERT(
@@ -1458,6 +1460,43 @@ void testGPU_FusionRFactorReplay() {
   TORCH_INTERNAL_ASSERT(new_domain->rootDomain()->axis(1)->isRFactorProduct())
 }
 
+void testGPU_FusionSimpleReduction() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+  
+  // tv1[I0, R1] = tv0[I0, I1]
+  TensorView* tv1 = static_cast<TensorView*>(reductionOp(BinaryOpType::Add, {1}, new Float(0), tv0));
+  fusion.addOutput(tv1);
+
+  tv1->split(1, 128);
+  // tv1[I0, R1o, R1i{128}] = tv0[I0, I1]
+  tv1->split(1, 4);
+  // tv1[I0, R1oo, R1oi{4}, R1i{128}] = tv0[I0, I1]
+  TensorView* tv2 = tv1->rFactor({1});
+  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
+  // tv1[I0,        R1oi{4},  R1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
+
+  TensorView* tv3 = tv1->rFactor({1});
+  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
+  // tv3[I0,        R1oi{4}, Ir1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
+  // tv1[I0,                  R1i{128}] = tv3[I0,        R1oi{4}, Ir1i{128}]
+
+  tv0->computeAt(tv1, 1);
+
+  std::cout<<tv0<<std::endl;
+  std::cout<<tv2<<std::endl;
+  std::cout<<tv3<<std::endl;
+  std::cout<<tv1<<std::endl;
+
+  // GPULower lower(&fusion);
+  // lower.printKernel(std::cout);
+
+}
+
 } // namespace jit
 } // namespace torch
-#endif // #if defined(USE_CUDA)
+//#endif // #if defined(USE_CUDA)

@@ -35,10 +35,12 @@ TensorDomain* TransformReplay::fullSelfReplay(
   std::iota(axis_map.begin(), axis_map.end(), 0);
 
   // Finally replay producer as consumer on marked axes
-  return TransformIter::replay(
+  auto replayed = TransformIter::replay(
       self_copy_root,
       TransformIter::getHistory(self),
       axis_map);
+
+  return replayed;
 
 }
 
@@ -48,7 +50,7 @@ TensorDomain* TransformReplay::replayPasC(
     TensorDomain* consumer,
     int compute_at_axis) {
   // Want producer root with no reductions, rfactor included
-  TensorDomain* producer_root = producer->rootDomain();
+  TensorDomain* producer_rfactor_root = TransformIter::replayRFactor2Root(producer);
   // Producer root still has reductions
 
   // Want full consumer root, even before rfactor
@@ -67,32 +69,32 @@ TensorDomain* TransformReplay::replayPasC(
 
   // We have the influence on the consumer root, we need it on producer, we
   // want to keep those axes that don't need to be modified by the replay
-  std::vector<bool> producer_root_influence(
-      producer->rootDomain()->nDims(), false);
+  std::vector<bool> producer_rfactor_root_influence(
+      producer_rfactor_root->nDims(), false);
 
   // Map is based on producer
-  std::vector<int> replay_axis_map(consumer_root->nDims());
+  std::vector<int> replay_axis_map(consumer_root->nDims(), -1);
 
-  // Setup producer_root_influence vector on root for replay
-  decltype(producer_root_influence.size()) ip = 0, ic = 0;
-  while (ip < producer_root_influence.size() && ic < consumer_root->nDims()) {
-    bool is_reduction = producer_root->axis(ip)->isReduction();
+  // Setup producer_rfactor_root_influence vector on root for replay
+  decltype(producer_rfactor_root_influence.size()) ip = 0, ic = 0;
+  while (ip < producer_rfactor_root_influence.size() && ic < consumer_root->nDims()) {
+    bool is_reduction = producer_rfactor_root->axis(ip)->isReduction();
     if (is_reduction) {
-      producer_root_influence[ip++] = false;
+      producer_rfactor_root_influence[ip++] = false;
     } else {
       if (consumer_root_influence[ic]) {
         replay_axis_map[ic] = ip;
       } else {
         replay_axis_map[ic] = -1;
       }
-      producer_root_influence[ip++] = consumer_root_influence[ic++];
+      producer_rfactor_root_influence[ip++] = consumer_root_influence[ic++];
     }
   }
 
-  for (decltype(producer_root->nDims()) i{0}; i < producer_root->nDims(); i++)
+  for (decltype(producer_rfactor_root->nDims()) i{0}; i < producer_rfactor_root->nDims(); i++)
     TORCH_INTERNAL_ASSERT(
-        !(producer_root_influence[i] &&
-          producer_root->axis(i)->isRFactorProduct()),
+        !(producer_rfactor_root_influence[i] &&
+          producer_rfactor_root->axis(i)->isRFactorProduct()),
         "An illegal attempt to modify an rfactor axis detected.");
 
   // We should have hit the end of the consumer root domain
@@ -101,18 +103,32 @@ TensorDomain* TransformReplay::replayPasC(
       "Error when trying to run replay, didn't reach end of consumer/target root.");
 
   TORCH_INTERNAL_ASSERT(
-      producer_root_influence.size() == producer_root->nDims(),
+      producer_rfactor_root_influence.size() == producer_rfactor_root->nDims(),
       "Error detected during replay, expected matching sizes of influence map to root dimensions.");
 
-  std::vector<int> producer_replay_map(producer_root->nDims());
-  for (decltype(producer_replay_map.size()) i{0};
-       i < producer_replay_map.size();
-       i++)
-    producer_replay_map[i] = producer_root_influence[i] ? -1 : i;
+  auto producer_root_influence = TransformIter::getRootInfluence(
+      producer_rfactor_root, producer_rfactor_root_influence);
+
+  auto producer_influence = TransformIter::replayInfluence(
+    TransformIter::getHistory(producer), producer_root_influence
+  );
+  TensorDomain* producer_root = TransformIter::getRoot(producer_rfactor_root);
+
+  std::vector<int> producer_replay_backward_map(producer->nDims());
+  for (decltype(producer_replay_backward_map.size()) i{0};
+       i < producer_replay_backward_map.size();
+       i++){
+    if(producer->axis(i)->isRFactorProduct()){
+      producer_replay_backward_map[i] = -1;
+    }else{
+      producer_replay_backward_map[i] = producer_influence[i] ? i : -1;
+    }
+  }
 
   // Replay axes that won't be modified by transform replay
-  TensorDomain* producer_replay_root = TransformIter::replay(
-      producer_root, TransformIter::getHistory(producer), producer_replay_map);
+  TensorDomain* producer_replay_root = TransformIter::replayBackward(
+    producer, TransformIter::getHistory(producer), producer_replay_backward_map
+  );
 
   // Record axes positions.
   std::unordered_map<IterDomain*, int> new_position;
@@ -148,7 +164,6 @@ TensorDomain* TransformReplay::replayPasC(
           replayed->domain().begin() + compute_at_axis,
           [](IterDomain* id) { return id->isReduction(); }),
       "Reduction axes found within compute_at_axis in replay of producer.");
-
   return replayed;
 }
 
@@ -157,8 +172,10 @@ TensorDomain* TransformReplay::replayCasP(
     TensorDomain* consumer,
     TensorDomain* producer,
     int compute_at_axis) {
+
   // Want producer root with no reductions, rfactor included
-  TensorDomain* producer_root = TransformIter::replayRFactor2Root(producer);
+  TensorDomain* producer_rfactor_root = TransformIter::replayRFactor2Root(producer);
+  TensorDomain* producer_root = TransformIter::getRoot(producer);
   // Producer root still has reductions
 
   // Want full consumer root, even before rfactor
@@ -181,51 +198,61 @@ TensorDomain* TransformReplay::replayCasP(
         "Error during replay, likely due to an illegal bad computeAt.");
   }
 
+  std::vector<bool> producer_rfactor_root_influence =
+      TransformIter::replayInfluence(
+          TransformIter::getHistory(producer_rfactor_root), producer_root_influence);
+
   // We have the influence on the producer root, we need it on consumer, we
   // want to keep those axes that don't need to be modified by the replay
   std::vector<bool> consumer_root_influence(
       consumer->rootDomain()->nDims(), false);
 
   // Producer -> consumer axis map
-  std::vector<int> replay_axis_map(producer_root->nDims());
+  std::vector<int> replay_axis_map(producer_rfactor_root->nDims(), -1);
 
   // Setup consumer_root_influence vector on root for replay
   decltype(consumer_root_influence.size()) ip = 0, ic = 0;
-  while (ic < consumer_root_influence.size() && ip < producer_root->nDims()) {
-    bool is_reduction = producer_root->axis(ip)->isReduction();
+  while (ic < consumer_root_influence.size() && ip < producer_rfactor_root->nDims()) {
+    bool is_reduction = producer_rfactor_root->axis(ip)->isReduction();
     if (is_reduction) {
       replay_axis_map[ip++] = -1;
       continue;
     }
-    if (producer_root_influence[ip]) {
+    if (producer_rfactor_root_influence[ip]) {
       replay_axis_map[ip] = ic;
     } else {
       replay_axis_map[ip] = -1;
     }
-    consumer_root_influence[ic++] = producer_root_influence[ip++];
+    consumer_root_influence[ic++] = producer_rfactor_root_influence[ip++];
   }
 
-  // We should have hit the end of the consumer root domain
-  TORCH_INTERNAL_ASSERT(
-      ic == consumer_root->nDims(),
-      "Error when trying to run replay, didn't reach end of consumer/reference root.",
-      ic,
-      " ",
-      consumer_root->nDims());
+  // Unlike PasC if last axes in producer_rfactor_root is a reduction we won't
+  // be guarneteed that ip == producer_rfactor_root->nDims(), that's why we
+  // initialize replay_axis_map with -1
 
   TORCH_INTERNAL_ASSERT(
       consumer_root_influence.size() == consumer_root->nDims(),
       "Error detected during replay, expected matching sizes of influence map to root dimensions.");
 
-  std::vector<int> consumer_replay_map(consumer_root->nDims());
-  for (decltype(consumer_replay_map.size()) i{0};
-       i < consumer_replay_map.size();
-       i++)
-    consumer_replay_map[i] = consumer_root_influence[i] ? -1 : i;
+  auto consumer_influence = TransformIter::replayInfluence(
+      TransformIter::getHistory(consumer), consumer_root_influence);
+
+  std::vector<int> consumer_replay_backward_map(consumer->nDims());
+  for (decltype(consumer_replay_backward_map.size()) i{0};
+       i < consumer_replay_backward_map.size();
+       i++){
+    if(consumer->axis(i)->isRFactorProduct()){
+      consumer_replay_backward_map[i] = -1;
+    }else{
+      consumer_replay_backward_map[i] = consumer_influence[i] ? i : -1;
+    }
+    
+  }
 
   // Replay axes that won't be modified by transform replay
-  TensorDomain* consumer_replay_root = TransformIter::replay(
-      consumer_root, TransformIter::getHistory(consumer), consumer_replay_map);
+  TensorDomain* consumer_replay_root = TransformIter::replayBackward(
+    consumer, TransformIter::getHistory(consumer), consumer_replay_backward_map
+  );
 
   // Record axes positions.
   std::unordered_map<IterDomain*, int> new_position;

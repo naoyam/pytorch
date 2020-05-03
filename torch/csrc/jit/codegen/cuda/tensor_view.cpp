@@ -452,55 +452,33 @@ TensorView* TensorView::reorder(const std::unordered_map<int, int>& old2new_) {
  * Take reduction axes out of this domain, and create a new domain. New domain
  * will be used to create this domain. For example: TV1[I0, I1] = TV0[I0, R0,
  * R1, I1] TV0->rfactor({1}) TV0 is transformed to -> TV0[I0, R1, I1] The
- * TensorView returned is: TV2[I0, R0, I3, I1] The reduction will now beset as:
- * TV1[I0, R1, I1] = TV2[I0, R0, I3, I1]
- * TV0[I0, I1] = TV1[I0, R1, I1]
+ * TensorView returned is: TV2[I0, R0, I3, I1] The reduction will now beset
+ * as: TV1[I0, R1, I1] = TV2[I0, R0, I3, I1] TV0[I0, I1] = TV1[I0, R1, I1]
  */
-TensorView* TensorView::rfactor(std::vector<int> axes) {
-  /*
-  for(decltype(axes.size()) i{0}; i<axes.size(); i++){
-    if(axes[i] < nDims())
-      axes[i]+=nDims();
-  }
-  for(decltype(axes.size()) i{0}; i<axes.size(); i++){
-    TORCH_INTERNAL_ASSERT(
-        axes[i] >= 0 && axes[i] < nDims(),
-        "Expected rfactor axis to be >= 0 and < ",
-        nDims(),
-        " but got axis value of ",
-        axes[i]);
-    TORCH_INTERNAL_ASSERT(
-        axis(axes[i])->isReduction(),
-        "Tried to rfactor our iteration domain ",
-        axis(axes[i]),
-        " but it is not a reduction axis.");
-  }
+TensorView* TensorView::rFactor(const std::vector<int> axes) {
+  auto domain_pair = domain()->rFactor(axes);
+  auto producer_domain = domain_pair.first;
+  auto consumer_domain = domain_pair.second;
+  FusionGuard fg(this->fusion());
+  Expr* origin_expr = this->fusion()->origin(this);
+  TORCH_CHECK(
+      origin_expr != nullptr && origin_expr->getExprType() == ExprType::ReductionOp,
+      "Error rfactoring ",
+      this,
+      " its origin is either a nullptr or not a reduction.");
+  ReductionOp* this_origin = static_cast<ReductionOp*>(origin_expr);
 
-  std::set<int> axes_set(axes.begin(), axes.end());
-  // orig [I0, R0, R1, I1] (factor 1)
-  std::vector<IterDomain*> factored; // [I0, R0, I3, I1]
-  std::vector<IterDomain*> factored_out; // [I0, R1, I1]
+  TensorView* producer = new TensorView(producer_domain, this->getDataType().value());
 
-  for(decltype(nDims()) i{0}; i<nDims(); i++){
-    if(!axis(i)->isReduction()){
-      factored.push_back(axis(i));
-      factored_out.push_back(axis(i)->clone());
-    }else{
-      if(axes_set.find(i) == axes_set.end()){
-        // not factoring out i
-        factored_out.push_back(axis(i));
-        factored.push_back(new IterDomain(
-            axis(i)->start(),
-            axis(i)->extent(),
-            axis(i)->parallel_method(),
-            false));
-      } else {
-        factored.push_back(axis(i));
-      }
-    }
-  }
-*/
-  return this;
+  this->setDomain(consumer_domain);
+  TensorView* consumer = this;
+  
+  Expr* producer_origin = new ReductionOp(
+      this_origin->getReductionOpType(), this_origin->init(), producer, this_origin->in());
+  Expr* consumer_origin = new ReductionOp(
+      this_origin->getReductionOpType(), this_origin->init(), consumer, producer);
+    
+  return producer;
 }
 
 } // namespace fuser
