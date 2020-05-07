@@ -196,6 +196,11 @@ struct TORCH_CUDA_API TensorView : public Val {
    */
   TensorView* rFactor(const std::vector<int> axes);
 
+
+  MemoryType getMemoryType() {
+    return memory_type_;
+  }
+
   friend TORCH_CUDA_API TransformReplay;
   friend TORCH_CUDA_API TransformIter;
   friend TORCH_CUDA_API OptOutMutator;
@@ -235,10 +240,6 @@ struct TORCH_CUDA_API TensorView : public Val {
       TORCH_INTERNAL_ASSERT(
           mt == MemoryType::Global,
           "Tried to set an input or output to the fusion to a non-global memory type.");
-  }
-
-  MemoryType getMemoryType() {
-    return memory_type_;
   }
 
  private:

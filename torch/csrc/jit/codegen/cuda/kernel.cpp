@@ -317,7 +317,7 @@ void runTestKernel(
       TORCH_INTERNAL_ASSERT(
           tensor_outputs.size() > 0,
           "Expected at least one tensor to be output.");
-      kernel_args.push(tensor_inputs.front(), tensor_outputs[0].sizes());
+      kernel_args.push(tensor_inputs.front());
       tensor_inputs.pop_front();
     } else if (
         input->getValType().value() == ValType::Scalar &&

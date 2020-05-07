@@ -35,6 +35,7 @@ TensorDomain* TransformReplay::fullSelfReplay(
   std::iota(axis_map.begin(), axis_map.end(), 0);
 
   // Finally replay producer as consumer on marked axes
+
   auto replayed = TransformIter::replay(
       self_copy_root,
       TransformIter::getHistory(self),
@@ -49,9 +50,13 @@ TensorDomain* TransformReplay::replayPasC(
     TensorDomain* producer,
     TensorDomain* consumer,
     int compute_at_axis) {
-  // Want producer root with no reductions, rfactor included
-  TensorDomain* producer_rfactor_root = TransformIter::replayRFactor2Root(producer);
-  // Producer root still has reductions
+
+  if(compute_at_axis < 0)
+    compute_at_axis += consumer->nDims() + 1;
+  TORCH_INTERNAL_ASSERT(compute_at_axis >= 0 && compute_at_axis <= consumer->nDims(), "Invalid axis in transform replayPasC.");
+
+  // Consumer in rfactor cases is based off producer's rfactor root, not producer's root
+  TensorDomain* producer_rfactor_root = TransformIter::getRFactorRoot(producer);
 
   // Want full consumer root, even before rfactor
   TensorDomain* consumer_root = TransformIter::getRoot(consumer);
@@ -74,9 +79,9 @@ TensorDomain* TransformReplay::replayPasC(
 
   // Map is based on producer
   std::vector<int> replay_axis_map(consumer_root->nDims(), -1);
-
   // Setup producer_rfactor_root_influence vector on root for replay
   decltype(producer_rfactor_root_influence.size()) ip = 0, ic = 0;
+  
   while (ip < producer_rfactor_root_influence.size() && ic < consumer_root->nDims()) {
     bool is_reduction = producer_rfactor_root->axis(ip)->isReduction();
     if (is_reduction) {
@@ -109,27 +114,23 @@ TensorDomain* TransformReplay::replayPasC(
   auto producer_root_influence = TransformIter::getRootInfluence(
       producer_rfactor_root, producer_rfactor_root_influence);
 
-  auto producer_influence = TransformIter::replayInfluence(
-    TransformIter::getHistory(producer), producer_root_influence
-  );
   TensorDomain* producer_root = TransformIter::getRoot(producer_rfactor_root);
-
-  std::vector<int> producer_replay_backward_map(producer->nDims());
-  for (decltype(producer_replay_backward_map.size()) i{0};
-       i < producer_replay_backward_map.size();
+  
+  std::vector<int> producer_replay_map(producer_root->nDims());
+  for (decltype(producer_replay_map.size()) i{0};
+       i < producer_replay_map.size();
        i++){
-    if(producer->axis(i)->isRFactorProduct()){
-      producer_replay_backward_map[i] = -1;
+    if(producer_root->axis(i)->isRFactorProduct()){
+      producer_replay_map[i] = i;
     }else{
-      producer_replay_backward_map[i] = producer_influence[i] ? i : -1;
+      producer_replay_map[i] = producer_root_influence[i] ? -1 : i;
     }
   }
 
   // Replay axes that won't be modified by transform replay
-  TensorDomain* producer_replay_root = TransformIter::replayBackward(
-    producer, TransformIter::getHistory(producer), producer_replay_backward_map
-  );
-
+  TensorDomain* producer_replay_root =
+      TransformIter::replaySelf(producer, TransformIter::getHistory(producer), producer_replay_map);
+  
   // Record axes positions.
   std::unordered_map<IterDomain*, int> new_position;
   for (decltype(producer_replay_root->nDims()) i{0};
@@ -148,8 +149,9 @@ TensorDomain* TransformReplay::replayPasC(
         "Error hit during transform replay, could not find ",
         ax,
         " expected in root domain.");
-    root_axis_map[new_position[ax]] = i;
+    root_axis_map[new_position[ax]] = replay_axis_map[i];
   }
+  
   producer_replay_root = producer_replay_root->reorder(root_axis_map);
 
   // Finally replay producer as consumer on marked axes
@@ -173,8 +175,12 @@ TensorDomain* TransformReplay::replayCasP(
     TensorDomain* producer,
     int compute_at_axis) {
 
+  if(compute_at_axis < 0)
+    compute_at_axis += producer->nDims() + 1;
+  TORCH_INTERNAL_ASSERT(compute_at_axis >= 0 && compute_at_axis <= producer->nDims(), "Invalid axis in transform replayPasC.");
+
   // Want producer root with no reductions, rfactor included
-  TensorDomain* producer_rfactor_root = TransformIter::replayRFactor2Root(producer);
+  TensorDomain* producer_rfactor_root = TransformIter::getRFactorRoot(producer);
   TensorDomain* producer_root = TransformIter::getRoot(producer);
   // Producer root still has reductions
 
@@ -234,25 +240,20 @@ TensorDomain* TransformReplay::replayCasP(
       consumer_root_influence.size() == consumer_root->nDims(),
       "Error detected during replay, expected matching sizes of influence map to root dimensions.");
 
-  auto consumer_influence = TransformIter::replayInfluence(
-      TransformIter::getHistory(consumer), consumer_root_influence);
-
-  std::vector<int> consumer_replay_backward_map(consumer->nDims());
-  for (decltype(consumer_replay_backward_map.size()) i{0};
-       i < consumer_replay_backward_map.size();
+  std::vector<int> consumer_replay_map(consumer_root->nDims());
+  for (decltype(consumer_replay_map.size()) i{0};
+       i < consumer_replay_map.size();
        i++){
-    if(consumer->axis(i)->isRFactorProduct()){
-      consumer_replay_backward_map[i] = -1;
+    if(consumer_root->axis(i)->isRFactorProduct()){
+      consumer_replay_map[i] = i;
     }else{
-      consumer_replay_backward_map[i] = consumer_influence[i] ? i : -1;
+      consumer_replay_map[i] = consumer_root_influence[i] ? -1 : i;
     }
-    
   }
 
   // Replay axes that won't be modified by transform replay
-  TensorDomain* consumer_replay_root = TransformIter::replayBackward(
-    consumer, TransformIter::getHistory(consumer), consumer_replay_backward_map
-  );
+  TensorDomain* consumer_replay_root =
+      TransformIter::replaySelf(consumer, TransformIter::getHistory(consumer), consumer_replay_map);
 
   // Record axes positions.
   std::unordered_map<IterDomain*, int> new_position;
@@ -272,15 +273,22 @@ TensorDomain* TransformReplay::replayCasP(
         "Error hit during transform replay, could not find ",
         ax,
         " expected in root domain.");
-    root_axis_map[new_position[ax]] = i;
+    root_axis_map[new_position[ax]] = replay_axis_map[i];
   }
-  consumer_replay_root = consumer_replay_root->reorder(root_axis_map);
 
+  auto replay_history = TransformIter::getHistory(producer);
+  auto rfactor_history = TransformIter::getHistory(producer_rfactor_root);
+  replay_history.erase(replay_history.begin(), replay_history.begin()+rfactor_history.size());
+  
+  consumer_replay_root = consumer_replay_root->reorder(root_axis_map);
   // Finally replay consumer as producer on marked axes
-  return TransformIter::replay(
+
+  auto replayed = TransformIter::replay(
       consumer_replay_root,
-      TransformIter::getHistory(producer),
+      replay_history,
       replay_axis_map);
+  
+  return replayed;
 }
 
 TensorView* TransformReplay::replayPasC(

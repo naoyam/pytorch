@@ -48,6 +48,7 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
   // Returns transformation exprs in forward order
   static std::vector<Expr*> getHistory(TensorDomain*);
 
+  // TODO: make td const
   static TensorDomain* getRoot(TensorDomain* td) {
     TransformIter ti;
     return ti.runBackward(td);
@@ -58,6 +59,10 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
   static std::vector<bool> getRootInfluence(
       TensorDomain* td,
       std::vector<bool> influence);
+
+  static std::vector<bool> replayBackwardInfluence(
+    std::vector<Expr*> history,
+    std::vector<bool> td_influence);
 
   // Runs through history, applying only on influence to track how modifications
   // would influence the original axes.
@@ -79,8 +84,13 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
       std::vector<Expr*> history,
       std::vector<int> axis_map);
 
+  static TensorDomain* replaySelf(
+    TensorDomain* td,
+    std::vector<Expr*> history,
+    std::vector<int> axis_map);
+
   // Replays backwards all non-rfactor axes
-  static TensorDomain* replayRFactor2Root(TensorDomain* td);
+  static TensorDomain* getRFactorRoot(TensorDomain* td);
 };
 
 } // namespace fuser

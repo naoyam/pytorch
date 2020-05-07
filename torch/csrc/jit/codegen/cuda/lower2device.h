@@ -32,35 +32,6 @@ struct TORCH_CUDA_API GPULower : public OptOutMutator {
   // Set active views from computeAtView
   void setActiveView(const TensorView* const);
 
-  // Indexing functions
-  // Consumer = Producer
-  // i.e. T0 = T1... -> T0 is the consumer, T1 is the producer
-  // Producer indexing dispatch
-  TensorIndex* getProducerIndex(TensorView* producer, TensorView* consumer);
-  // Producer if it's in global memory
-  TensorIndex* getGlobalProducerIndex(
-      TensorView* producer,
-      TensorView* consumer);
-  // Producer indexing if it's in shared memory
-  TensorIndex* getSharedProducerIndex(
-      TensorView* producer,
-      TensorView* consumer);
-  // Producer indexing if it's in local memory
-  TensorIndex* getLocalProducerIndex(
-      TensorView* producer,
-      TensorView* consumer);
-  // Consumer index dispatch
-  TensorIndex* getConsumerIndex(TensorView* consumer);
-  // Consumer indexing if it's in global memory
-  TensorIndex* getGlobalConsumerIndex(TensorView* consumer);
-  // Consumer indexing if it's in shared memory
-  TensorIndex* getSharedConsumerIndex(TensorView* consumer);
-  // Consumer indexing if it's in local memory
-  TensorIndex* getLocalConsumerIndex(TensorView* consumer);
-
-  // Get a predicate based on a particular tensorview
-  IfThenElse* getPredicate(const TensorView* const);
-
   // Wrap pushBack in lower_utils if active_scope is null we want it to go
   // straight to lower_exprs
   void pushBack(Expr*);

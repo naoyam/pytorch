@@ -12,11 +12,8 @@ namespace fuser {
 
 namespace scope_utils {
 
-// Grab the index variables of the active loop nest
-std::vector<Val*> getLoopIndices(Expr* scope);
-
-// Grab the iterDomains of the active loops
-std::vector<IterDomain*> getLoopIterDomains(Expr* scope);
+// Grab the ForLoop starting from scope working out
+std::vector<ForLoop*> getLoops(Expr* scope);
 
 // Track how far our for loop scope is
 unsigned int computeForDepth(Expr* scope);
@@ -53,6 +50,10 @@ Expr* firstInnerMostScope(Expr* scope);
 } // namespace scope_utils
 
 namespace ir_utils {
+
+std::vector<Val*> indices(std::vector<ForLoop*>);
+
+std::vector<IterDomain*> iterDomains(std::vector<ForLoop*>);
 
 bool isTV(const Val* const);
 

@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/index_compute.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/predicate_compute.h>
+#include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
 namespace torch {
 namespace jit {
@@ -42,11 +43,15 @@ void UnrollPass::handle(Expr* expr) {
 }
 
 namespace {
-Int* getPredicate(const TensorView* const pred_tv, std::vector<Val*> indices) {
-  TensorIndex* ti = new TensorIndex(
-      pred_tv, IndexCompute::computeIndices(pred_tv, std::move(indices)));
-
-  std::vector<Int*> all_preds = PredicateCompute::computePredicates(ti);
+Int* getPredicate(TensorView* tv, std::vector<Val*> inds){
+  if(tv->nDims() > inds.size()){
+    for(decltype(tv->nDims()) i{0}; i<tv->nDims(); i++){
+      if(tv->axis(i)->isReduction())
+        inds.insert(inds.begin()+i, new Int(0));
+    }
+  }
+  std::vector<Int*> all_preds = PredicateCompute::computePredicates(
+    new TensorIndex(tv, IndexCompute::get(tv->domain(), inds)));
 
   std::vector<Int*> preds;
 
@@ -68,7 +73,6 @@ Int* getPredicate(const TensorView* const pred_tv, std::vector<Val*> indices) {
           cond->getDataType().value() == DataType::Int,
       "Error computing predicate, should be returning an Int, but returning ",
       cond);
-
   return static_cast<Int*>(cond);
 }
 } // namespace
@@ -85,17 +89,21 @@ void UnrollPass::handle(ForLoop* fl) {
     OptOutDispatch::handle(expr);
   }
 
-  TensorView* out;
-  bool has_TV_op = false;
+  TensorView* out = nullptr;
+  bool has_global = false;
   for (Expr* expr : fl->body().exprs())
     if (ir_utils::isTVOp(expr)) {
       // Predicate determining op for unroll
       out = ir_utils::asTV(expr->output(0));
-      has_TV_op = true;
-      break;
+      has_global = has_global || out->getMemoryType() == MemoryType::Global;
+      for(auto inp : expr->inputs())
+        if(ir_utils::isTV(inp))
+          has_global = has_global || ir_utils::asTV(inp)->getMemoryType() == MemoryType::Global;
     }
 
-  if (within_unroll && has_TV_op) {
+  bool has_TV_op = out != nullptr;
+
+  if (within_unroll && has_TV_op && has_global) {
     // Setup unrolled loop information:
 
     // Indices used to detect when we can unroll a loop safely
@@ -157,8 +165,8 @@ void UnrollPass::handle(ForLoop* fl) {
         continue;
 
       // Setup the expressions that need predicates around them.
-      Int* inline_predicate =
-          getPredicate(out, scope_utils::getLoopIndices(for_loops.back()));
+      Int* inline_predicate = getPredicate(out, ir_utils::indices(for_loops));
+
       IfThenElse* inline_ite =
           new IfThenElse(inline_predicate, {expr}, {}, inner_most_inlined_loop);
       std::unordered_map<Expr*, Expr*> inline_replacement_map;
@@ -171,22 +179,25 @@ void UnrollPass::handle(ForLoop* fl) {
     // modify in place, so grab a copy of exprs first.
     std::vector<Expr*> exprs(
         fl->body().exprs().begin(), fl->body().exprs().end());
+
     for (auto expr : exprs) {
       if (!ir_utils::isTVOp(expr))
         continue;
 
-      // ! within_unroll
       TensorView* out = ir_utils::asTV(ir_utils::asExpr(expr)->outputs()[0]);
 
-      Int* pred =
-          getPredicate(out, scope_utils::getLoopIndices(for_loops.back()));
+      if(has_global){
+        Int* pred = getPredicate(out, ir_utils::indices(for_loops));
 
-      if (!pred->isOneInt()) {
-        IfThenElse* inline_ite =
-            new IfThenElse(pred, {expr}, {}, for_loops.back());
-        for_loops.back()->body().insert_before(expr, inline_ite);
-        for_loops.back()->body().erase(expr);
+        // If we need a predicate, put expr inside an if then else
+        if (!pred->isOneInt()) {
+          IfThenElse* inline_ite =
+              new IfThenElse(pred, {expr}, {}, for_loops.back());
+          for_loops.back()->body().insert_before(expr, inline_ite);
+          for_loops.back()->body().erase(expr);
+        }
       }
+
     }
   } // else (if(!within_unroll))
 
@@ -250,7 +261,7 @@ void LoopNestGenerator::pushAlloc(TensorView* tv) {
   std::vector<Val*> alloc_dims;
   for (auto i = alloc_pos; i < tv->nDims(); i++) {
     IterDomain* dim = tv->getComputeAtAxis(i).first;
-    if (dim->isThreadDim())
+    if (dim->isThreadDim() || dim->isReduction())
       continue;
     // TORCH_INTERNAL_ASSERT()
     alloc_dims.push_back(dim->extent());
@@ -289,6 +300,14 @@ void LoopNestGenerator::openFor(std::pair<IterDomain*, TensorView*> id_pair) {
   }
 }
 
+void LoopNestGenerator::popFor() {
+  TORCH_INTERNAL_ASSERT(
+      !for_loops.empty() && !compute_at_scope.empty(),
+      "Can't pop for loop, scope is empty.");
+  for_loops.pop_back();
+  compute_at_scope.pop_back();
+}
+
 void LoopNestGenerator::pushBack(Expr* expr) {
   if (for_loops.size() == 0)
     lowered_exprs.push_back(expr);
@@ -299,16 +318,18 @@ void LoopNestGenerator::pushBack(Expr* expr) {
 // Update for loop structure based on this TensorView
 void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val) {
   TORCH_INTERNAL_ASSERT(
-      tv->getComputeAtAxis() >= for_loops.size(),
+      tv->getComputeAtAxis() <= for_loops.size(),
       "Initialization of reduction was trying to be placed at the wrong point in the loop nest.");
   int depth = for_loops.size();
-  for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
-    openFor(tv->getComputeAtAxis(i));
+  for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++){
+    if(!tv->axis(i)->isReduction())
+      openFor(tv->getComputeAtAxis(i));
+  }
   auto clone = tv->unsafeClone();
-  for_loops.back()->body().push_back(
-      new UnaryOp(UnaryOpType::Set, clone, init_val));
-  for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++)
-    for_loops.pop_back();
+  pushBack(new UnaryOp(UnaryOpType::Set, clone, init_val));
+
+  while(for_loops.size() > depth)
+    popFor();
 }
 
 /*
@@ -325,6 +346,7 @@ void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val) {
  *  7) Close to computeAt
  */
 void LoopNestGenerator::handle(Expr* expr) {
+  
   if (!ir_utils::isTVOp(expr)) {
     for (auto out : expr->outputs())
       pushBack(new Allocate(out, new Int(1)));
@@ -333,15 +355,12 @@ void LoopNestGenerator::handle(Expr* expr) {
   }
 
   TensorView* out = static_cast<TensorView*>(expr->output(0));
-
   // 1) Reduce loop structure
-  while (!compute_at_scope.empty() &&
-         (compute_at_scope.back() !=
-              out->getComputeAtAxis(compute_at_scope.size() - 1) ||
-          (compute_at_scope.size() > out->getComputeAtAxis() &&
-           compute_at_scope.back().second != out))) {
-    for_loops.pop_back();
-    compute_at_scope.pop_back();
+  while (compute_at_scope.size() > out->getComputeAtAxis() &&
+         compute_at_scope.back().second != out &&
+         compute_at_scope.back() !=
+               out->getComputeAtAxis(compute_at_scope.size() - 1) ) {
+    popFor();
   }
 
   // 2) Open back up to computeAt
@@ -355,7 +374,7 @@ void LoopNestGenerator::handle(Expr* expr) {
     pushAlloc(out);
 
   //  4) If this is a reduction, initialize the output (open for loops to inner
-  //  most, predicate, initialize, close predicate, close to computeAt)
+  //  most, predicate, initialize, F predicate, close to computeAt)
   if (out->hasReduction())
     initReduction(out, static_cast<ReductionOp*>(expr)->init());
 
@@ -364,13 +383,12 @@ void LoopNestGenerator::handle(Expr* expr) {
     openFor(out->getComputeAtAxis(i));
   //  6) Run expression
   pushBack(expr);
-
+  
   // 7) Reduce loop structure back to computeAt
   while (!compute_at_scope.empty() &&
-         compute_at_scope.size() > out->getComputeAtAxis()) {
-    for_loops.pop_back();
-    compute_at_scope.pop_back();
-  }
+         compute_at_scope.size() > out->getComputeAtAxis())
+    popFor();
+
 }
 
 // Generate the loop nest structure and place it in lowered_exprs

@@ -150,7 +150,6 @@ void TensorView::computeAt_impl(TensorView* consumer, int axis) {
   this->compute_at_view_ = nullptr;
   this->compute_at_axis_ = 0;
   // replay this as consumer / producer as consumer
-  // TransformReplay::replay(consumer, this, axis);
   TransformReplay::replayPasC(this, consumer, axis);
   this->compute_at_view_ = consumer;
   this->compute_at_axis_ = (unsigned int)axis;

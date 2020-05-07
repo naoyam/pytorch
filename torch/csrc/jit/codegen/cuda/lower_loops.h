@@ -53,6 +53,7 @@ struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
 
   // Open a new inner most for loop
   void openFor(std::pair<IterDomain*, TensorView*>);
+  void popFor();
 
   // Wrap pushBack in lower_utils if active_scope is null we want it to go
   // straight to lower_exprs
