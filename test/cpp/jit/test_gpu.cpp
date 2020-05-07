@@ -1550,8 +1550,8 @@ void testGPU_FusionSimpleReduction() {
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
 
-  GPULower lower(&fusion);
-  lower.printKernel(std::cout);
+  // GPULower lower(&fusion);
+  // lower.printKernel(std::cout);
 }
 
 } // namespace jit
