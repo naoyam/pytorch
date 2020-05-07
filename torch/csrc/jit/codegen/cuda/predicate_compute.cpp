@@ -21,8 +21,8 @@ std::vector<Int*> PredicateCompute::computePredicates(const TensorIndex* ti) {
   TensorDomain* root = tv->getRootDomain();
 
   std::vector<Int*> preds;
-  if (FusionGuard::getCurFusion()->origin(tv->domain()) == nullptr
-      && tv->nDims() == ti->nDims())
+  if (FusionGuard::getCurFusion()->origin(tv->domain()) == nullptr &&
+      tv->nDims() == ti->nDims())
     return preds;
 
   TORCH_INTERNAL_ASSERT(root->nDims() == ti->nDims());

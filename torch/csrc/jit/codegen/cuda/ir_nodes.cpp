@@ -432,13 +432,14 @@ TensorDomain* TensorDomain::reorder(
 }
 
 // pair is in order where second is the consumer of first
-std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(const std::vector<int> axes){
+std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(
+    const std::vector<int> axes) {
   std::set<int> axes_set(axes.begin(), axes.end());
   bool rfactor_found = false;
   bool reduction_found = false;
-  for(decltype(nDims()) i{0}; i<nDims(); i++){
-    if(axis(i)->isReduction()){
-      if(axes_set.find(i) != axes_set.end())
+  for (decltype(nDims()) i{0}; i < nDims(); i++) {
+    if (axis(i)->isReduction()) {
+      if (axes_set.find(i) != axes_set.end())
         rfactor_found = true;
       else
         reduction_found = true;
@@ -449,10 +450,9 @@ std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(const std::vector<
       rfactor_found && reduction_found,
       "Invalid rfactor found, rfactor must be provided at least one reduction axis, but not all reduction axes.");
 
-  return std::pair<TensorDomain*, TensorDomain*> {
-    TransformRFactor::runReplay(this, axes),
-    TransformRFactor::runReplay2(this, axes)
-  };
+  return std::pair<TensorDomain*, TensorDomain*>{
+      TransformRFactor::runReplay(this, axes),
+      TransformRFactor::runReplay2(this, axes)};
 }
 
 TensorDomain* TensorDomain::rootDomain() {

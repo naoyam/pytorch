@@ -43,15 +43,15 @@ void UnrollPass::handle(Expr* expr) {
 }
 
 namespace {
-Int* getPredicate(TensorView* tv, std::vector<Val*> inds){
-  if(tv->nDims() > inds.size()){
-    for(decltype(tv->nDims()) i{0}; i<tv->nDims(); i++){
-      if(tv->axis(i)->isReduction())
-        inds.insert(inds.begin()+i, new Int(0));
+Int* getPredicate(TensorView* tv, std::vector<Val*> inds) {
+  if (tv->nDims() > inds.size()) {
+    for (decltype(tv->nDims()) i{0}; i < tv->nDims(); i++) {
+      if (tv->axis(i)->isReduction())
+        inds.insert(inds.begin() + i, new Int(0));
     }
   }
   std::vector<Int*> all_preds = PredicateCompute::computePredicates(
-    new TensorIndex(tv, IndexCompute::get(tv->domain(), inds)));
+      new TensorIndex(tv, IndexCompute::get(tv->domain(), inds)));
 
   std::vector<Int*> preds;
 
@@ -96,9 +96,10 @@ void UnrollPass::handle(ForLoop* fl) {
       // Predicate determining op for unroll
       out = ir_utils::asTV(expr->output(0));
       has_global = has_global || out->getMemoryType() == MemoryType::Global;
-      for(auto inp : expr->inputs())
-        if(ir_utils::isTV(inp))
-          has_global = has_global || ir_utils::asTV(inp)->getMemoryType() == MemoryType::Global;
+      for (auto inp : expr->inputs())
+        if (ir_utils::isTV(inp))
+          has_global = has_global ||
+              ir_utils::asTV(inp)->getMemoryType() == MemoryType::Global;
     }
 
   bool has_TV_op = out != nullptr;
@@ -186,7 +187,7 @@ void UnrollPass::handle(ForLoop* fl) {
 
       TensorView* out = ir_utils::asTV(ir_utils::asExpr(expr)->outputs()[0]);
 
-      if(has_global){
+      if (has_global) {
         Int* pred = getPredicate(out, ir_utils::indices(for_loops));
 
         // If we need a predicate, put expr inside an if then else
@@ -197,7 +198,6 @@ void UnrollPass::handle(ForLoop* fl) {
           for_loops.back()->body().erase(expr);
         }
       }
-
     }
   } // else (if(!within_unroll))
 
@@ -321,14 +321,14 @@ void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val) {
       tv->getComputeAtAxis() <= for_loops.size(),
       "Initialization of reduction was trying to be placed at the wrong point in the loop nest.");
   int depth = for_loops.size();
-  for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++){
-    if(!tv->axis(i)->isReduction())
+  for (decltype(tv->nDims()) i = depth; i < tv->nDims(); i++) {
+    if (!tv->axis(i)->isReduction())
       openFor(tv->getComputeAtAxis(i));
   }
   auto clone = tv->unsafeClone();
   pushBack(new UnaryOp(UnaryOpType::Set, clone, init_val));
 
-  while(for_loops.size() > depth)
+  while (for_loops.size() > depth)
     popFor();
 }
 
@@ -346,7 +346,6 @@ void LoopNestGenerator::initReduction(TensorView* tv, Val* init_val) {
  *  7) Close to computeAt
  */
 void LoopNestGenerator::handle(Expr* expr) {
-  
   if (!ir_utils::isTVOp(expr)) {
     for (auto out : expr->outputs())
       pushBack(new Allocate(out, new Int(1)));
@@ -359,7 +358,7 @@ void LoopNestGenerator::handle(Expr* expr) {
   while (compute_at_scope.size() > out->getComputeAtAxis() &&
          compute_at_scope.back().second != out &&
          compute_at_scope.back() !=
-               out->getComputeAtAxis(compute_at_scope.size() - 1) ) {
+             out->getComputeAtAxis(compute_at_scope.size() - 1)) {
     popFor();
   }
 
@@ -383,12 +382,11 @@ void LoopNestGenerator::handle(Expr* expr) {
     openFor(out->getComputeAtAxis(i));
   //  6) Run expression
   pushBack(expr);
-  
+
   // 7) Reduce loop structure back to computeAt
   while (!compute_at_scope.empty() &&
          compute_at_scope.size() > out->getComputeAtAxis())
     popFor();
-
 }
 
 // Generate the loop nest structure and place it in lowered_exprs

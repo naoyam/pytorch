@@ -1,7 +1,7 @@
+#include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
-#include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 
 namespace torch {
 namespace jit {
@@ -236,7 +236,7 @@ struct Influence : public TransformIter {
   std::vector<bool> influence;
 
   Influence(std::vector<Expr*> history, std::vector<bool> td_influence)
-      : influence(td_influence){}
+      : influence(td_influence) {}
 
   using TransformIter::replayBackward;
   using TransformIter::runReplay;
@@ -245,10 +245,10 @@ struct Influence : public TransformIter {
   static std::vector<bool> computeBackward(
       std::vector<Expr*> history,
       std::vector<bool> td_influence) {
-    if(history.empty())
+    if (history.empty())
       return td_influence;
-    
-    Val* last_val = history[history.size()-1]->output(0);
+
+    Val* last_val = history[history.size() - 1]->output(0);
     TORCH_INTERNAL_ASSERT(
         last_val->getValType().value() == ValType::TensorDomain &&
             static_cast<TensorDomain*>(last_val)->nDims() ==
@@ -583,9 +583,9 @@ struct ReplaySelf : public TransformIter {
         IterDomain* saxis_2 = split->out()->axis(saxis + 1);
         // manually replay split domains using td extent, otherwise matching
         // split axes params.
-  TORCH_CHECK(
-      td_axis->start()->isZeroInt(),
-      "Splitting IterDomains with starting values that aren't 0, is not supported at this time.");
+        TORCH_CHECK(
+            td_axis->start()->isZeroInt(),
+            "Splitting IterDomains with starting values that aren't 0, is not supported at this time.");
 
         IterDomain* ido = new IterDomain(
             new Int(0),
@@ -647,7 +647,6 @@ struct ReplaySelf : public TransformIter {
     std::vector<IterDomain*> new_domain;
     for (decltype(td->nDims()) i{0}; i < td->nDims(); i++) {
       if (i == axis) {
-
         // We want to support cases where our root domain has changed sizes
         // this happens in lowering when we replace sizes with runtime look ups
         IterDomain* td_axis1 = td->axis(axis);
@@ -655,8 +654,8 @@ struct ReplaySelf : public TransformIter {
         IterDomain* m_axis = merge->out()->axis(maxis);
 
         TORCH_INTERNAL_ASSERT(
-        td_axis1->start()->isZeroInt() && td_axis2->start()->isZeroInt(),
-        "Splitting IterDomains with starting values that aren't 0, is not supported at this time.");
+            td_axis1->start()->isZeroInt() && td_axis2->start()->isZeroInt(),
+            "Splitting IterDomains with starting values that aren't 0, is not supported at this time.");
 
         IterDomain* merged = new IterDomain(
             new Int(0),
@@ -833,7 +832,10 @@ struct ReplaySelf : public TransformIter {
   // Replays history provided on td, axis_map is the mapping from td axes to
   // those expected in history, if an axis shouldn't be transformed, it needs to
   // be marked as -1 in the axis_map
-  static TensorDomain* replay(TensorDomain* td, std::vector<Expr*> history, std::vector<int> axis_map) {
+  static TensorDomain* replay(
+      TensorDomain* td,
+      std::vector<Expr*> history,
+      std::vector<int> axis_map) {
     ReplaySelf r(axis_map);
     return r.runReplay(TransformIter::getRoot(td), history);
   }
@@ -981,13 +983,13 @@ struct TORCH_CUDA_API TransformBackward : public TransformIter {
     // left.
 
     // Easiest to start by moving to left like forward replay
-    
+
     std::vector<int> new2old_offset(new2old_orig.size(), -1);
     // Create offset map
     for (decltype(new2old.size()) i{0}; i < new2old.size(); i++)
       if (new2old[i] != -1)
         new2old_offset[new2old[i]] = 0;
-        
+
     // Prefix sum new2old_offset
     for (decltype(new2old_offset.size()) i{1}; i < new2old_offset.size(); i++)
       new2old_offset[i] += new2old_offset[i - 1];
@@ -1113,7 +1115,7 @@ struct RFactorRoot : public TransformIter {
         last_rfactor_op = it;
       }
     }
-    
+
     // We need to make sure the rfactor root is ordered correctly.
     bool found_valid_rfactor_root = false;
 
@@ -1162,7 +1164,8 @@ struct RFactorRoot : public TransformIter {
 std::vector<bool> TransformIter::getRootInfluence(
     TensorDomain* td,
     std::vector<bool> td_influence) {
-  return Influence::computeBackward(TransformIter::getHistory(td), td_influence);
+  return Influence::computeBackward(
+      TransformIter::getHistory(td), td_influence);
 }
 
 std::vector<bool> TransformIter::replayBackwardInfluence(

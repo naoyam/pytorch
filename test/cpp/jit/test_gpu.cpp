@@ -1531,7 +1531,7 @@ void testGPU_FusionSimpleReduction() {
 
   // Re do it all at once, because why not.
   tv0->computeAt(tv1, 1);
-  
+
   tv2->axis(2)->parallelize(ParallelType::Unroll);
   tv3->axis(0)->parallelize(ParallelType::BIDx);
 
@@ -1545,12 +1545,13 @@ void testGPU_FusionSimpleReduction() {
   at::Tensor cg_output = at::empty({129}, options);
 
   torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-  torch::jit::fuser::cuda::runTestKernel(
-     prog, {input}, {}, {cg_output}, {});
+  torch::jit::fuser::cuda::runTestKernel(prog, {input}, {}, {cg_output}, {});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
 
+  GPULower lower(&fusion);
+  lower.printKernel(std::cout);
 }
 
 } // namespace jit

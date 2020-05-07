@@ -461,22 +461,30 @@ TensorView* TensorView::rFactor(const std::vector<int> axes) {
   FusionGuard fg(this->fusion());
   Expr* origin_expr = this->fusion()->origin(this);
   TORCH_CHECK(
-      origin_expr != nullptr && origin_expr->getExprType() == ExprType::ReductionOp,
+      origin_expr != nullptr &&
+          origin_expr->getExprType() == ExprType::ReductionOp,
       "Error rfactoring ",
       this,
       " its origin is either a nullptr or not a reduction.");
   ReductionOp* this_origin = static_cast<ReductionOp*>(origin_expr);
 
-  TensorView* producer = new TensorView(producer_domain, this->getDataType().value());
+  TensorView* producer =
+      new TensorView(producer_domain, this->getDataType().value());
 
   this->setDomain(consumer_domain);
   TensorView* consumer = this;
-  
+
   Expr* producer_origin = new ReductionOp(
-      this_origin->getReductionOpType(), this_origin->init(), producer, this_origin->in());
+      this_origin->getReductionOpType(),
+      this_origin->init(),
+      producer,
+      this_origin->in());
   Expr* consumer_origin = new ReductionOp(
-      this_origin->getReductionOpType(), this_origin->init(), consumer, producer);
-    
+      this_origin->getReductionOpType(),
+      this_origin->init(),
+      consumer,
+      producer);
+
   return producer;
 }
 

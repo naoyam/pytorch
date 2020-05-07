@@ -111,10 +111,14 @@ Statement* GPULower::mutate(UnaryOp* uop) {
   if (!ir_utils::isTVOp(uop))
     return OptOutMutator::mutate(uop);
 
-  TensorIndex* out = Index::getConsumerIndex(ir_utils::asTV(uop->out()), scope_utils::getLoops(active_scope));
+  TensorIndex* out = Index::getConsumerIndex(
+      ir_utils::asTV(uop->out()), scope_utils::getLoops(active_scope));
   Val* in = uop->in();
   if (ir_utils::isTV(in))
-    in = Index::getProducerIndex(ir_utils::asTV(in), ir_utils::asTV(uop->out()), scope_utils::getLoops(active_scope));
+    in = Index::getProducerIndex(
+        ir_utils::asTV(in),
+        ir_utils::asTV(uop->out()),
+        scope_utils::getLoops(active_scope));
   Expr* new_op = new UnaryOp(uop->getUnaryOpType(), out, in);
 
   return new_op;
@@ -124,16 +128,23 @@ Statement* GPULower::mutate(BinaryOp* bop) {
   if (!ir_utils::isTVOp(bop))
     return OptOutMutator::mutate(bop);
 
-  TensorIndex* out = Index::getConsumerIndex(ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope));
+  TensorIndex* out = Index::getConsumerIndex(
+      ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope));
 
   Val* lhs = bop->lhs();
   Val* rhs = bop->rhs();
 
   if (ir_utils::isTV(lhs))
-    lhs = Index::getProducerIndex(ir_utils::asTV(lhs), ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope));
+    lhs = Index::getProducerIndex(
+        ir_utils::asTV(lhs),
+        ir_utils::asTV(bop->out()),
+        scope_utils::getLoops(active_scope));
 
   if (ir_utils::isTV(rhs))
-    rhs = Index::getProducerIndex(ir_utils::asTV(rhs), ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope));
+    rhs = Index::getProducerIndex(
+        ir_utils::asTV(rhs),
+        ir_utils::asTV(bop->out()),
+        scope_utils::getLoops(active_scope));
 
   Expr* new_op = new BinaryOp(bop->getBinaryOpType(), out, lhs, rhs);
 
@@ -143,10 +154,14 @@ Statement* GPULower::mutate(BinaryOp* bop) {
 Statement* GPULower::mutate(ReductionOp* rop) {
   if (!ir_utils::isTVOp(rop))
     return OptOutMutator::mutate(rop);
-  TensorIndex* out = Index::getConsumerIndex(ir_utils::asTV(rop->out()), scope_utils::getLoops(active_scope));
+  TensorIndex* out = Index::getConsumerIndex(
+      ir_utils::asTV(rop->out()), scope_utils::getLoops(active_scope));
   Val* in = rop->in();
   if (ir_utils::isTV(in))
-    in = Index::getProducerIndex(ir_utils::asTV(in), ir_utils::asTV(rop->out()), scope_utils::getLoops(active_scope));
+    in = Index::getProducerIndex(
+        ir_utils::asTV(in),
+        ir_utils::asTV(rop->out()),
+        scope_utils::getLoops(active_scope));
 
   Expr* new_op = new BinaryOp(rop->getReductionOpType(), out, out, in);
 
@@ -198,10 +213,10 @@ void GPULower::replaceSizes() {
     // Replace the domain with one based on Ti.size[j]
     std::vector<IterDomain*> new_domain_iters;
     TensorDomain* root_td = tv->getRootDomain();
-  
+
     for (decltype(root_td->nDims()) i{0}; i < root_td->nDims(); i++) {
       // Output sizes could have reduction axes, which isn't what gets output.
-      if(root_td->axis(i)->isReduction())
+      if (root_td->axis(i)->isReduction())
         continue;
 
       Val* orig_size = root_td->axis(i)->extent();
@@ -229,9 +244,8 @@ void GPULower::replaceSizes() {
       Val* new_size = root_td->axis(i)->extent();
       if (size_map.find(new_size) != size_map.end())
         new_size = size_map[new_size];
-      
-      new_domain_iters.push_back(
-        new IterDomain(
+
+      new_domain_iters.push_back(new IterDomain(
           root_td->axis(i)->start(),
           new_size,
           root_td->axis(i)->parallel_method(),
@@ -247,7 +261,8 @@ void GPULower::replaceSizes() {
     // IterDomain/TensorDomain are vals.
     std::vector<int> axis_map(new_domain->nDims());
     std::iota(axis_map.begin(), axis_map.end(), 0);
-    new_domain = TransformIter::replaySelf(new_domain, TransformIter::getHistory(old_domain), axis_map);
+    new_domain = TransformIter::replaySelf(
+        new_domain, TransformIter::getHistory(old_domain), axis_map);
 
     TORCH_INTERNAL_ASSERT(
         old_domain->nDims() == new_domain->nDims(),

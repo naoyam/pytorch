@@ -196,7 +196,6 @@ struct TORCH_CUDA_API TensorView : public Val {
    */
   TensorView* rFactor(const std::vector<int> axes);
 
-
   MemoryType getMemoryType() {
     return memory_type_;
   }

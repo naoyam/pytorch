@@ -32,7 +32,6 @@ struct Loops : private OptInDispatch {
     }
     return std::vector<ForLoop*>(loops.loops.begin(), loops.loops.end());
   }
-
 };
 
 struct forLoopCount : private OptInDispatch {
@@ -307,7 +306,7 @@ struct FirstInnerMostScope : private OptInDispatch {
 } // namespace
 
 // Grab the ForLoop starting from scope working out
-std::vector<ForLoop*> getLoops(Expr* scope){
+std::vector<ForLoop*> getLoops(Expr* scope) {
   if (scope == nullptr)
     return std::vector<ForLoop*>();
   assertScope(scope);
@@ -398,24 +397,20 @@ Expr* firstInnerMostScope(Expr* scope) {
 
 namespace ir_utils {
 
-std::vector<Val*> indices(std::vector<ForLoop*> loops){
-    std::vector<Val*> inds (loops.size());
-    std::transform(
-        loops.begin(),
-        loops.end(),
-        inds.begin(),
-        [](ForLoop* fl) {return fl->index();});
-    return inds;
+std::vector<Val*> indices(std::vector<ForLoop*> loops) {
+  std::vector<Val*> inds(loops.size());
+  std::transform(loops.begin(), loops.end(), inds.begin(), [](ForLoop* fl) {
+    return fl->index();
+  });
+  return inds;
 }
 
-std::vector<IterDomain*> iterDomains(std::vector<ForLoop*> loops){
-    std::vector<IterDomain*> ids (loops.size());
-    std::transform(
-        loops.begin(),
-        loops.end(),
-        ids.begin(),
-        [](ForLoop* fl) { return fl->iter_domain();});
-    return ids;
+std::vector<IterDomain*> iterDomains(std::vector<ForLoop*> loops) {
+  std::vector<IterDomain*> ids(loops.size());
+  std::transform(loops.begin(), loops.end(), ids.begin(), [](ForLoop* fl) {
+    return fl->iter_domain();
+  });
+  return ids;
 }
 
 bool isTV(const Val* const val) {

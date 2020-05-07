@@ -34,8 +34,8 @@ Statement* OptOutMutator::mutate(IterDomain* id) {
   if (s->sameAs(id->start()) && e->sameAs(id->extent()))
     return id;
 
-  Val* mutated_val =
-      new IterDomain(s, e, id->parallel_method(), id->isReduction(), id->isRFactorProduct());
+  Val* mutated_val = new IterDomain(
+      s, e, id->parallel_method(), id->isReduction(), id->isRFactorProduct());
   registerMutation(id, mutated_val);
   return mutated_val;
 }

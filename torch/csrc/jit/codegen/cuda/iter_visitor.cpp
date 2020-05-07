@@ -113,8 +113,8 @@ void IterVisitor::traverse(
         if (!fusion->hasOutput(val))
           outputs.push_back(val);
     }
-  
-  if(outputs.empty())
+
+  if (outputs.empty())
     return;
 
   traverseFrom(fusion, outputs, false);

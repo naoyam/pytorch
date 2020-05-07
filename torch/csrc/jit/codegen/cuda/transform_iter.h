@@ -61,8 +61,8 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
       std::vector<bool> influence);
 
   static std::vector<bool> replayBackwardInfluence(
-    std::vector<Expr*> history,
-    std::vector<bool> td_influence);
+      std::vector<Expr*> history,
+      std::vector<bool> td_influence);
 
   // Runs through history, applying only on influence to track how modifications
   // would influence the original axes.
@@ -85,9 +85,9 @@ struct TORCH_CUDA_API TransformIter : public IterVisitor {
       std::vector<int> axis_map);
 
   static TensorDomain* replaySelf(
-    TensorDomain* td,
-    std::vector<Expr*> history,
-    std::vector<int> axis_map);
+      TensorDomain* td,
+      std::vector<Expr*> history,
+      std::vector<int> axis_map);
 
   // Replays backwards all non-rfactor axes
   static TensorDomain* getRFactorRoot(TensorDomain* td);

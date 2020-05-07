@@ -194,7 +194,7 @@ Val* reductionOp(
 
     uint_axes.push_back((unsigned int)axis);
   }
-  
+
   Val* out = tv->newForReduction(uint_axes);
   if (init->getDataType().value() != v1->getDataType().value())
     init = castOp(v1->getDataType().value(), init);

@@ -120,9 +120,7 @@ struct TensorView;
 
 struct TORCH_CUDA_API TransformReplay {
  private:
-
  public:
-
   // Self replay.
   static TensorDomain* fullSelfReplay(
       TensorDomain* self,
@@ -151,7 +149,6 @@ struct TORCH_CUDA_API TransformReplay {
       TensorView* consumer,
       TensorView* producer,
       int compute_at_axis);
-
 };
 
 } // namespace fuser
