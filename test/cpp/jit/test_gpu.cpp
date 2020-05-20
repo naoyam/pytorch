@@ -671,8 +671,8 @@ void testGPU_FusionCodeGen() {
   TensorView* tv0 = makeDummyTensor(3);
 
   new BinaryOp(BinaryOpType::Add, tv0, new Float(0.0), new Float(1.0));
-  TensorView* tv1 = static_cast<TensorView*>(add(tv0, new Float(2.0)));
-  TensorView* tv2 = static_cast<TensorView*>(add(tv1, new Float(3.0)));
+  TensorView* tv1 = add(tv0, new Float(2.0));
+  TensorView* tv2 = add(tv1, new Float(3.0));
   fusion.addOutput(tv2);
 
   //[I0, I1, I2]
@@ -713,8 +713,8 @@ void testGPU_FusionCodeGen2() {
 
   TensorView* tv0 = makeDummyTensor(3);
   TensorView* tv1 = makeDummyTensor(3);
-  TensorView* tv2 = static_cast<TensorView*>(add(tv1, new Float(2.0)));
-  TensorView* tv3 = static_cast<TensorView*>(add(tv0, tv2));
+  TensorView* tv2 = add(tv1, new Float(2.0));
+  TensorView* tv3 = add(tv0, tv2);
 
   fusion.addInput(tv0);
   fusion.addInput(tv1);
@@ -769,10 +769,9 @@ void testGPU_FusionSimplePWise() {
   fusion.addInput(tv0);
   fusion.addInput(tv1);
 
-  // Do math with it, it returns a `Val*` but can be static_casted back to
-  // TensorView
-  TensorView* tv2 = static_cast<TensorView*>(add(tv1, new Float(2.0)));
-  TensorView* tv3 = static_cast<TensorView*>(add(tv0, tv2));
+  // Do math with it, it returns a `TensorView*`
+  TensorView* tv2 = add(tv1, new Float(2.0));
+  TensorView* tv3 = add(tv0, tv2);
 
   // Register your outputs
   fusion.addOutput(tv3);
@@ -828,10 +827,9 @@ void testGPU_FusionExecKernel() {
   fusion.addInput(tv0);
   fusion.addInput(tv1);
 
-  // Do math with it, it returns a `Val*` but can be static_casted back to
-  // TensorView
-  TensorView* tv2 = static_cast<TensorView*>(add(tv1, new Float(2.0)));
-  TensorView* tv3 = static_cast<TensorView*>(add(tv0, tv2));
+  // Do math with it, it returns a `TensorView*`
+  TensorView* tv2 = add(tv1, new Float(2.0));
+  TensorView* tv3 = add(tv0, tv2);
 
   // Register your outputs
   fusion.addOutput(tv3);
@@ -894,12 +892,12 @@ void testGPU_FusionAdvancedComputeAt() {
     fusion.addInput(tv0);
 
     TensorView* tv1 = static_cast<TensorView*>(mul(tv0, new Float(-1.0)));
-    TensorView* tv2 = static_cast<TensorView*>(add(tv0, new Float(3.0)));
+    TensorView* tv2 = add(tv0, new Float(3.0));
     TensorView* tv3 = static_cast<TensorView*>(mul(tv0, new Float(2.0)));
-    TensorView* tv4 = static_cast<TensorView*>(add(tv2, tv1));
+    TensorView* tv4 = add(tv2, tv1);
 
-    TensorView* tv5 = static_cast<TensorView*>(add(tv4, tv3));
-    TensorView* tv6 = static_cast<TensorView*>(add(tv0, tv3));
+    TensorView* tv5 = add(tv4, tv3);
+    TensorView* tv6 = add(tv0, tv3);
 
     fusion.addOutput(tv5);
     fusion.addOutput(tv6);
@@ -987,12 +985,12 @@ void testGPU_FusionAdvancedComputeAt() {
     fusion.addInput(tv0);
 
     TensorView* tv1 = static_cast<TensorView*>(mul(tv0, new Float(-1.0)));
-    TensorView* tv2 = static_cast<TensorView*>(add(tv0, new Float(3.0)));
+    TensorView* tv2 = add(tv0, new Float(3.0));
     TensorView* tv3 = static_cast<TensorView*>(mul(tv0, new Float(2.0)));
-    TensorView* tv4 = static_cast<TensorView*>(add(tv2, tv1));
+    TensorView* tv4 = add(tv2, tv1);
 
-    TensorView* tv5 = static_cast<TensorView*>(add(tv4, tv3));
-    TensorView* tv6 = static_cast<TensorView*>(add(tv5, tv3));
+    TensorView* tv5 = add(tv4, tv3);
+    TensorView* tv6 = add(tv5, tv3);
 
     fusion.addOutput(tv5);
     fusion.addOutput(tv6);
@@ -1144,7 +1142,7 @@ void testGPU_FusionAdvancedComputeAt() {
     fusion.addInput(tv3);
 
     TensorView* tv4 = static_cast<TensorView*>(sub(tv2, tv3));
-    TensorView* tv5 = static_cast<TensorView*>(add(tv1, tv4));
+    TensorView* tv5 = add(tv1, tv4);
     TensorView* tv6 = static_cast<TensorView*>(sub(tv5, tv0));
 
     fusion.addOutput(tv6);
@@ -1225,7 +1223,7 @@ void testGPU_FusionScalarInputs() {
   Val* f5 = sub(f2, f3);
 
   TensorView* tv2 = static_cast<TensorView*>(sub(tv1, f4));
-  TensorView* tv3 = static_cast<TensorView*>(add(tv0, f5));
+  TensorView* tv3 = add(tv0, f5);
   TensorView* tv4 = static_cast<TensorView*>(mul(tv3, tv2));
 
   fusion.addOutput(tv4);
@@ -1315,10 +1313,9 @@ void testGPU_FusionLoopUnroll() {
   fusion.addInput(tv0);
   fusion.addInput(tv1);
 
-  // Do math with it, it returns a `Val*` but can be static_casted back to
-  // TensorView
-  TensorView* tv2 = static_cast<TensorView*>(add(tv1, new Float(2.0)));
-  TensorView* tv3 = static_cast<TensorView*>(add(tv0, tv2));
+  // Do math with it, it returns a `TensorView*`
+  TensorView* tv2 = add(tv1, new Float(2.0));
+  TensorView* tv3 = add(tv0, tv2);
 
   // Register your outputs
   fusion.addOutput(tv3);
@@ -1378,7 +1375,7 @@ void testGPU_FusionForLoop() {
 
   auto ID0 = new IterDomain(new Int(0), new Int(8));
 
-  TensorView* TV2 = static_cast<TensorView*>(add(TV0, TV1));
+  TensorView* TV2 = add(TV0, TV1);
   BinaryOp* op = static_cast<BinaryOp*>(TV2->getOrigin());
   fusion.addOutput(TV2);
 

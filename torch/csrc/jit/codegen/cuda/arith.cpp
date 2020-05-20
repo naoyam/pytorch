@@ -134,6 +134,19 @@ TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
   return out;
 }
 
+TORCH_CUDA_API TensorView* binaryOp(BinaryOpType type, TensorView* v1, Val* v2) {
+  return static_cast<TensorView*>(binaryOp(type, static_cast<Val*>(v1), v2));
+}
+
+TORCH_CUDA_API TensorView* binaryOp(BinaryOpType type, Val* v1, TensorView* v2) {
+  return static_cast<TensorView*>(binaryOp(type, v1, static_cast<Val*>(v2)));
+}
+
+TORCH_CUDA_API TensorView* binaryOp(BinaryOpType type, TensorView* v1, TensorView* v2) {
+  return static_cast<TensorView*>(binaryOp(type, static_cast<TensorView*>(v1),
+                                           static_cast<Val*>(v2)));
+}
+
 TORCH_CUDA_API Val* add(Val* v1, Val* v2) {
   return binaryOp(BinaryOpType::Add, v1, v2);
 }
