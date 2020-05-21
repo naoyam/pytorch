@@ -273,50 +273,35 @@ TORCH_CUDA_API Val* addcmul(Val* v1, Val* v2, Val* v3, Val* s) {
   return binaryOp(BinaryOpType::Add, v1, intrm2);
 }
 
-TORCH_CUDA_API Val* where(Val* c, Val* v1, Val* v2) {
-  TORCH_CHECK(
-      c->getDataType().value() == DataType::Bool,
-      "Condition should be of DataType Bool, not ",
-      c->getDataType().value());
-
-  Val* out = promoteNew(v1, v2);
-  new TernaryOp(TernaryOpType::Where, out, c, v1, v2);
-  return out;
-}
-
 // TERNARY OPERATIONS
 
-TORCH_CUDA_API Val* threshold(Val* in, Val* thresh, Val* value) {
-  TORCH_CHECK(
-      in->getDataType().value() == thresh->getDataType().value() &&
-          in->getDataType().value() == value->getDataType().value(),
-      "All input DataType values should match the input ",
-      in->getDataType().value());
-  TORCH_CHECK(
-      thresh->getValType().value() == ValType::Scalar &&
-          value->getValType().value() == ValType::Scalar,
-      "Thresh and Value values should be Scalars");
-
-  Val* out = newValLike(in);
-
-  new TernaryOp(TernaryOpType::Threshold, out, in, thresh, value);
-  return out;
-}
-
-TORCH_CUDA_API Val* clamp(Val* in, Val* min_val, Val* max_val) {
-  TORCH_CHECK(
-      in->getDataType().value() == min_val->getDataType().value() &&
-          in->getDataType().value() == max_val->getDataType().value(),
-      "All input DataType values should match the input ",
-      in->getDataType().value());
-  TORCH_CHECK(
-      min_val->getValType().value() == ValType::Scalar &&
-          max_val->getValType().value() == ValType::Scalar,
-      "Min and Max values should be Scalars");
-
-  Val* out = newValLike(in);
-
-  new TernaryOp(TernaryOpType::Clamp, out, in, min_val, max_val);
+TORCH_CUDA_API Val* ternaryOp(TernaryOpType type, Val* v1, Val* v2, Val* v3) {
+  Val* out = nullptr;
+  switch (type) {
+    case TernaryOpType::Where:
+      TORCH_CHECK(
+          v1->getDataType().value() == DataType::Bool,
+          "Condition should be of DataType Bool, not ",
+          v1->getDataType().value());
+      out = promoteNew(v2, v3);
+      break;
+    case TernaryOpType::Threshold:
+    case TernaryOpType::Clamp:
+      TORCH_CHECK(
+          v1->getDataType().value() == v2->getDataType().value() &&
+          v1->getDataType().value() == v3->getDataType().value(),
+          "All input DataType values should match the input ",
+          v1->getDataType().value());
+      TORCH_CHECK(
+          v2->getValType().value() == ValType::Scalar &&
+          v3->getValType().value() == ValType::Scalar,
+          "Thresh and Value values should be Scalars");
+      out = newValLike(v1);
+      break;
+    default:
+      TORCH_INTERNAL_ASSERT(false, "Invalid ternary op type", type);
+  }
+  new TernaryOp(type, out, v1, v2, v3);
   return out;
 }
 

@@ -117,11 +117,37 @@ TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* add_alp
 TORCH_CUDA_API Val* sub_alpha(Val* v1, Val* v2, Val* s);
 TORCH_CUDA_API Val* lerp(Val* start, Val* end, Val* weight);
 TORCH_CUDA_API Val* addcmul(Val* v1, Val* v2, Val* v3, Val* s);
-TORCH_CUDA_API Val* where(Val* c, Val* v1, Val* v2);
 
 // TERNARY OPERATIONS
-TORCH_CUDA_API Val* threshold(Val* in, Val* thresh, Val* value);
-TORCH_CUDA_API Val* clamp(Val* in, Val* min_val, Val* max_val);
+TORCH_CUDA_API Val* ternaryOp(TernaryOpType type, Val* v1, Val* v2, Val* v3);
+template <typename OpType1, typename OpType2, typename OpType3,
+          std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* = nullptr>
+TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*
+ternaryOp(TernaryOpType type, OpType1* v1, OpType2* v2, OpType3* v3) {
+  return static_cast<typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*>(
+      ternaryOp(type, static_cast<Val*>(v1), static_cast<Val*>(v2), static_cast<Val*>(v3)));
+}
+
+template <typename OpType1, typename OpType2, typename OpType3,
+          std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* = nullptr>
+TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* where(
+    OpType1* v1, OpType2* v2, OpType3* v3) {
+  return ternaryOp(TernaryOpType::Where, v1, v2, v3);
+}
+
+template <typename OpType1, typename OpType2, typename OpType3,
+          std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* = nullptr>
+TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* threshold(
+    OpType1* in, OpType2* thresh, OpType3* value) {
+  return ternaryOp(TernaryOpType::Threshold, in, thresh, value);
+}
+
+template <typename OpType1, typename OpType2, typename OpType3,
+          std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* = nullptr>
+TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* clamp(
+    OpType1* in, OpType2* min_val, OpType3* max_val) {
+  return ternaryOp(TernaryOpType::Clamp, in, min_val, max_val);
+}
 
 } // namespace fuser
 } // namespace jit
