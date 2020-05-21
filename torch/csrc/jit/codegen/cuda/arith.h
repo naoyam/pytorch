@@ -20,8 +20,6 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-namespace {
-
 template <typename Head, typename... Tail>
 struct IsValidArithOpType {
   static constexpr bool value = !std::is_base_of<Val, Head>::value
@@ -53,8 +51,6 @@ struct ArithOpRetType {
   using Type = typename std::
       conditional<HasTensorView<OpTypes...>::value, TensorView, Val>::type;
 };
-
-} // namespace
 
 // Promotion logic between two values, returns a new val from resulting type
 // promotion.
