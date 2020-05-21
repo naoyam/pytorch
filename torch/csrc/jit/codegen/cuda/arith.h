@@ -20,6 +20,40 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
+namespace {
+
+template <typename Head, typename... Tail>
+struct IsValidArithOpType {
+  static constexpr bool value = !std::is_base_of<Val, Head>::value ?
+      false : IsValidArithOpType<Tail...>::value;
+};
+
+template <typename Type>
+struct IsValidArithOpType<Type> {
+  static constexpr bool value = std::is_base_of<Val, Type>::value;
+};
+
+template <typename Head, typename... Tail>
+struct HasTensorView {
+  static constexpr bool value = std::is_base_of<TensorView, Head>::value ?
+      true : HasTensorView<Tail...>::value;
+};
+
+template <typename Type>
+struct HasTensorView<Type> {
+  static constexpr bool value = std::is_base_of<TensorView, Type>::value;
+};
+
+// Define return type of arithmetic operations. Currently, TensorView
+// when any of operands is TensorView, and Val otherwise.
+template <typename... OpTypes>
+struct ArithOpRetType {
+  using Type = typename std::conditional<HasTensorView<OpTypes...>::value,
+                                         TensorView, Val>::type;
+};
+
+} // namespace
+
 // Promotion logic between two values, returns a new val from resulting type
 // promotion.
 TORCH_CUDA_API Val* promoteNew(Val* v1, Val* v2);
@@ -33,36 +67,16 @@ TORCH_CUDA_API Val* unaryOp(UnaryOpType type, Val* v1);
 // Perform binary op type on v1 and v2 and return a type promoted output.
 // Mod, CeilDiv, and LT are considered Int only output operations for now.
 TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2);
-TORCH_CUDA_API TensorView* binaryOp(BinaryOpType type, TensorView* v1, Val* v2);
-TORCH_CUDA_API TensorView* binaryOp(BinaryOpType type, Val* v1, TensorView* v2);
-TORCH_CUDA_API TensorView* binaryOp(BinaryOpType type, TensorView* v1, TensorView* v2);
 
+// Overload for the case when operands are not Val*. Template matching
+// fails when their classes are not valid types as determined by IsValidArithOpType
 template <typename OpType1, typename OpType2,
-          bool OpType1IsVal = std::is_base_of<Val, OpType1>::value,
-          bool OpType2IsVal = std::is_base_of<Val, OpType2>::value,
-          bool OpType1IsTensorView = std::is_base_of<TensorView, OpType1>::value,
-          bool OpType2IsTensorView = std::is_base_of<TensorView, OpType2>::value>
-struct BinaryOpRetType;
-
-template <typename OpType1, typename OpType2>
-struct BinaryOpRetType<OpType1, OpType2, true, true, false, false> {
-  using Type = Val;
-};
-
-template <typename OpType1, typename OpType2>
-struct BinaryOpRetType<OpType1, OpType2, true, true, true, false> {
-  using Type = TensorView;
-};
-
-template <typename OpType1, typename OpType2>
-struct BinaryOpRetType<OpType1, OpType2, true, true, false, true> {
-  using Type = TensorView;
-};
-
-template <typename OpType1, typename OpType2>
-struct BinaryOpRetType<OpType1, OpType2, true, true, true, true> {
-  using Type = TensorView;
-};
+          std::enable_if_t<IsValidArithOpType<OpType1, OpType2>::value>* = nullptr>
+TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type*
+binaryOp(BinaryOpType type, OpType1* v1, OpType2* v2) {
+  return static_cast<typename ArithOpRetType<OpType1, OpType2>::Type*>(
+      binaryOp(type, static_cast<Val*>(v1), static_cast<Val*>(v2)));
+}
 
 // Perform a reduction operation on v1, initial value for reduction is init,
 // reduces across axes, and reduction operation defined by BinaryOp.
@@ -74,9 +88,8 @@ TORCH_CUDA_API Val* reductionOp(
 
 // BINARY OPAERATIONS
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename BinaryOpRetType<OpType1, OpType2>::Type* add(
+TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* add(
     OpType1* v1, OpType2* v2) {
-  //return binaryOp2<OpType1, OpType2>(BinaryOpType::Add, v1, v2);
   return binaryOp(BinaryOpType::Add, v1, v2);
 }
 TORCH_CUDA_API Val* sub(Val* v1, Val* v2);
