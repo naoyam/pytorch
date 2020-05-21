@@ -289,12 +289,12 @@ TORCH_CUDA_API Val* ternaryOp(TernaryOpType type, Val* v1, Val* v2, Val* v3) {
     case TernaryOpType::Clamp:
       TORCH_CHECK(
           v1->getDataType().value() == v2->getDataType().value() &&
-          v1->getDataType().value() == v3->getDataType().value(),
+              v1->getDataType().value() == v3->getDataType().value(),
           "All input DataType values should match the input ",
           v1->getDataType().value());
       TORCH_CHECK(
           v2->getValType().value() == ValType::Scalar &&
-          v3->getValType().value() == ValType::Scalar,
+              v3->getValType().value() == ValType::Scalar,
           "Thresh and Value values should be Scalars");
       out = newValLike(v1);
       break;

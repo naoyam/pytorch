@@ -194,10 +194,13 @@ class IrParser {
              std::unordered_map<size_t, CgValue>& value_map) -> void {
             using BinaryOpWithAlphaType = Val* (*)(Val*, Val*, Val*);
             static std::unordered_map<
-              Symbol, std::pair<BinaryOpType, BinaryOpWithAlphaType>>
+                Symbol,
+                std::pair<BinaryOpType, BinaryOpWithAlphaType>>
                 op_mapping({
-                    {aten::add, std::make_pair(
-                        BinaryOpType::Add, static_cast<BinaryOpWithAlphaType>(&add_alpha))},
+                    {aten::add,
+                     std::make_pair(
+                         BinaryOpType::Add,
+                         static_cast<BinaryOpWithAlphaType>(&add_alpha))},
                     {aten::sub, std::make_pair(BinaryOpType::Sub, &sub_alpha)},
                 });
             // TODO: handle scaling factor when it's not constant 1;
