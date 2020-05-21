@@ -105,6 +105,15 @@ TORCH_CUDA_API Val* sum(Val* v1, const std::vector<int>& reduction_axes);
 
 // COMPOUND OPERATIONS
 TORCH_CUDA_API Val* add_alpha(Val* v1, Val* v2, Val* s);
+
+template <typename OpType1, typename OpType2, typename OpType3,
+          std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* = nullptr>
+TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* add_alpha(
+    OpType1* v1, OpType2* v2, OpType3* s) {
+  return static_cast<typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*>(
+      add_alpha(v1, v2, s));
+}
+
 TORCH_CUDA_API Val* sub_alpha(Val* v1, Val* v2, Val* s);
 TORCH_CUDA_API Val* lerp(Val* start, Val* end, Val* weight);
 TORCH_CUDA_API Val* addcmul(Val* v1, Val* v2, Val* v3, Val* s);

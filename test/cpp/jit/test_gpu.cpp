@@ -1732,7 +1732,7 @@ void testGPU_FusionBinaryOps() {
         return at::add(
             vals[0].toTensor(), vals[1].toTensor(), vals[2].toScalar());
       },
-      /*JIT  Func   */ add_alpha,
+      /*JIT  Func   */ static_cast<Val* (*)(Val*, Val*, Val*)>(&add_alpha),
       /*Output      */ std::make_pair(ValType::TensorView, DataType::Float),
       /*Inputs Tuple*/
       std::make_tuple(
