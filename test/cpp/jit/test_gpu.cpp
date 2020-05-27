@@ -1798,9 +1798,7 @@ void testGPU_FusionTernaryOps() {
             vals[0].toTensor(), vals[1].toTensor(), vals[2].toTensor());
       },
       /*JIT  Func   */
-      [](Val* c, Val* v1, Val* v2) -> Val* {
-        return where(c, v1, v2);
-      },
+      [](Val* c, Val* v1, Val* v2) -> Val* { return where(c, v1, v2); },
       /*Output      */ std::make_pair(ValType::TensorView, DataType::Float),
       /*Inputs Tuple*/
       std::make_tuple(
