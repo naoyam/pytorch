@@ -111,12 +111,20 @@ TORCH_CUDA_API Val* castOp(DataType dtype, Val* v1) {
   return out;
 }
 
+TORCH_CUDA_API TensorView* castOp(DataType dtype, TensorView* v1) {
+  return static_cast<TensorView*>(castOp(dtype, static_cast<Val*>(v1)));
+}
+
 // UNARY OPERATIONS
 
 TORCH_CUDA_API Val* unaryOp(UnaryOpType type, Val* v1) {
   Val* out = newValLike(v1);
   new UnaryOp(type, out, v1);
   return out;
+}
+
+TORCH_CUDA_API TensorView* unaryOp(UnaryOpType type, TensorView* v1) {
+  return static_cast<TensorView*>(unaryOp(type, static_cast<Val*>(v1)));
 }
 
 // BINARY OPERATIONS
@@ -134,45 +142,9 @@ TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
   return out;
 }
 
-TORCH_CUDA_API Val* sub(Val* v1, Val* v2) {
-  return binaryOp(BinaryOpType::Sub, v1, v2);
-}
-
-TORCH_CUDA_API Val* mul(Val* v1, Val* v2) {
-  return binaryOp(BinaryOpType::Mul, v1, v2);
-}
-
-TORCH_CUDA_API Val* div(Val* v1, Val* v2) {
-  return binaryOp(BinaryOpType::Div, v1, v2);
-}
-
-TORCH_CUDA_API Val* mod(Val* v1, Val* v2) {
-  return binaryOp(BinaryOpType::Mod, v1, v2);
-}
-
-TORCH_CUDA_API Val* lt(Val* v1, Val* v2) {
-  return binaryOp(BinaryOpType::LT, v1, v2);
-}
-
-TORCH_CUDA_API Val* ceilDiv(Val* v1, Val* v2) {
-  return binaryOp(BinaryOpType::CeilDiv, v1, v2);
-}
-
-TORCH_CUDA_API Val* andOp(Val* v1, Val* v2) {
-  TORCH_CHECK(
-      v1->getDataType().value() == DataType::Bool,
-      "Input1 should be of type bool, not ",
-      v1->getDataType().value());
-  TORCH_CHECK(
-      v2->getDataType().value() == DataType::Bool,
-      "Input2 should be of type bool, not ",
-      v2->getDataType().value());
-  return binaryOp(BinaryOpType::And, v1, v2);
-}
-
 // REDUCTION OPERATIONS
 
-Val* reductionOp(
+TensorView* reductionOp(
     BinaryOpType reduction_op_type,
     const std::vector<int>& axes,
     Val* init,
@@ -208,14 +180,14 @@ Val* reductionOp(
     uint_axes.push_back((unsigned int)axis);
   }
 
-  Val* out = tv->newForReduction(uint_axes);
+  TensorView* out = tv->newForReduction(uint_axes);
   if (init->getDataType().value() != v1->getDataType().value())
     init = castOp(v1->getDataType().value(), init);
   new ReductionOp(reduction_op_type, init, out, v1);
   return out;
 }
 
-TORCH_CUDA_API Val* sum(Val* v1, const std::vector<int>& axes) {
+TORCH_CUDA_API TensorView* sum(Val* v1, const std::vector<int>& axes) {
   Val* init;
   switch (v1->getDataType().value()) {
     case (DataType::Float):
