@@ -75,61 +75,42 @@ template <
     typename OpType1,
     typename OpType2,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2>::value>* = nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* binaryOp(
-    BinaryOpType type,
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto binaryOp(BinaryOpType type, OpType1* v1, OpType2* v2) {
   return static_cast<typename ArithOpRetType<OpType1, OpType2>::Type*>(
       binaryOp(type, static_cast<Val*>(v1), static_cast<Val*>(v2)));
 }
 
 // BINARY OPAERATIONS
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* add(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto add(OpType1* v1, OpType2* v2) {
   return binaryOp(BinaryOpType::Add, v1, v2);
 }
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* sub(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto sub(OpType1* v1, OpType2* v2) {
   return binaryOp(BinaryOpType::Sub, v1, v2);
 }
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* mul(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto mul(OpType1* v1, OpType2* v2) {
   return binaryOp(BinaryOpType::Mul, v1, v2);
 }
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* div(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto div(OpType1* v1, OpType2* v2) {
   return binaryOp(BinaryOpType::Div, v1, v2);
 }
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* mod(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto mod(OpType1* v1, OpType2* v2) {
   return binaryOp(BinaryOpType::Mod, v1, v2);
 }
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* lt(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto lt(OpType1* v1, OpType2* v2) {
   return binaryOp(BinaryOpType::LT, v1, v2);
 }
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* ceilDiv(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto ceilDiv(OpType1* v1, OpType2* v2) {
   return binaryOp(BinaryOpType::CeilDiv, v1, v2);
 }
 template <typename OpType1, typename OpType2>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2>::Type* andOp(
-    OpType1* v1,
-    OpType2* v2) {
+TORCH_CUDA_API auto andOp(OpType1* v1, OpType2* v2) {
   TORCH_CHECK(
       v1->getDataType().value() == DataType::Bool,
       "Input1 should be of type bool, not ",
@@ -165,8 +146,7 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*
-add_alpha(OpType1* v1, OpType2* v2, OpType3* s) {
+TORCH_CUDA_API auto add_alpha(OpType1* v1, OpType2* v2, OpType3* s) {
   return static_cast<typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*>(
       add_alpha(v1, v2, s));
 }
@@ -177,8 +157,7 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*
-sub_alpha(OpType1* v1, OpType2* v2, OpType3* s) {
+TORCH_CUDA_API auto sub_alpha(OpType1* v1, OpType2* v2, OpType3* s) {
   return static_cast<typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*>(
       sub_alpha(v1, v2, s));
 }
@@ -189,10 +168,7 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* lerp(
-    OpType1* v1,
-    OpType2* v2,
-    OpType3* s) {
+TORCH_CUDA_API auto lerp(OpType1* v1, OpType2* v2, OpType3* s) {
   return static_cast<typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*>(
       lerp(v1, v2, s));
 }
@@ -203,10 +179,7 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* addcmul(
-    OpType1* v1,
-    OpType2* v2,
-    OpType3* s) {
+TORCH_CUDA_API auto addcmul(OpType1* v1, OpType2* v2, OpType3* s) {
   return static_cast<typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*>(
       lerp(v1, v2, s));
 }
@@ -219,8 +192,11 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*
-ternaryOp(TernaryOpType type, OpType1* v1, OpType2* v2, OpType3* v3) {
+TORCH_CUDA_API auto ternaryOp(
+    TernaryOpType type,
+    OpType1* v1,
+    OpType2* v2,
+    OpType3* v3) {
   return static_cast<typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*>(
       ternaryOp(
           type,
@@ -235,10 +211,7 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* where(
-    OpType1* v1,
-    OpType2* v2,
-    OpType3* v3) {
+TORCH_CUDA_API auto where(OpType1* v1, OpType2* v2, OpType3* v3) {
   return ternaryOp(TernaryOpType::Where, v1, v2, v3);
 }
 
@@ -248,8 +221,7 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type*
-threshold(OpType1* in, OpType2* thresh, OpType3* value) {
+TORCH_CUDA_API auto threshold(OpType1* in, OpType2* thresh, OpType3* value) {
   return ternaryOp(TernaryOpType::Threshold, in, thresh, value);
 }
 
@@ -259,10 +231,7 @@ template <
     typename OpType3,
     std::enable_if_t<IsValidArithOpType<OpType1, OpType2, OpType3>::value>* =
         nullptr>
-TORCH_CUDA_API typename ArithOpRetType<OpType1, OpType2, OpType3>::Type* clamp(
-    OpType1* in,
-    OpType2* min_val,
-    OpType3* max_val) {
+TORCH_CUDA_API auto clamp(OpType1* in, OpType2* min_val, OpType3* max_val) {
   return ternaryOp(TernaryOpType::Clamp, in, min_val, max_val);
 }
 
