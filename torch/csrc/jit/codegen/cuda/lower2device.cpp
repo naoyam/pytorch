@@ -174,20 +174,12 @@ Statement* GPULower::mutate(ReductionOp* rop) {
       ir_utils::isTVOp(rop),
       "Cannot have a reduction operation on something other than a tensor view.");
   auto loops = scope_utils::getLoops(active_scope);
-  TORCH_INTERNAL_ASSERT(
-      std::none_of(
-          loops.begin(),
-          loops.end(),
-          [](ForLoop* fl) {
-            return fl->iter_domain()->isBlockDim() &&
-                fl->iter_domain()->isReduction();
-          }),
-      "Reduction on block axes not yet supported.");
 
-  bool is_thread_reduce =
-      std::any_of(loops.begin(), loops.end(), [](ForLoop* fl) {
-        return fl->iter_domain()->isThreadDim() &&
-            fl->iter_domain()->isReduction();
+  bool is_private_reduce =
+      std::none_of(loops.begin(), loops.end(), [](ForLoop* fl) {
+        return fl->iter_domain()->isReduction() &&
+            (fl->iter_domain()->isThreadDim() ||
+             fl->iter_domain()->isBlockDim());
       });
 
   TensorIndex* out = Index::getConsumerIndex(ir_utils::asTV(rop->out()), loops);
@@ -199,7 +191,7 @@ Statement* GPULower::mutate(ReductionOp* rop) {
         ir_utils::asTV(rop->out()),
         scope_utils::getLoops(active_scope));
 
-  if (is_thread_reduce)
+  if (!is_private_reduce)
     return new ReductionOp(rop->getReductionOpType(), rop->init(), out, in);
 
   Expr* new_op = new BinaryOp(rop->getReductionOpType(), out, out, in);
@@ -349,21 +341,6 @@ namespace {
 void validate(Fusion* fusion) {
   FusionGuard fg(fusion);
   fusion->validateInputs();
-  for (Val* val : fusion->vals()) {
-    if (ir_utils::isTV(val)) {
-      TensorView* tv = ir_utils::asTV(val);
-      for (decltype(tv->nDims()) i{0}; i < tv->nDims(); i++) {
-        IterDomain* id = tv->getComputeAtAxis(i).first;
-
-        if (id->isBlockDim())
-          TORCH_CHECK(
-              !id->isReduction(),
-              "Parallelization across blocks on reduction axes not support at the moment but found on, ",
-              tv,
-              ".");
-      }
-    } // if ir_utils::isTV
-  } // for(Val* val : fusion->vals())
 } // validate
 
 } // namespace
