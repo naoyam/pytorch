@@ -2621,9 +2621,14 @@ void testGPU_FusionReduction5() {
   tv3->axis(-2)->parallelize(ParallelType::TIDy);
   tv2->axis(-3)->parallelize(ParallelType::TIDy);
 
+  {
+    GPULower lower(&fusion);
+    lower.printKernel(std::cout);
+  }
+
   int numel_x = 650;
   int numel_y = 1000;
-  int numel_z = 1000;
+  int numel_z = 4;
 
   prog.device_ = 0;
   prog.grid(numel_x);
