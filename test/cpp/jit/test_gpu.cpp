@@ -2574,7 +2574,7 @@ void testGPU_FusionReduction4() {
   TORCH_CHECK(aten_output.allclose(cg_output));
 }
 
-void testGPU_FusionReduction5() {
+void testGPU_FusionReductionTFT() {
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
   FusionGuard fg(&fusion);
@@ -2616,11 +2616,6 @@ void testGPU_FusionReduction5() {
 
   tv1->axis(-2)->parallelize(ParallelType::TIDz);
   tv2->axis(-2)->parallelize(ParallelType::TIDz);
-
-  {
-    GPULower lower(&fusion);
-    lower.printKernel(std::cout);
-  }
 
   prog.device_ = 0;
   prog.grid(1);
