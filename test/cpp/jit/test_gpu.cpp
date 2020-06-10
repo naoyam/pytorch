@@ -2612,7 +2612,6 @@ void testGPU_FusionReduction5() {
   tv1->axis(1)->parallelize(ParallelType::TIDy);
 
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
-  //tv3->axis(-1)->parallelize(ParallelType::TIDx);
   tv1->axis(-1)->parallelize(ParallelType::TIDx);
 
   tv1->axis(-2)->parallelize(ParallelType::TIDz);
