@@ -2595,17 +2595,17 @@ void testGPU_FusionReduction5() {
   int tidz = 8;
 
   tv1->split(1, tidx);
-  // tv1[I0, R1o, R1i{tidx}] = tv0[I0, I1]
+  // tv1[I0, R1o, R1i{tidx}]
 
   tv1->split(1, tidz);
-  // tv1[I0, R1oo, R1Oi{tidz}, R1R1i{tidx}] = tv0[I0, I1]
+  // tv1[I0, R1oo, R1Oi{tidz}, R1R1i{tidx}]
 
   tv1->split(0, tidy);
-  // tv1[I0o, I0i, R1oo, R1Oi{tidz}, R1R1i{tidx}] = tv0[I0, I1]
+  // tv1[I0o, I0i, R1oo, R1Oi{tidz}, R1R1i{tidx}]
 
   TensorView* tv2 = tv1->rFactor({2});
-  // tv2[I0o, I0i, R1oo, I1Oi{tidz}, I11i{tidx}] = tv0[I0, I1]
-  // tv1[I0o, I0i,       R1Oi{tidz}, R1R1i{tidx}] = tv2[I0o, I0i, R1oo, I1Oi{tidz}, I11i{tidx}]
+  // tv2[I0o, I0i, R1oo, I1Oi{tidz}, I11i{tidx}]
+  // tv1[I0o, I0i,       R1Oi{tidz}, R1R1i{tidx}]
 
   tv2->computeAt(tv1, 2);
 
