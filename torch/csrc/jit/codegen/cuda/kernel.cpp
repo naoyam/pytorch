@@ -654,10 +654,10 @@ void runTestKernel(
     auto options =
         at::TensorOptions().dtype(temp_buf_type).device(at::kCUDA, 0);
     at::Tensor reduction_work_buffer = at::empty(
-        {temp_buf_sizes[0] / c10::elementSize(temp_buf_type)}, options);
+        {(long)(temp_buf_sizes[0] / c10::elementSize(temp_buf_type))}, options);
     kernel_args.push(reduction_work_buffer);
     at::Tensor sync_flags =
-        at::zeros({temp_buf_sizes[1] / elementSize(temp_buf_type)}, options);
+        at::zeros((long)({temp_buf_sizes[1] / elementSize(temp_buf_type))}, options);
     kernel_args.push(sync_flags);
   }
 
