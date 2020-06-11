@@ -656,8 +656,8 @@ void runTestKernel(
     at::Tensor reduction_work_buffer = at::empty(
         {(long)(temp_buf_sizes[0] / c10::elementSize(temp_buf_type))}, options);
     kernel_args.push(reduction_work_buffer);
-    at::Tensor sync_flags =
-        at::zeros({(long)(temp_buf_sizes[1] / elementSize(temp_buf_type))}, options);
+    at::Tensor sync_flags = at::zeros(
+        {(long)(temp_buf_sizes[1] / elementSize(temp_buf_type))}, options);
     kernel_args.push(sync_flags);
   }
 
