@@ -359,11 +359,6 @@ TORCH_CUDA_API TensorView* andOp(TensorView* v1, TensorView* v2) {
   return arithOpOverloads(andOp, v1, v2);
 }
 
-DEFINE_BINARY_OP_OVERLOADS(andOp)
-
-#undef BINARY_OP_OVERLOADS_FORWARD
-#undef DEFINE_BINARY_OP_OVERLOADS
-
 // REDUCTION OPERATIONS
 
 namespace {
