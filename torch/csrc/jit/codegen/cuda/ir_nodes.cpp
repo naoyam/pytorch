@@ -209,6 +209,10 @@ bool ReductionOp::sameAs(const ReductionOp* other) const {
 
 std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
   const Val* out_val = out();
+  TORCH_INTERNAL_ASSERT(
+      out_val->getValType() == ValType::TensorView ||
+          out_val->getValType() == ValType::TensorIndex,
+      "Output of reduction must be TensorView or TensorIndex");
   // out is a TensorIndex after lowering
   if (out_val->getValType() == ValType::TensorIndex) {
     out_val = static_cast<const TensorIndex*>(out_val)->view();

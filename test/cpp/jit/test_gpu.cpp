@@ -2639,11 +2639,11 @@ void testGPU_FusionGridReduction1() {
   tv1->split(1, bdimx);
   // tv1[I0, R1o, R1i{128}] = tv0[I0, I1]
   tv1->split(1, gdimx);
-  // tv1[I0, R1oo, R1oi{4}, R1i{128}] = tv0[I0, I1]
+  // tv1[I0, R1oo, R1oi{32}, R1i{128}] = tv0[I0, I1]
 
   TensorView* tv2 = tv1->rFactor({1});
-  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
-  // tv1[I0,        R1oi{4},  R1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
+  // tv2[I0, R1oo, Ir1oi{32}, Ir1i{128}] = tv0[I0, I1]
+  // tv1[I0,        R1oi{32},  R1i{128}] = tv2[I0, R1oo, Ir1oi{32}, Ir1i{128}]
 
   // Incrementally, can print in between for debugging
   tv0->computeAt(tv2, 1);
@@ -2651,8 +2651,6 @@ void testGPU_FusionGridReduction1() {
 
   // Re do it all at once, because why not.
   tv0->computeAt(tv1, 1);
-
-  tv2->axis(2)->parallelize(ParallelType::Unroll);
 
   tv1->axis(0)->parallelize(ParallelType::BIDy);
   tv1->axis(1)->parallelize(ParallelType::BIDx);
@@ -2681,7 +2679,7 @@ void testGPU_FusionGridReduction1() {
 
 // Same test as the above but uses BIDy and TIDx for reduction
 void testGPU_FusionGridReduction2() {
-  const int gdimx = 32;
+  const int gdimy = 32;
   const int bdimx = 128;
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
@@ -2699,7 +2697,7 @@ void testGPU_FusionGridReduction2() {
 
   tv1->split(1, bdimx);
   // tv1[I0, R1o, R1i{128}] = tv0[I0, I1]
-  tv1->split(1, gdimx);
+  tv1->split(1, gdimy);
   // tv1[I0, R1oo, R1oi{4}, R1i{128}] = tv0[I0, I1]
 
   TensorView* tv2 = tv1->rFactor({1});
@@ -2713,8 +2711,6 @@ void testGPU_FusionGridReduction2() {
   // Re do it all at once, because why not.
   tv0->computeAt(tv1, 1);
 
-  tv2->axis(2)->parallelize(ParallelType::Unroll);
-
   tv1->axis(0)->parallelize(ParallelType::BIDx);
   tv1->axis(1)->parallelize(ParallelType::BIDy);
   tv2->axis(2)->parallelize(ParallelType::BIDy);
@@ -2726,7 +2722,7 @@ void testGPU_FusionGridReduction2() {
   int numel_y = 65000;
 
   prog.device_ = 0;
-  prog.grid(numel_x, gdimx);
+  prog.grid(numel_x, gdimy);
   prog.block(bdimx);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
@@ -2742,8 +2738,8 @@ void testGPU_FusionGridReduction2() {
 
 // Same test but uses BIDy and BIDz for reduction. No TID used.
 void testGPU_FusionGridReduction3() {
-  const int gdimx = 32;
-  const int bdimx = 128;
+  const int gdimz = 32;
+  const int gdimy = 128;
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
   FusionGuard fg(&fusion);
@@ -2758,9 +2754,9 @@ void testGPU_FusionGridReduction3() {
 
   TORCH_CHECK(fusion.hasReduction(), "Could not detect reduction in fusion.");
 
-  tv1->split(1, bdimx);
+  tv1->split(1, gdimy);
   // tv1[I0, R1o, R1i{128}] = tv0[I0, I1]
-  tv1->split(1, gdimx);
+  tv1->split(1, gdimz);
   // tv1[I0, R1oo, R1oi{4}, R1i{128}] = tv0[I0, I1]
 
   TensorView* tv2 = tv1->rFactor({1});
@@ -2774,8 +2770,6 @@ void testGPU_FusionGridReduction3() {
   // Re do it all at once, because why not.
   tv0->computeAt(tv1, 1);
 
-  tv2->axis(2)->parallelize(ParallelType::Unroll);
-
   tv1->axis(0)->parallelize(ParallelType::BIDx);
   tv1->axis(1)->parallelize(ParallelType::BIDz);
   tv2->axis(2)->parallelize(ParallelType::BIDz);
@@ -2787,7 +2781,7 @@ void testGPU_FusionGridReduction3() {
   int numel_y = 6500;
 
   prog.device_ = 0;
-  prog.grid(numel_x, bdimx, gdimx);
+  prog.grid(numel_x, gdimy, gdimz);
   // This number should not affect the output as TIDx is not
   // used. All threads in a thread block redundantly computes the
   // same value.
@@ -2824,18 +2818,18 @@ void testGPU_FusionGridReduction4() {
   TORCH_CHECK(fusion.hasReduction(), "Could not detect reduction in fusion.");
 
   tv1->split(1, gdimx);
-  // tv1[I0, R1o, R1i{128}] = tv0[I0, I1]
+  // tv1[I0, R1o, R1i{1024}] = tv0[I0, I1]
   tv1->split(1, 4);
   // tv1[I0, R1oo, R1oi{4}, R1i{128}] = tv0[I0, I1]
 
   TensorView* tv2 = tv1->rFactor({1});
-  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
-  // tv1[I0,        R1oi{4},  R1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
+  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{1024}] = tv0[I0, I1]
+  // tv1[I0,        R1oi{4},  R1i{1024}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{1024}]
 
   TensorView* tv3 = tv1->rFactor({1});
-  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
-  // tv3[I0,        R1oi{4}, Ir1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
-  // tv1[I0,                  R1i{128}] = tv3[I0,        R1oi{4}, Ir1i{128}]
+  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{1024}] = tv0[I0, I1]
+  // tv3[I0,        R1oi{4}, Ir1i{1024}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{1024}]
+  // tv1[I0,                  R1i{1024}] = tv3[I0,        R1oi{4}, Ir1i{1024}]
 
   // Incrementally, can print in between for debugging
   tv0->computeAt(tv2, 1);
@@ -2891,13 +2885,13 @@ void testGPU_FusionGridReduction5() {
   TORCH_CHECK(fusion.hasReduction(), "Could not detect reduction in fusion.");
 
   tv1->split(1, bdimx);
-  // tv1[I0, R1o, R1i{128}] = tv0[I0, I1]
+  // tv1[I0, R1o, R1i{64}] = tv0[I0, I1]
   tv1->split(1, gdimx);
-  // tv1[I0, R1oo, R1oi{4}, R1i{128}] = tv0[I0, I1]
+  // tv1[I0, R1oo, R1oi{4}, R1i{64}] = tv0[I0, I1]
 
   TensorView* tv2 = tv1->rFactor({1});
-  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
-  // tv1[I0,        R1oi{4},  R1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
+  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{64}] = tv0[I0, I1]
+  // tv1[I0,        R1oi{4},  R1i{64}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{64}]
 
   tv0->computeAt(tv1, 1);
 
