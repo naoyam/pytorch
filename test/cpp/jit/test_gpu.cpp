@@ -38,7 +38,7 @@ static TensorView* makeDummyTensor(
 
 static void checkIntValue(
     const EvaluationContext* eval_context,
-    const Val* val,
+    Val* val,
     Int::ScalarType expected_value) {
   TORCH_CHECK(val->isAnInt());
   const auto actual_value = ExpressionEvaluator::evaluate(val, eval_context);
@@ -1195,7 +1195,7 @@ void testGPU_FusionAdvancedComputeAt() {
     TORCH_CHECK(tv0->getComputeAtView() == tv3);
     TORCH_CHECK(tv1->getComputeAtView() == tv4);
     TORCH_CHECK(tv2->getComputeAtView() == tv4);
-    TORCH_CHECK(tv3->getComputeAtView() == tv5);
+    TORCH_CHECK(tv3->getComputeAtView() == tv6);
     TORCH_CHECK(tv4->getComputeAtView() == tv5);
     TORCH_CHECK(tv5->getComputeAtView() == tv6);
     TORCH_CHECK(!tv6->hasComputeAt());
@@ -1209,7 +1209,7 @@ void testGPU_FusionAdvancedComputeAt() {
 
     tv0->computeAt(tv6, 1);
 
-    TORCH_CHECK(tv0->getComputeAtView() == tv6 && tv0->nDims() == 3);
+    TORCH_CHECK(tv0->getComputeAtView() == tv3 && tv0->nDims() == 3);
     TORCH_CHECK(tv1->getComputeAtView() == tv4 && tv1->nDims() == 3);
     TORCH_CHECK(tv2->getComputeAtView() == tv4 && tv2->nDims() == 3);
     TORCH_CHECK(tv3->getComputeAtView() == tv6 && tv3->nDims() == 3);
@@ -2711,63 +2711,6 @@ void testGPU_FusionReductionTFT() {
   TORCH_CHECK(aten_output.allclose(cg_output));
 }
 
-void testGPU_FusionReduction4() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  Fusion& fusion = *prog.fusion_;
-  FusionGuard fg(&fusion);
-
-  // Set up your input tensor views
-  TensorView* tv0 = makeDummyTensor(3);
-
-  fusion.addInput(tv0);
-
-  TensorView* tv1 = reductionOp(BinaryOpType::Add, {1}, new Float(0), tv0);
-
-  fusion.addOutput(tv1);
-
-  int bidy = 2;
-  int bidx = 3;
-  int tidy = 4;
-  int tidx = 5;
-
-  tv1->split(-2, tidy);
-
-  tv1->split(-2, tidy);
-  
-  TensorView* tv2 = tv1->rFactor({-3});
-
-  tv0->computeAt(tv1, 1);
-
-  tv1->axis(0)->parallelize(ParallelType::BIDy);
-
-  for (auto* val : fusion.vals()) {
-    if (val->getValType().value() == ValType::TensorView)
-      val->as<TensorView>()->axis(-1)->parallelize(ParallelType::TIDx);
-  }
-
-  tv2->axis(-2)->parallelize(ParallelType::TIDy);
-  tv1->axis(-2)->parallelize(ParallelType::TIDy);
-
-  fusion.printMath();
-  GPULower lower(&fusion);
-  lower.printKernel(std::cout);
-
-  prog.device_ = 0;
-  prog.grid(1, bidy);
-  prog.block(tidx, tidy);
-  torch::jit::fuser::cuda::compileKernel(&prog);
-
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor input = at::randn({bidy, dim1, tidx}, options);
-
-  at::Tensor cg_output = at::empty({bidy, tidx}, options);
-
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
-
-  auto aten_output = input.sum({1});
-  TORCH_CHECK(aten_output.allclose(cg_output));
-}
-
 void testGPU_FusionSimpleBCast() {
   {
     torch::jit::fuser::cuda::CudaKernel prog;
@@ -3002,9 +2945,6 @@ void testGPU_FusionSoftmax() {
   output_tv6->axis(-1)->parallelize(ParallelType::TIDx);
 
   fusion.addOutput(output_tv6);
-
-  GPULower gpulw(&fusion);
-  // gpulw.printKernel(std::cout);
 
   prog.device_ = 0;
   prog.grid(32, 32);

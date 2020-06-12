@@ -648,6 +648,8 @@ TORCH_CUDA_API TensorView* where(
   return arithOpOverloads(where, v1, v2, v3);
 }
 
+// TERNARY OPERATIONS
+
 TORCH_CUDA_API Val* threshold(Val* in, Val* thresh, Val* value) {
   TORCH_CHECK(
       in->getDataType().value() == thresh->getDataType().value() &&
