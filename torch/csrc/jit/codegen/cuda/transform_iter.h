@@ -45,12 +45,18 @@ struct Exprs : public IterVisitor {
 } // namespace
 
 // Uses the history of _target_domain, and replays that history using the
-// provided map target_domain contains the history we want replayed, and
+// provided map.
+//
+// target_domain contains the history we want replayed.
+//
 // id_map maps IterDomains in that history to the IterDomains we want it
-// replayed on. error_on_failure will cause the replay to error if we can't
-// play any operation in target_domain's history because the IDs are not in
-// the id_map. If error_on_failure = false, replay will replay everything it
-// can, and ignore operations it can't.
+// replayed on.
+//
+// error_on_failure = true will cause the replay to error if we can't replay any
+// operation in target_domain's history due to missing IDs in the id_map.
+//
+// If error_on_failure = false, replay will replay everything it can, and ignore
+// operations it can't.
 struct TORCH_CUDA_API ReplayTransformations : public IterVisitor {
  protected:
   const std::vector<IterDomain*>& target_domain_;

@@ -188,7 +188,7 @@ std::unordered_set<Val*> IterVisitor::getTerminatingOutputs(
 
   std::unordered_set<Val*> used_vals;
 
-  auto exprs = Exprs::getExprs(
+  const auto exprs = Exprs::getExprs(
       fusion,
       std::vector<Val*>(fusion->outputs().begin(), fusion->outputs().end()));
 

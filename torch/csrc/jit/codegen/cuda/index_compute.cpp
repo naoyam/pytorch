@@ -123,7 +123,8 @@ TensorIndex* Index::getGlobalProducerIndex(
 
   // What would the consumer indices be if it was global, keeping in mind
   // reduction axes:
-  std::vector<Val*> c_inds = IndexCompute::get(consumer->domain(), indices);
+  const std::vector<Val*> c_inds =
+      IndexCompute::get(consumer->domain(), indices);
 
   // Computed consumer indices should have everything we need for the producer
   std::vector<Val*> p_inds;
@@ -146,7 +147,7 @@ TensorIndex* Index::getGlobalProducerIndex(
       "Dimensionality error in code generator while computing tensor indices.");
 
   std::vector<Val*> strided_inds;
-  for (decltype(p_inds.size()) i{0}; i < p_inds.size(); i++) {
+  for (size_t i = 0; i < p_inds.size(); i++) {
     std::stringstream ss;
     ss << "T" << producer->name() << ".stride[" << i << "]";
     strided_inds.push_back(
@@ -208,7 +209,7 @@ TensorIndex* Index::getProducerIndex_impl(
   std::vector<Val*> used_inds;
   std::vector<IterDomain*> used_ranges;
   bool unrolled = false;
-  for (decltype(loops_adjusted.size()) i{0}; i < loops_adjusted.size(); i++) {
+  for (size_t i = 0; i < loops_adjusted.size(); i++) {
     if (ranges[i]->parallel_method() == ParallelType::Unroll)
       unrolled = true;
     if (!unrolled && producer->hasComputeAt() &&
@@ -226,9 +227,9 @@ TensorIndex* Index::getProducerIndex_impl(
     used_ranges.push_back(ranges[i]);
   }
 
-  for (decltype(used_inds.size()) i{0}; i < used_inds.size(); i++) {
+  for (size_t i = 0; i < used_inds.size(); i++) {
     Val* ind = used_inds[i];
-    for (decltype(used_ranges.size()) j{i + 1}; j < used_ranges.size(); j++)
+    for (size_t j = i + 1; j < used_ranges.size(); j++)
       ind = mul(ind, used_ranges[j]->extent());
     used_inds[i] = ind;
   }
@@ -259,7 +260,7 @@ TensorIndex* Index::getGlobalConsumerIndex(
       "Dimensionality error in code generator while computing indexing.");
 
   if (computed_inds.size() == root_dom.size())
-    for (decltype(root_dom.size()) i{0}; i < root_dom.size(); i++) {
+    for (size_t i = 0; i < root_dom.size(); i++) {
       // Do this backwards so erase offset will be right
       auto axis = root_dom.size() - i - 1;
       if (root_dom[axis]->isReduction() || root_dom[i]->isBroadcast())
@@ -267,7 +268,7 @@ TensorIndex* Index::getGlobalConsumerIndex(
     }
 
   std::vector<Val*> strided_inds;
-  for (decltype(computed_inds.size()) i{0}; i < computed_inds.size(); i++) {
+  for (size_t i = 0; i < computed_inds.size(); i++) {
     std::stringstream ss;
     ss << "T" << consumer->name() << ".stride[" << i << "]";
     strided_inds.push_back(
@@ -321,7 +322,7 @@ TensorIndex* Index::getConsumerIndex_impl(
   std::vector<Val*> used_inds;
   std::vector<IterDomain*> used_ranges;
   bool unrolled = false;
-  for (decltype(loops.size()) i{0}; i < loops.size(); i++) {
+  for (size_t i = 0; i < loops.size(); i++) {
     if (have_reduction_iters && consumer->axis(i)->isReduction())
       continue;
     if (ranges[i]->parallel_method() == ParallelType::Unroll)
@@ -341,9 +342,9 @@ TensorIndex* Index::getConsumerIndex_impl(
     used_ranges.push_back(ranges[i]);
   }
 
-  for (decltype(used_inds.size()) i{0}; i < used_inds.size(); i++) {
+  for (size_t i = 0; i < used_inds.size(); i++) {
     Val* ind = used_inds[i];
-    for (decltype(used_ranges.size()) j{i + 1}; j < used_ranges.size(); j++)
+    for (size_t j = i + 1; j < used_ranges.size(); j++)
       ind = mul(ind, used_ranges[j]->extent());
     used_inds[i] = ind;
   }

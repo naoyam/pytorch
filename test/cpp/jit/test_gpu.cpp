@@ -2894,7 +2894,13 @@ void testGPU_FusionSimpleGemm() {
   }
 }
 
-// TODO: FIX THIS TEST!
+// This test currently requires a combination of broadcast and reduction
+// operations and parellelization strategy that is currently not supported.
+// It is a goal to get this example working and this test is added so we
+// can continue working on getting this example fixed. Right now it
+// produces an incorrect result. Either we need to error coherently on the
+// optimization strategy we don't support and set this test to one we do support
+// or we need to get this schedule working correctly.
 void testGPU_FusionSoftmax() {
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;

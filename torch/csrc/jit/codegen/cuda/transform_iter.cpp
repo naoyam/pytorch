@@ -68,13 +68,13 @@ void ReplayTransformations::handle(Merge* m) {
   auto it_outer = id_map_.find(id_outer);
   auto it_inner = id_map_.find(id_inner);
 
-  bool outer_found = it_outer != id_map_.end();
-  bool outer_bcast = id_outer->isBroadcast();
-  bool inner_found = it_inner != id_map_.end();
-  bool inner_bcast = id_inner->isBroadcast();
+  const bool outer_found = it_outer != id_map_.end();
+  const bool outer_bcast = id_outer->isBroadcast();
+  const bool inner_found = it_inner != id_map_.end();
+  const bool inner_bcast = id_inner->isBroadcast();
 
   // If either are not found
-  if ((!outer_found || !inner_found)) {
+  if (!outer_found || !inner_found) {
     // If both aren't found, it's a failure
     // If outer is found && inner is bcast it is not a failure
     // If inner is found && outer is bcast it is not a failure
@@ -101,8 +101,8 @@ void ReplayTransformations::handle(Merge* m) {
   }
 
   // Grab the IDs we're going to replay this merge on
-  auto id_outer_mapped = it_outer->second;
-  auto id_inner_mapped = it_inner->second;
+  const auto id_outer_mapped = it_outer->second;
+  const auto id_inner_mapped = it_inner->second;
 
   // Make sure these IDs are leaf IDs (meaning they have no uses we generated)
   TORCH_INTERNAL_ASSERT(
