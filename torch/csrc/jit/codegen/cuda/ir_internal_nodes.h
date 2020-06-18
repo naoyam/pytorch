@@ -5,7 +5,6 @@
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
-#include <torch/csrc/jit/codegen/cuda/tensor_meta.h>
 
 /*
  * Nodes in here should generally not be used by users. They should be behind
@@ -159,6 +158,11 @@ struct TORCH_CUDA_API ReductionOp : public Expr {
 
   bool sameAs(const ReductionOp* const other) const;
 
+  std::vector<IterDomain*> getReductionDomains() const;
+
+  std::unordered_map<ParallelType, IterDomain*> getParallelReductionDomains()
+      const;
+
  private:
   const BinaryOpType reduction_op_type_;
   Val* const init_ = nullptr;
@@ -280,10 +284,6 @@ struct TORCH_CUDA_API IterDomain : public Val {
 
   void parallelize(ParallelType t) {
     parallel_method_ = t;
-    if (isBlockDim())
-      TORCH_CHECK(
-          !isReduction(),
-          "Cannot parallelize reductions across a block dimension.");
 
     // Currently a limitation as we allocate shared memory as static (not based
     // off a dynamic size.)
@@ -381,6 +381,8 @@ struct TORCH_CUDA_API TensorDomain : public Val {
   }
 
   bool hasReduction() const;
+  bool hasBlockReduction() const;
+  bool hasGridReduction() const;
   bool hasBroadcast() const;
   bool hasRFactor() const;
 
