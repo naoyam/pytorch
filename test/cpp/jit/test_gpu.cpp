@@ -2771,7 +2771,7 @@ void testGPU_FusionSoftmax() {
   Fusion& fusion = *prog.fusion_;
   FusionGuard fg(&fusion);
 
-    // Set up your input tensor views
+  // Set up your input tensor views
   TensorView* input_tv0 = makeDummyTensor(3);
   fusion.addInput(input_tv0);
 
