@@ -215,31 +215,29 @@ T1 tv_iterable(const T2& val_iterable) {
 }
 } // namespace
 
-/*
- * Takes this tensor and tries to set up the schedule so that it's computed
- * relative to consumer within axis. Simple example is if both this and consumer
- * are 2D and this->computeAt(consumer, 1) is called, then only 1D of this will
- * ever be materialized at the same time.
- *
- * Roughly what this function will do is:
- *
- * (1) Find if there's a consumer which contains all uses of this (aka
- * producer). This "common_consumer" must be at consumer or after in the graph.
- *
- * (2) We will forward the computeAt from consumer to common_consumer.
- *
- * (3) We will find all paths from common_consumer back to this (aka producer).
- * We will propagate the computeAt down this dependency chain to this (aka
- * producer).
- *
- * (4) If there is not a common_consumer we will still have propagated down from
- * consumer through all paths to this (aka producer). We will then make sure
- * there isn't any broadcast axes within the computeAt axis (if so for now it's
- * an error). We then propagate the compute at from this (aka producer) to all
- * terminating Vals (registered outputs or leaves).
- *
- * (5) Set computeAt relative to outputs/leaves found in (4)
- */
+// Takes this tensor and tries to set up the schedule so that it's computed
+// relative to consumer within axis. Simple example is if both this and consumer
+// are 2D and this->computeAt(consumer, 1) is called, then only 1D of this will
+// ever be materialized at the same time.
+//
+// Roughly what this function will do is:
+//
+// (1) Find if there's a consumer which contains all uses of this (aka
+// producer). This "common_consumer" must be at consumer or after in the graph.
+//
+// (2) We will forward the computeAt from consumer to common_consumer.
+//
+// (3) We will find all paths from common_consumer back to this (aka producer).
+// We will propagate the computeAt down this dependency chain to this (aka
+// producer).
+//
+// (4) If there is not a common_consumer we will still have propagated down from
+// consumer through all paths to this (aka producer). We will then make sure
+// there isn't any broadcast axes within the computeAt axis (if so for now it's
+// an error). We then propagate the compute at from this (aka producer) to all
+// terminating Vals (registered outputs or leaves).
+//
+// (5) Set computeAt relative to outputs/leaves found in (4)
 TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   // Make sure the correct fusion is setup between this and consumer.
   TORCH_CHECK(
@@ -265,22 +263,22 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       axis >= 0 && (unsigned int)axis < consumer->nDims() + 1,
       "Compute at called on an axis outside valid range.");
 
-  // Right now we only support compute at if at some point in the graph consumer
-  // is dependent on this.
-  TORCH_CHECK(
-      DependencyCheck::isDependencyOf(this, consumer),
-      "Compute At expects ",
-      this,
-      " is a dependency of ",
-      consumer,
-      ", however it is not.");
-
   // Start (1): Look through all the use chains of producer. Check if there's a
   // single consumer for all chains at or after the consumer specified in the
   // computeAt call.
 
   // Grab all paths from this to  of producer in fusion.
   auto val_all_dep_chains = DependencyCheck::getAllDependencyChainsTo(this);
+
+  // Right now we only support compute at if at some point in the graph consumer
+  // is dependent on this.
+  TORCH_CHECK(
+      !val_all_dep_chains.empty(),
+      "Compute At expects ",
+      this,
+      " is a dependency of ",
+      consumer,
+      ", however it is not.");
 
   // Convert dep chains to tensor view chains.
   std::deque<std::deque<TensorView*>> tv_all_dep_chains;
@@ -330,7 +328,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   compute_at_axis_lookup[consumer] = axis;
 
   // Track if we set computeAt on a TV
-  std::unordered_set<TensorView*> computeAted;
+  std::unordered_set<TensorView*> compute_at_set;
   // Track if a TV was transformed by this pass
   std::unordered_set<TensorView*> transformed;
 
@@ -348,7 +346,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
     TensorView* running_consumer = tv_dep_chain.front();
     tv_dep_chain.pop_front();
 
-    TensorView* running_producer;
+    TensorView* running_producer = nullptr;
 
     while (!tv_dep_chain.empty()) {
       running_producer = running_consumer;
@@ -361,8 +359,8 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       running_consumer->forwardComputeAt_impl(
           running_producer, running_producer_compute_at);
 
-      // Update computeAted, transformed, and compute_at_axis_lookup
-      computeAted.emplace(running_producer);
+      // Update compute_at_set, transformed, and compute_at_axis_lookup
+      compute_at_set.emplace(running_producer);
       transformed.emplace(running_consumer);
 
       auto it = compute_at_axis_lookup.find(running_consumer);
@@ -383,7 +381,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       common_consumer == nullptr ? consumer : common_consumer;
 
   // Grab all chains from common_consumer to this
-  auto val_all_consumer_chains =
+  const auto val_all_consumer_chains =
       DependencyCheck::getAllDependencyChains(this, running_consumer);
 
   // Convert dep chains to tensor view chains
@@ -395,7 +393,6 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   for (auto tv_chain : tv_all_consumer_chains) {
     TensorView* running_producer = tv_chain.back();
     tv_chain.pop_back();
-    TensorView* running_consumer;
 
     while (!tv_chain.empty()) {
       running_consumer = running_producer;
@@ -408,7 +405,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
           "Should have already visisted a consumer, but encountered one that wasn't.");
 
       if (transformed.find(running_producer) != transformed.end()) {
-        if (computeAted.find(running_producer) == computeAted.end())
+        if (compute_at_set.find(running_producer) == compute_at_set.end())
           running_producer->setComputeAt(running_consumer, it->second);
         continue;
       }
@@ -416,7 +413,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
       running_producer->computeAt_impl(running_consumer, it->second);
 
       // Update both compute_at_ed and compute_at_axis_lookup
-      computeAted.emplace(running_producer);
+      compute_at_set.emplace(running_producer);
       transformed.emplace(running_producer);
 
       it = compute_at_axis_lookup.find(running_producer);
@@ -484,13 +481,13 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
         TransformReplay::replayCasP(
             running_consumer, running_producer, running_producer_compute_at);
       }
-      if (computeAted.find(running_producer) == computeAted.end()) {
+      if (compute_at_set.find(running_producer) == compute_at_set.end()) {
         running_producer->setComputeAt(
             running_consumer, running_producer_compute_at);
       }
 
       transformed.emplace(running_consumer);
-      computeAted.emplace(running_producer);
+      compute_at_set.emplace(running_producer);
 
       running_producer_compute_at =
           (int)running_producer->getThisComputeAtAxis();
