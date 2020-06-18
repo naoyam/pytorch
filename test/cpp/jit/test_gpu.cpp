@@ -2577,6 +2577,7 @@ void testGPU_FusionReductionTFT() {
 }
 
 void testGPU_FusionSimpleBCast() {
+#if 0
   {
     torch::jit::fuser::cuda::CudaKernel prog;
     Fusion& fusion = *prog.fusion_;
@@ -2671,6 +2672,27 @@ void testGPU_FusionSimpleBCast() {
     auto t4 = t2.add(t3);
 
     TORCH_CHECK(t4.allclose(cg_output));
+  }
+#endif
+  {
+    torch::jit::fuser::cuda::CudaKernel prog;
+    Fusion& fusion = *prog.fusion_;
+    FusionGuard fg(&fusion);
+
+    // Set up your input tensor views
+    TensorView* tv0 = makeDummyTensor(1);
+    TensorView* tv1 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    auto tv2 = broadcast(tv0, {false, true});
+    auto tv3 = add(tv2, tv1);
+    fusion.addOutput(tv3);
+
+    tv2->computeAt(tv3, 1);
+
+    GPULower gpulw(&fusion);
+    gpulw.printKernel(std::cout);
   }
 }
 
