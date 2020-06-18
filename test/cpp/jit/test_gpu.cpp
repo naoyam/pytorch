@@ -2767,6 +2767,39 @@ void testGPU_FusionSimpleGemm() {
 // optimization strategy we don't support and set this test to one we do support
 // or we need to get this schedule working correctly.
 void testGPU_FusionSoftmax() {
+#if 1
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* input_tv0 = makeDummyTensor(3);
+  fusion.addInput(input_tv0);
+
+  TensorView* max_val_tv1 =
+      reductionOp(BinaryOpType::Max, {2}, new Float(0), input_tv0);
+  fusion.addInput(max_val_tv1);
+  TensorView* bcast_max_tv2 = broadcast(max_val_tv1, {false, false, true});
+  fusion.addInput(bcast_max_tv2);
+  TensorView* exp_tv3 = sub(input_tv0, bcast_max_tv2);
+  fusion.addInput(exp_tv3);
+  TensorView* sum_exp_tv4 =
+      reductionOp(BinaryOpType::Add, {2}, new Float(0), exp_tv3);
+  fusion.addInput(sum_exp_tv4);
+  TensorView* bcast_sum_tv5 = broadcast(sum_exp_tv4, {false, false, true});
+  fusion.addInput(bcast_sum_tv5);
+  TensorView* output_tv6 = div(exp_tv3, bcast_sum_tv5);
+  fusion.addOutput(output_tv6);
+
+  fusion.printKernel();
+
+  prog.device_ = 0;
+  prog.grid(32, 32);
+  prog.block(32);
+  torch::jit::fuser::cuda::compileKernel(&prog);
+
+  return;
+#else
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
   FusionGuard fg(&fusion);
@@ -2832,6 +2865,7 @@ void testGPU_FusionSoftmax() {
   //     t2.allclose(cg_output, 1e-5, 1e-5),
   //     "Error of: ",
   //     t2.sub(cg_output).abs().max());
+#endif
 }
 // Similar to FusionReduction but uses grid reduction
 void testGPU_FusionGridReduction1() {
