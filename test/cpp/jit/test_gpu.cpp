@@ -2781,14 +2781,7 @@ void testGPU_FusionSoftmax() {
   fusion.addInput(max_val_tv1);
   TensorView* bcast_max_tv2 = broadcast(max_val_tv1, {false, false, true});
   fusion.addInput(bcast_max_tv2);
-  TensorView* exp_tv3 = sub(input_tv0, bcast_max_tv2);
-  fusion.addInput(exp_tv3);
-  TensorView* sum_exp_tv4 =
-      reductionOp(BinaryOpType::Add, {2}, new Float(0), exp_tv3);
-  fusion.addInput(sum_exp_tv4);
-  TensorView* bcast_sum_tv5 = broadcast(sum_exp_tv4, {false, false, true});
-  fusion.addInput(bcast_sum_tv5);
-  TensorView* output_tv6 = div(exp_tv3, bcast_sum_tv5);
+  TensorView* output_tv6 = sub(input_tv0, bcast_max_tv2);
   fusion.addOutput(output_tv6);
 
   fusion.printKernel();
