@@ -3303,6 +3303,25 @@ void testGPU_FusionNonRedAxisBind() {
       aten_output.sub(cg_output).abs().max());
 }
 
+void testGPU_FusionComputeAtMultiSites() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+  fusion.addInput(tv0);
+
+  auto tv1 = unaryOp(UnaryOpType::Exp, tv0);
+  auto tv2 = reductionOp(BinaryOpType::Max, {-1}, new Float(0), tv1);
+  auto tv3 = reductionOp(BinaryOpType::Min, {-1}, new Float(0), tv1);
+  auto tv4 = add(tv2, tv3);
+  fusion.addOutput(tv4);
+
+  // This results in an error at this time.
+  tv1->computeAt(tv2, -1);
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)
