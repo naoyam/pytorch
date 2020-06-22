@@ -137,12 +137,14 @@ void ThreadPredicates::updateBitSet(Expr* expr) {
               inp);
         }
       } else if (input_bcasts[i]) {
+#if 0
         if (id_ptypes[i])
           TORCH_INTERNAL_ASSERT(
               id_bcasts[i],
               "Mismatched parallelized broadcast found on inputs of epxr: ",
               expr,
               ".");
+#endif
       }
     }
 
