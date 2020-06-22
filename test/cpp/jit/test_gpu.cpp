@@ -3369,26 +3369,42 @@ void testGPU_FusionNonRedAxisBind() {
 }
 
 void testGPU_FusionBCastDomain() {
-  int bid_x = 3;
-  int tid_x = 2;
-  int red_dim = 0;
+  {
+    torch::jit::fuser::cuda::CudaKernel prog;
+    Fusion& fusion = *prog.fusion_;
+    FusionGuard fg(&fusion);
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  Fusion& fusion = *prog.fusion_;
-  FusionGuard fg(&fusion);
+    // Set up your input tensor views
+    TensorView* tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+    TensorView* tv1 = makeDummyTensor(2);
+    fusion.addInput(tv1);
 
-  // Set up your input tensor views
-  TensorView* tv0 = makeDummyTensor(1);
-  fusion.addInput(tv0);
-  TensorView* tv1 = makeDummyTensor(2);
-  fusion.addInput(tv1);
+    auto tv2 = broadcast(tv0, {false, true});
+    auto tv3 = add(tv2, tv1);
+    fusion.addOutput(tv3);
 
-  auto tv2 = broadcast(tv0, {false, true});
-  auto tv3 = neg(tv2);
-  fusion.addOutput(tv3);
+    fusion.printMath();
+  }
+  {
+    torch::jit::fuser::cuda::CudaKernel prog;
+    Fusion& fusion = *prog.fusion_;
+    FusionGuard fg(&fusion);
 
-  fusion.printMath();
-  //fusion.printKernel();
+    // Set up your input tensor views
+    TensorView* tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+    TensorView* tv1 = makeDummyTensor(2);
+    fusion.addInput(tv1);
+
+    auto tv2 = broadcast(tv0, {false, true});
+    auto tv3 = neg(tv2);
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+  }
+    
+
 }
 
 } // namespace jit
