@@ -3341,6 +3341,32 @@ void testGPU_FusionNonRedAxisBind() {
       aten_output.sub(cg_output).abs().max());
 }
 
+void testGPU_FusionComputeAtBug() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(1);
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Float(1));
+  auto tv2 = add(tv0, new Float(1));
+  auto tv3 = add(tv1, tv2);
+  fusion.addOutput(tv3);
+  fusion.addOutput(tv2);
+
+  tv1->computeAt(tv3, -1);
+
+  fusion.printKernel();
+
+  prog.device_ = 0;
+  prog.grid(1);
+  prog.block(1);
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  return;
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)
