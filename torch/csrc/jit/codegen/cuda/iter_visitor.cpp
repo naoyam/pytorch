@@ -2,6 +2,7 @@
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
+#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
 namespace torch {
 namespace jit {
@@ -38,6 +39,14 @@ std::vector<Statement*> IterVisitor::next(Expr* expr, bool respect_compute_at) {
         "Expressions with multiple outputs are not supported");
     if (expr->output(0)->getValType().value() == ValType::TensorView) {
       auto out = expr->output(0)->as<TensorView>();
+      // Traverse outputs that should be computed at this out
+      // TensorView.
+      if (output_producer_map_.find(out) != output_producer_map_.end()) {
+        next_stmts.insert(next_stmts.end(),
+                          output_producer_map_[out].begin(),
+                          output_producer_map_[out].end());
+      }
+
       // Move input TVs that are computed at this expression backward
       // so that they are visited later. If multiple inputs are
       // computed at, move TVs that are computed at an inner loop nest
@@ -131,12 +140,38 @@ void IterVisitor::traverseFrom(
   }
 }
 
+void IterVisitor::prepareOutputComputeAt(Fusion* const fusion, bool respect_compute_at) {
+  computed_at_outputs_.clear();
+
+  if (!respect_compute_at) return;
+
+  for (auto out : fusion->outputs()) {
+    if (out->getValType() != ValType::TensorView) continue;
+    auto tv = out->as<TensorView>();
+    if (!tv->hasComputeAt()) continue;
+    computed_at_outputs_.insert(tv);
+    auto target = tv->getComputeAtView();
+    // target should be an output too.
+    TORCH_INTERNAL_ASSERT(
+        fusion->hasOutput(target),
+        "Output tensor, ", tv, ", is computed at a non-output tensor, ",
+        target, ".");
+    if (output_producer_map_.find(target) == output_producer_map_.end()) {
+      output_producer_map_.emplace(target, std::unordered_set<TensorView*>());
+    }
+    auto& producer_map = output_producer_map_[target];
+    producer_map.emplace(tv);
+  }
+}
+
 void IterVisitor::traverse_(
     Fusion* const fusion,
     bool from_outputs_only,
     bool traverse_all_paths,
     bool respect_compute_at) {
   FusionGuard fg(fusion);
+
+  prepareOutputComputeAt(fusion, respect_compute_at);
 
   if (from_outputs_only) {
     auto term_val_outs = fusion->getTerminatingOutputs();

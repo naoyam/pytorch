@@ -113,6 +113,13 @@ class TORCH_CUDA_API IterVisitor : public OptOutDispatch {
       bool respect_compute_at = false);
 
   static std::unordered_set<Val*> getInputsTo(const std::vector<Val*>& vals);
+
+ private:
+  std::unordered_set<const TensorView*> computed_at_outputs_;
+  // Mapping from output tensor, tv, to other outputs that are computed at tv.
+  std::unordered_map<const TensorView*, std::unordered_set<TensorView*>> output_producer_map_;
+
+  void prepareOutputComputeAt(Fusion* const fusion, bool respect_compute_at);
 };
 
 /*

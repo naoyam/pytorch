@@ -4591,6 +4591,7 @@ void testGPU_FusionTraversalOrder1() {
 
   tv1->computeAt(tv3, -1);
 
+  fusion->printMath();
   fusion->printKernel();
 
   prog.setDevice(0);
@@ -4657,8 +4658,6 @@ void testGPU_FusionTraversalOrder2() {
 
   tv1->computeAt(tv5, -1);
   tv3->computeAt(tv5, -1);
-
-  fusion->printKernel();
 
   prog.setDevice(0);
   setupLaunchConfig(
@@ -4738,8 +4737,6 @@ void testGPU_FusionTraversalOrder3() {
 
     compute_at_outer->computeAt(tv5, -2);
     compute_at_inner->computeAt(tv5, -1);
-
-    fusion->printKernel();
 
     prog.setDevice(0);
     setupLaunchConfig(
