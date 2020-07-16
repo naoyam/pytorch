@@ -76,8 +76,7 @@ class ExprSort : public IterVisitor {
  public:
   static std::vector<Expr*> getExprs(
       Fusion* fusion,
-      bool from_outputs_only,
-      bool respect_compute_at);
+      bool from_outputs_only);
 
   static std::vector<Expr*> getExprs(
       Fusion* fusion,
@@ -149,9 +148,7 @@ class TORCH_CUDA_API Fusion final {
    *   True - Sort from DAG associated with registered outputs
    *   False - Sort from all terminating Vals.
    */
-  std::vector<Expr*> exprs(
-      bool from_outputs_only = false,
-      bool respect_compute_at = false);
+  std::vector<Expr*> exprs(bool from_outputs_only = false);
 
   std::unordered_set<Val*> inputsOf(Val* val);
 

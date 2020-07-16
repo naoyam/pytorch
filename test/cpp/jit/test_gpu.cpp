@@ -4571,49 +4571,33 @@ void testGPU_FusionComputeAtNonterminatingOutput() {
 }
 
 void testGPU_FusionTraversalOrder1() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(2);
-  fusion->addInput(tv0);
+  fusion.addInput(tv0);
 
   TensorView* tv1 = add(tv0, new Float(1));
   TensorView* tv2 = add(tv0, new Float(2));
   TensorView* tv3 = add(tv1, new Float(3));
   TensorView* tv4 = add(tv1, new Float(4));
 
-  fusion->addOutput(tv2);
-  fusion->addOutput(tv3);
-  fusion->addOutput(tv4);
+  fusion.addOutput(tv2);
+  fusion.addOutput(tv3);
+  fusion.addOutput(tv4);
 
   tv1->computeAt(tv3, -1);
 
-  fusion->printMath();
-  fusion->printKernel();
-
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      1, // tid_x
-      1, // tid_y
-      1, // tid_z
-      1, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
-
-  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({10, 10}, options);
   at::Tensor cg_output_tv2 = at::empty_like(input, options);
   at::Tensor cg_output_tv3 = at::empty_like(input, options);
   at::Tensor cg_output_tv4 = at::empty_like(input, options);
-  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output_tv2, cg_output_tv3, cg_output_tv4});
+  fe.runFusion({input}, {cg_output_tv2, cg_output_tv3, cg_output_tv4});
 
   auto t1 = input + 1;
   auto t2 = input + 2;
@@ -4635,14 +4619,12 @@ void testGPU_FusionTraversalOrder1() {
 }
 
 void testGPU_FusionTraversalOrder2() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(2);
-  fusion->addInput(tv0);
+  fusion.addInput(tv0);
 
   TensorView* tv1 = add(tv0, new Float(1));
   TensorView* tv2 = add(tv1, new Float(2));
@@ -4652,32 +4634,22 @@ void testGPU_FusionTraversalOrder2() {
 
   TensorView* tv5 = add(tv1, tv3);
 
-  fusion->addOutput(tv2);
-  fusion->addOutput(tv4);
-  fusion->addOutput(tv5);
+  fusion.addOutput(tv2);
+  fusion.addOutput(tv4);
+  fusion.addOutput(tv5);
 
   tv1->computeAt(tv5, -1);
   tv3->computeAt(tv5, -1);
 
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      1, // tid_x
-      1, // tid_y
-      1, // tid_z
-      1, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
-  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({10, 10}, options);
   at::Tensor cg_output_tv2 = at::empty_like(input, options);
   at::Tensor cg_output_tv4 = at::empty_like(input, options);
   at::Tensor cg_output_tv5 = at::empty_like(input, options);
-  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output_tv2, cg_output_tv4, cg_output_tv5});
+  fe.runFusion({input}, {cg_output_tv2, cg_output_tv4, cg_output_tv5});
 
   auto t1 = input + 1;
   auto t2 = t1 + 2;
@@ -4701,13 +4673,11 @@ void testGPU_FusionTraversalOrder2() {
 
 void testGPU_FusionTraversalOrder3() {
   for (int i = 0; i < 2; ++i) {
-    torch::jit::fuser::cuda::CudaKernel prog;
-    prog.setFusionPtr(std::make_unique<Fusion>());
-    Fusion* fusion = prog.fusion();
-    FusionGuard fg(fusion);
+    Fusion fusion;
+    FusionGuard fg(&fusion);
 
     TensorView* tv0 = makeDummyTensor(1);
-    fusion->addInput(tv0);
+    fusion.addInput(tv0);
 
     TensorView* tv1 = add(tv0, new Float(1));
     TensorView* tv2 = add(tv1, new Float(2));
@@ -4717,9 +4687,9 @@ void testGPU_FusionTraversalOrder3() {
 
     TensorView* tv5 = add(tv1, tv3);
 
-    fusion->addOutput(tv2);
-    fusion->addOutput(tv4);
-    fusion->addOutput(tv5);
+    fusion.addOutput(tv2);
+    fusion.addOutput(tv4);
+    fusion.addOutput(tv5);
 
     const int tile = 32;
 
@@ -4738,25 +4708,15 @@ void testGPU_FusionTraversalOrder3() {
     compute_at_outer->computeAt(tv5, -2);
     compute_at_inner->computeAt(tv5, -1);
 
-    prog.setDevice(0);
-    setupLaunchConfig(
-        prog.fusion(),
-        1, // tid_x
-        1, // tid_y
-        1, // tid_z
-        1, // gid_x
-        1, // gid_y
-        1, // gid_z
-        0 // shared_memory size
-                      );
-    torch::jit::fuser::cuda::compileKernel(&prog);
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor input = at::rand({100}, options);
     at::Tensor cg_output_tv2 = at::empty_like(input, options);
     at::Tensor cg_output_tv4 = at::empty_like(input, options);
     at::Tensor cg_output_tv5 = at::empty_like(input, options);
-    torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output_tv2, cg_output_tv4, cg_output_tv5});
+    fe.runFusion({input}, {cg_output_tv2, cg_output_tv4, cg_output_tv5});
 
     auto t1 = input + 1;
     auto t2 = t1 + 2;
@@ -4780,46 +4740,32 @@ void testGPU_FusionTraversalOrder3() {
 }
 
 void testGPU_FusionTraversalOrder4() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   // First tree
   TensorView* tv0 = makeDummyTensor(1);
-  fusion->addInput(tv0);
+  fusion.addInput(tv0);
   TensorView* tv1 = add(tv0, new Float(1));
   TensorView* tv2 = add(tv1, new Float(2));
   TensorView* tv3 = add(tv1, new Float(3));
-  fusion->addOutput(tv2);
-  fusion->addOutput(tv3);
+  fusion.addOutput(tv2);
+  fusion.addOutput(tv3);
 
   // Second tree
   TensorView* tv4 = makeDummyTensor(1);
-  fusion->addInput(tv4);
+  fusion.addInput(tv4);
   TensorView* tv5 = add(tv4, new Float(5));
   TensorView* tv6 = add(tv5, new Float(6));
   TensorView* tv7 = add(tv5, new Float(7));
-  fusion->addOutput(tv6);
-  fusion->addOutput(tv7);
+  fusion.addOutput(tv6);
+  fusion.addOutput(tv7);
 
   tv1->computeAt(tv2, -1);
   tv5->computeAt(tv6, -1);
 
-  fusion->printKernel();
-
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      1, // tid_x
-      1, // tid_y
-      1, // tid_z
-      1, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-                    );
-  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::rand({100}, options);
@@ -4829,8 +4775,8 @@ void testGPU_FusionTraversalOrder4() {
   at::Tensor cg_output_tv6 = at::empty_like(t0, options);
   at::Tensor cg_output_tv7 = at::empty_like(t0, options);
 
-  torch::jit::fuser::cuda::runKernel(
-      &prog, {t0, t4}, {cg_output_tv2, cg_output_tv3, cg_output_tv6, cg_output_tv7});
+  fe.runFusion(
+      {t0, t4}, {cg_output_tv2, cg_output_tv3, cg_output_tv6, cg_output_tv7});
 
   auto t1 = t0 + 1;
   auto t2 = t1 + 2;
@@ -4858,40 +4804,26 @@ void testGPU_FusionTraversalOrder4() {
 }
 
 void testGPU_FusionTraversalOrder5() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(1);
-  fusion->addInput(tv0);
+  fusion.addInput(tv0);
   TensorView* tv1 = add(tv0, new Float(1));
   TensorView* tv2 = add(tv1, new Float(2));
   TensorView* tv3 = add(tv0, new Float(3));
   TensorView* tv4 = add(tv3, new Float(4));
   TensorView* tv5 = add(tv2, tv4);
 
-  fusion->addOutput(tv1);
-  fusion->addOutput(tv3);
-  fusion->addOutput(tv5);
+  fusion.addOutput(tv1);
+  fusion.addOutput(tv3);
+  fusion.addOutput(tv5);
 
   tv2->computeAt(tv5, -1);
   tv4->computeAt(tv5, -1);
 
-  fusion->printKernel();
-
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      1, // tid_x
-      1, // tid_y
-      1, // tid_z
-      1, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-                    );
-  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::rand({100}, options);
@@ -4899,8 +4831,7 @@ void testGPU_FusionTraversalOrder5() {
   at::Tensor cg_output_tv3 = at::empty_like(t0, options);
   at::Tensor cg_output_tv5 = at::empty_like(t0, options);
 
-  torch::jit::fuser::cuda::runKernel(
-      &prog, {t0}, {cg_output_tv1, cg_output_tv3, cg_output_tv5});
+  fe.runFusion({t0}, {cg_output_tv1, cg_output_tv3, cg_output_tv5});
 
   auto t1 = t0 + 1;
   auto t2 = t1 + 2;
@@ -4916,6 +4847,96 @@ void testGPU_FusionTraversalOrder5() {
       t3.allclose(cg_output_tv3),
       "tv3 error of: ",
       t3.sub(cg_output_tv3).abs().max());
+  TORCH_CHECK(
+      t5.allclose(cg_output_tv5),
+      "tv5 error of: ",
+      t5.sub(cg_output_tv5).abs().max());
+}
+
+void testGPU_FusionTraversalOrder6() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(1);
+  fusion.addInput(tv0);
+  TensorView* tv1 = add(tv0, new Float(1));
+  TensorView* tv2 = add(tv0, new Float(2));
+  TensorView* tv3 = add(tv1, tv2);
+  TensorView* tv4 = add(tv3, new Float(4));
+
+  fusion.addOutput(tv4);
+
+  tv1->split(0, 32);
+  tv2->split(0, 32);
+  tv3->split(0, 32);
+  tv4->split(0, 32);
+
+  tv3->computeAt(tv4, -2);
+  tv1->computeAt(tv3, -1);
+  tv2->computeAt(tv3, -2);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::rand({100}, options);
+  at::Tensor cg_output_tv4 = at::empty_like(t0, options);
+
+  fe.runFusion({t0}, {cg_output_tv4});
+
+  auto t1 = t0 + 1;
+  auto t2 = t0 + 2;
+  auto t3 = t1 + t2;
+  auto t4 = t3 + 4;
+
+  TORCH_CHECK(
+      t4.allclose(cg_output_tv4),
+      "tv4 error of: ",
+      t4.sub(cg_output_tv4).abs().max());
+}
+
+void testGPU_FusionTraversalOrder7() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(1);
+  fusion.addInput(tv0);
+  TensorView* tv1 = add(tv0, new Float(1));
+  TensorView* tv2 = add(tv1, new Float(2));
+  TensorView* tv3 = add(tv0, new Float(3));
+  TensorView* tv4 = add(tv3, new Float(4));
+  TensorView* tv5 = add(tv2, tv4);
+
+  fusion.addOutput(tv5);
+
+  TensorView* tvs[] = {tv1, tv2, tv3, tv4, tv5};
+  for (auto tv : tvs) {
+    tv->split(0, 2);
+    tv->split(0, 4);
+    tv->split(0, 8);
+  }
+
+  // computeAt into inner loop nests
+  tv1->computeAt(tv2, -1);
+  tv3->computeAt(tv4, -2);
+
+  tv2->computeAt(tv5, -4);
+  tv4->computeAt(tv5, -3);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::rand({100}, options);
+  at::Tensor cg_output_tv5 = at::empty_like(t0, options);
+  fe.runFusion({t0}, {cg_output_tv5});
+
+  auto t1 = t0 + 1;
+  auto t2 = t1 + 2;
+  auto t3 = t0 + 3;
+  auto t4 = t3 + 4;
+  auto t5 = t2 + t4;
+
   TORCH_CHECK(
       t5.allclose(cg_output_tv5),
       "tv5 error of: ",
