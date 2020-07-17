@@ -5079,11 +5079,14 @@ void testGPU_FusionConstCheck() {
   auto one = new Int(1);
   TORCH_CHECK(one->isConstScalar());
 
-  auto one_x_one = mul(one, one);
-  TORCH_CHECK(one_x_one->isConstScalar());
+  auto one_x2 = mul(one, one);
+  TORCH_CHECK(one_x2->isConstScalar());
 
-  auto one_x_one_x_one = mul(one_x_one, one);
-  TORCH_CHECK(one_x_one_x_one->isConstScalar());
+  auto one_x3 = mul(one_x2, one);
+  TORCH_CHECK(one_x3->isConstScalar());
+
+  auto one_x4 = mul(one_x3, one);
+  TORCH_CHECK(one_x4->isConstScalar());
 }
 
 } // namespace jit
