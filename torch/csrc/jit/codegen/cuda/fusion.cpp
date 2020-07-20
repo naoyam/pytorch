@@ -38,6 +38,14 @@ std::vector<Expr*> ExprSort::getExprs(
   return es.exprs;
 }
 
+std::vector<Expr*> ExprSort::getExprs(
+    Fusion* fusion,
+    const std::vector<Val*>& from) {
+  ExprSort es;
+  es.traverseFrom(fusion, from, false);
+  return es.exprs;
+}
+
 void InputsOf::handle(Val* v) {
   if (FusionGuard::getCurFusion()->origin(v) == nullptr)
     inputs.emplace(v);
@@ -539,6 +547,39 @@ bool Fusion::hasGridReduction() {
           return true;
 
   return false;
+}
+
+std::vector<Val*> Fusion::getTerminatingOutputs() {
+  FusionGuard fg(this);
+
+  std::unordered_set<Val*> used_vals;
+
+  const auto exprs = ExprSort::getExprs(
+      this, std::vector<Val*>(outputs().begin(), outputs().end()));
+
+  for (auto expr : exprs) {
+    for (auto inp : expr->inputs())
+      used_vals.emplace(inp);
+  }
+
+  std::unordered_set<Val*> terminating_outputs;
+  for (auto out : outputs()) {
+    if (used_vals.find(out) != used_vals.end())
+      continue;
+    terminating_outputs.emplace(out);
+  }
+
+  std::vector<Val*> sorted_outputs{terminating_outputs.begin(),
+                                   terminating_outputs.end()};
+
+  // Sort the outputs in order to give a deterministic traversal
+  // order.
+  std::sort(
+      sorted_outputs.begin(),
+      sorted_outputs.end(),
+      [](const Val* v0, const Val* v1) { return v0->name() < v1->name(); });
+
+  return sorted_outputs;
 }
 
 } // namespace fuser

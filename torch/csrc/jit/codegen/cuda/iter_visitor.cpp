@@ -142,8 +142,7 @@ void IterVisitor::traverse_(
     TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
 
   if (from_outputs_only) {
-    auto term_outs = IterVisitor::getTerminatingOutputs(fusion);
-    std::vector<Val*> term_val_outs(term_outs.begin(), term_outs.end());
+    auto term_val_outs = fusion->getTerminatingOutputs();
     if (!term_val_outs.empty())
       traverseFrom(
           fusion, term_val_outs, traverse_all_paths, respect_compute_at);
@@ -179,6 +178,7 @@ void IterVisitor::traverseAllPaths(
 
 namespace {
 
+// TODO: Remove this in favor of ExprSort
 // Expr sort will take a fusion and return a topologically sorted list of
 // expressions.
 class Exprs : public IterVisitor {
@@ -221,29 +221,6 @@ class Inputs : public IterVisitor {
 };
 
 } // namespace
-
-std::unordered_set<Val*> IterVisitor::getTerminatingOutputs(
-    Fusion* const fusion) {
-  FusionGuard fg(fusion);
-
-  std::unordered_set<Val*> used_vals;
-
-  const auto exprs = Exprs::getExprs(
-      fusion,
-      std::vector<Val*>(fusion->outputs().begin(), fusion->outputs().end()));
-
-  for (auto expr : exprs) {
-    for (auto inp : expr->inputs())
-      used_vals.emplace(inp);
-  }
-
-  std::unordered_set<Val*> terminating_outputs;
-  for (auto out : fusion->outputs())
-    if (used_vals.find(out) == used_vals.end())
-      terminating_outputs.emplace(out);
-
-  return terminating_outputs;
-}
 
 std::unordered_set<Val*> IterVisitor::getInputsTo(
     const std::vector<Val*>& vals) {

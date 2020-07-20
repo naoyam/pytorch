@@ -117,8 +117,6 @@ class TORCH_CUDA_API IterVisitor : public OptOutDispatch {
       bool breadth_first = false,
       bool respect_compute_at = false);
 
-  static std::unordered_set<Val*> getTerminatingOutputs(Fusion* const);
-
   static std::unordered_set<Val*> getInputsTo(const std::vector<Val*>& vals);
 };
 
