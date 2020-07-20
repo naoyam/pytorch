@@ -2,13 +2,16 @@
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
+#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
 namespace torch {
 namespace jit {
 namespace fuser {
 
+namespace {
+
 // Some pre-compilation checks
-static void IrValidate(Fusion* fusion) {
+void IrValidate(Fusion* fusion) {
   fusion->validateInputs();
   for (Val* val : fusion->vals()) {
     if (ir_utils::isTV(val)) {
@@ -28,8 +31,7 @@ static void IrValidate(Fusion* fusion) {
   }
 }
 
-// Remove circular computeAt references
-void IrFixComputeAt(Fusion* fusion) {
+void IrValidateNoBackwardComputeAt(Fusion* fusion) {
   std::vector<Expr*> exprs = fusion->exprs(true);
   std::set<TensorView*> visited;
   for (auto it = exprs.rbegin(); it != exprs.rend(); it++) {
@@ -40,13 +42,20 @@ void IrFixComputeAt(Fusion* fusion) {
     TensorView* tv = ir_utils::asTV(expr->output(0));
     TensorView* ctv = tv->getComputeAtView();
 
-    if (ctv != nullptr && visited.find(ctv) == visited.end()) {
-      ctv->setComputeAt(tv, (int)tv->getThisComputeAtAxis());
-      tv->clearComputeAt();
+    if (ctv != nullptr) {
+      TORCH_INTERNAL_ASSERT(
+          visited.find(ctv) != visited.end(),
+          "Inconsistent computeAt detected. ",
+          tv,
+          " is computed at ",
+          ctv,
+          ", which is not yet visited.");
     }
     visited.emplace(tv);
   }
 }
+
+} // namespace
 
 void IrBuildSizesMap(Fusion* fusion) {
   // Sizes of inputs/outputs -> T.size[...]
@@ -119,7 +128,7 @@ void IrAdjustMemoryTypes(Fusion* fusion) {
 void PrepareForLowering(Fusion* fusion) {
   FusionGuard fg(fusion);
 
-  IrFixComputeAt(fusion);
+  IrValidateNoBackwardComputeAt(fusion);
   IrValidate(fusion);
   IrBuildSizesMap(fusion);
   IrAdjustMemoryTypes(fusion);

@@ -143,6 +143,20 @@ void IterVisitor::traverse_(
 
   if (from_outputs_only) {
     auto term_val_outs = fusion->getTerminatingOutputs();
+    // Reorder outputs such that tensors that are computed at other
+    // tensors are visited earlier than them.
+    auto swap_pos = term_val_outs.begin();
+    for (auto it = term_val_outs.begin(); it != term_val_outs.end(); ++it) {
+      Val* val = *it;
+      if (val->getValType() == ValType::TensorView) {
+        auto tv = val->as<TensorView>();
+        if (tv->hasComputeAt()) {
+          std::swap(*swap_pos, *it);
+          ++swap_pos;
+          continue;
+        }
+      }
+    }
     if (!term_val_outs.empty())
       traverseFrom(
           fusion, term_val_outs, traverse_all_paths, respect_compute_at);
