@@ -4503,6 +4503,53 @@ void testGPU_FusionIsOneInt() {
   TORCH_CHECK(!z->isOneInt());
 }
 
+// This is to verify no cycle of computeAt is created. A more complex
+// variation of this pattern appears in one of the Python tests
+// (test_random_topo).
+void testGPU_FusionComputeAtNonterminatingOutput() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(1);
+  fusion.addInput(tv0);
+
+  // Common intermediate tensor
+  auto tv1 = add(tv0, new Float(0));
+  // tv1 -> tv2
+  auto tv2 = add(tv1, new Float(0));
+  // tv1 -> tv3 -> tv4
+  auto tv3 = add(tv1, new Float(0));
+  auto tv4 = add(tv3, new Float(0));
+
+  // The order of adding outputs matters. If tv3 is added before tv4,
+  // it should be fine. However, if tv4 is added before tv3, there
+  // will be a cycle of tv3->tv4 and tv4->tv3. tv3->tv4 is created
+  // first, and then tv4->tv3 is created at the final phase of
+  // computeAt (ComputeAt::setupOutputs).
+  if (true) {
+    // A cycle of tv3 <-> tv4 will be created.
+    fusion.addOutput(tv2);
+    fusion.addOutput(tv4);
+    fusion.addOutput(tv3);
+  } else {
+    // This should work fine.
+    fusion.addOutput(tv2);
+    fusion.addOutput(tv3);
+    fusion.addOutput(tv4);
+  }
+
+  tv0->computeAt(tv2, -1);
+
+  fusion.printMath();
+
+  TORCH_CHECK(
+      !(tv3->getComputeAtView() == tv4 && tv4->getComputeAtView() == tv3),
+      "ComputeAt cycle detected between tv3 and tv4");
+
+  fusion.printKernel();
+  return;
+}
+
 } // namespace jit
 } // namespace torch
 
