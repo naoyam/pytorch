@@ -74,9 +74,7 @@ class ExprSort : public IterVisitor {
   void handle(Expr* expr) override;
 
  public:
-  static std::vector<Expr*> getExprs(
-      Fusion* fusion,
-      bool from_outputs_only);
+  static std::vector<Expr*> getExprs(Fusion* fusion, bool from_outputs_only);
 
   static std::vector<Expr*> getExprs(
       Fusion* fusion,
