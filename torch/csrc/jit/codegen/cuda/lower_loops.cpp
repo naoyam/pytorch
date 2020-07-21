@@ -461,9 +461,11 @@ void mergeGroupsIntoSortedList(
   }
 }
 
-} // namespace
-
-void LoopNestGenerator::reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
+// Reorder exprs so that LoopNestGenerator::handle(Expr*) can generate
+// correct loop nests. Vector exprs is assumed to be topologically
+// sorted, but that is not sufficient as tensors computed at
+// outer loops need to be located earlier.
+void reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
   ExprListT reordered_exprs;
   // expr -> target
   ExprTargetMapT target_map;
@@ -515,6 +517,8 @@ void LoopNestGenerator::reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
   exprs = std::move(reordered_exprs);
   return;
 }
+
+} // namespace
 
 // Generate the loop nest structure and place it in lowered_exprs
 void LoopNestGenerator::generate(const std::vector<Expr*>& exprs) {
