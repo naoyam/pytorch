@@ -4514,39 +4514,59 @@ void testGPU_FusionComputeAtNonterminatingOutput() {
   fusion.addInput(tv0);
 
   // Common intermediate tensor
-  auto tv1 = add(tv0, new Float(0));
+  auto tv1 = add(tv0, new Float(1));
   // tv1 -> tv2
-  auto tv2 = add(tv1, new Float(0));
+  auto tv2 = add(tv1, new Float(2));
   // tv1 -> tv3 -> tv4
-  auto tv3 = add(tv1, new Float(0));
-  auto tv4 = add(tv3, new Float(0));
+  auto tv3 = add(tv1, new Float(3));
+  auto tv4 = add(tv3, new Float(4));
 
+  // NOTE: This should no longer occur as of PR #201.
   // The order of adding outputs matters. If tv3 is added before tv4,
   // it should be fine. However, if tv4 is added before tv3, there
   // will be a cycle of tv3->tv4 and tv4->tv3. tv3->tv4 is created
   // first, and then tv4->tv3 is created at the final phase of
   // computeAt (ComputeAt::setupOutputs).
-  if (true) {
-    // A cycle of tv3 <-> tv4 will be created.
-    fusion.addOutput(tv2);
-    fusion.addOutput(tv4);
-    fusion.addOutput(tv3);
-  } else {
-    // This should work fine.
-    fusion.addOutput(tv2);
-    fusion.addOutput(tv3);
-    fusion.addOutput(tv4);
-  }
+  fusion.addOutput(tv2);
+  fusion.addOutput(tv4);
+  fusion.addOutput(tv3);
 
   tv0->computeAt(tv2, -1);
-
-  fusion.printMath();
 
   TORCH_CHECK(
       !(tv3->getComputeAtView() == tv4 && tv4->getComputeAtView() == tv3),
       "ComputeAt cycle detected between tv3 and tv4");
 
-  fusion.printKernel();
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand(100, options);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input});
+
+  auto& output_tv2 = outputs[0];
+  auto& output_tv4 = outputs[1];
+  auto& output_tv3 = outputs[2];
+
+  auto aten_t1 = input + 1;
+  auto aten_t2 = aten_t1 + 2;
+  auto aten_t3 = aten_t1 + 3;
+  auto aten_t4 = aten_t3 + 4;
+
+  TORCH_CHECK(
+      aten_t2.allclose(output_tv2),
+      "Error of: ",
+      aten_t2.sub(output_tv2).abs().max());
+  TORCH_CHECK(
+      aten_t3.allclose(output_tv3),
+      "Error of: ",
+      aten_t3.sub(output_tv3).abs().max());
+  TORCH_CHECK(
+      aten_t4.allclose(output_tv4),
+      "Error of: ",
+      aten_t4.sub(output_tv4).abs().max());
+
   return;
 }
 
