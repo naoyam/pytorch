@@ -178,27 +178,6 @@ void IterVisitor::traverseAllPaths(
 
 namespace {
 
-// TODO: Remove this in favor of ExprSort
-// Expr sort will take a fusion and return a topologically sorted list of
-// expressions.
-class Exprs : public IterVisitor {
- private:
-  std::vector<Expr*> exprs;
-
-  void handle(Expr* expr) override {
-    exprs.push_back(expr);
-  }
-
- public:
-  static std::vector<Expr*> getExprs(
-      Fusion* fusion,
-      const std::vector<Val*>& from) {
-    Exprs ex;
-    ex.traverseFrom(fusion, from, false);
-    return ex.exprs;
-  }
-};
-
 // Expr sort will take a fusion and return a topologically sorted list of
 // expressions.
 class Inputs : public IterVisitor {
@@ -300,7 +279,7 @@ void BackwardVisitor::traverseFrom(
 
   auto vals = AllVals::get(fusion, from);
 
-  auto exprs = Exprs::getExprs(fusion, from);
+  auto exprs = ExprSort::getExprs(fusion, from);
 
   {
     size_t pos = 0;
