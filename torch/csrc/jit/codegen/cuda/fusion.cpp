@@ -562,24 +562,13 @@ std::vector<Val*> Fusion::getTerminatingOutputs() {
       used_vals.emplace(inp);
   }
 
-  std::unordered_set<Val*> terminating_outputs;
+  std::vector<Val*> terminating_outputs;
   for (auto out : outputs()) {
     if (used_vals.find(out) != used_vals.end())
       continue;
-    terminating_outputs.emplace(out);
+    terminating_outputs.push_back(out);
   }
-
-  std::vector<Val*> sorted_outputs{terminating_outputs.begin(),
-                                   terminating_outputs.end()};
-
-  // Sort the outputs in order to give a deterministic traversal
-  // order.
-  std::sort(
-      sorted_outputs.begin(),
-      sorted_outputs.end(),
-      [](const Val* v0, const Val* v1) { return v0->name() < v1->name(); });
-
-  return sorted_outputs;
+  return terminating_outputs;
 }
 
 } // namespace fuser
