@@ -307,8 +307,8 @@ void LoopNestGenerator::handle(Expr* expr) {
 namespace {
 
 TensorView* findOutputTensor(Expr* expr) {
-  TORCH_INTERNAL_ASSERT(expr->outputs().size() <= 1,
-                        "Unexpected number of outputs");
+  TORCH_INTERNAL_ASSERT(
+      expr->outputs().size() <= 1, "Unexpected number of outputs");
   if (expr->outputs().size() != 1) {
     return nullptr;
   }
@@ -338,16 +338,8 @@ void findTargetTensor(Expr* expr, TensorView*& target, unsigned& score) {
 
   auto axis = out_tv->getRelativeComputeAtAxis();
   target = out_tv->getComputeAtView();
-  while (target->hasComputeAt()) {
-    if (axis <= target->getThisComputeAtAxis()) {
-      // Merge this expr to the target of the target group
-      axis = target->getRelativeComputeAtAxis() -
-          (target->getThisComputeAtAxis() - axis);
-      target = target->getComputeAtView();
-    } else {
-      break;
-    }
-  }
+  std::tie(axis, target) = target->getComputeAtPos(axis);
+
   score = axis;
 }
 
