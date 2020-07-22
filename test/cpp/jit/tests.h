@@ -161,6 +161,7 @@ namespace jit {
   _(GPU_FusionGridReduction4)                       \
   _(GPU_FusionGridReduction5)                       \
   _(GPU_FusionGridReduction6)                       \
+  _(GPU_FusionGridReduction7)                       \
   _(GPU_FusionNonRedAxisBind)                       \
   _(GPU_FusionBCastInnerDim)                        \
   _(GPU_FusionBCastReduce)                          \
