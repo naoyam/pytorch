@@ -419,7 +419,6 @@ void mergeNonRootGroupsIntoRootGroups(
       Expr* target_expr = target->getOrigin();
       TensorView* target_of_target = target_map.at(target_expr);
       auto& target_group = computed_at_exprs.at(target_of_target);
-      // Insert this group, group.second, into target_group
       auto pos =
           std::find(target_group.begin(), target_group.end(), target_expr);
       TORCH_INTERNAL_ASSERT(pos != target_group.end());
