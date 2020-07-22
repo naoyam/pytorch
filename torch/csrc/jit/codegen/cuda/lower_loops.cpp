@@ -307,6 +307,8 @@ void LoopNestGenerator::handle(Expr* expr) {
 namespace {
 
 TensorView* findOutputTensor(Expr* expr) {
+  TORCH_INTERNAL_ASSERT(expr->outputs().size() <= 1,
+                        "Unexpected number of outputs");
   if (expr->outputs().size() != 1) {
     return nullptr;
   }
