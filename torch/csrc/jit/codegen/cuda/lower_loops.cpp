@@ -307,8 +307,9 @@ void LoopNestGenerator::handle(Expr* expr) {
 namespace {
 
 TensorView* findOutputTensor(Expr* expr) {
-  if (expr->outputs().size() != 1)
+  if (expr->outputs().size() != 1) {
     return nullptr;
+  }
   auto out = expr->output(0);
   if (out->getValType() != ValType::TensorView) {
     return nullptr;
@@ -514,7 +515,6 @@ void reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
 
   TORCH_INTERNAL_ASSERT(exprs.size() == reordered_exprs.size());
   exprs = std::move(reordered_exprs);
-  return;
 }
 
 } // namespace
@@ -529,8 +529,9 @@ void LoopNestGenerator::generate(const std::vector<Expr*>& exprs) {
   auto reordered = exprs;
   reorderExprsForComputeAt(reordered);
 
-  for (auto* expr : reordered)
+  for (auto* expr : reordered) {
     handle(expr);
+  }
 }
 
 } // namespace fuser
