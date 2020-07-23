@@ -161,7 +161,6 @@ namespace jit {
   _(GPU_FusionGridReduction4)                       \
   _(GPU_FusionGridReduction5)                       \
   _(GPU_FusionGridReduction6)                       \
-  _(GPU_FusionGridReduction7)                       \
   _(GPU_FusionNonRedAxisBind)                       \
   _(GPU_FusionBCastInnerDim)                        \
   _(GPU_FusionBCastReduce)                          \
@@ -193,7 +192,8 @@ namespace jit {
   _(GPU_FusionTraversalOrder4)                      \
   _(GPU_FusionTraversalOrder5)                      \
   _(GPU_FusionTraversalOrder6)                      \
-  _(GPU_FusionTraversalOrder7)
+  _(GPU_FusionTraversalOrder7)                      \
+  _(GPU_FusionThreadPredicate)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
   _(ArgumentSpec)               \
