@@ -76,6 +76,17 @@ void addToSouceMap(
   }
 }
 
+void maskSouceMap(
+    ThreadPredicateMap::SourceMapType& src_map,
+    const ir_utils::ParallelTypeBitmap& mask) {
+  for (const auto& kv : mask.getMap()) {
+    if (!kv.second) {
+      ParallelType ptype = kv.first;
+      src_map[ptype].clear();
+    }
+  }
+}
+
 } // namespace
 
 // Update the reduction_deps bitset based on provided Expr
@@ -158,6 +169,8 @@ void ThreadPredicateMap::updateBitSet(Expr* expr) {
 
   // Get rid of any reductions which are bcasted
   output_preds &= bcast_reset_map;
+  // Similarly, drop non-relevant source tensos
+  maskSouceMap(src_map, bcast_reset_map);
 
   // Run through outputs and set bitset predicates
   for (const auto* out : expr->outputs()) {
