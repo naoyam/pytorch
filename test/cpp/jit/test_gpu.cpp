@@ -3603,7 +3603,7 @@ void testGPU_FusionGridReduction6() {
 }
 
 void testGPU_FusionGridReduction7() {
-  const int gdimx = 1;
+  const int gdimx = 4;
   const int bdimx = 128;
 
   Fusion fusion;
@@ -3643,7 +3643,7 @@ void testGPU_FusionGridReduction7() {
   int numel_x = 100;
   int numel_y = 1000;
 
-  //fusion.printKernel();
+  // fusion.printKernel();
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
