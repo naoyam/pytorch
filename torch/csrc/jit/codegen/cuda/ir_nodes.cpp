@@ -866,7 +866,7 @@ std::vector<std::pair<int, int>> TensorDomain::mapDomainPandC(
     }
 
     // consumer_to_producer[itc] = itp;
-    dom_map.push_back(std::make_pair(itp, itc));
+    dom_map.emplace_back(std::make_pair(itp, itc));
     itc++;
     itp++;
   }
@@ -883,7 +883,7 @@ std::vector<std::pair<IterDomain*, IterDomain*>> TensorDomain::mapRootPandC(
   for (const auto& m : mapDomainPandC(producer_root, consumer_root)) {
     auto producer_axis = producer_root[m.first];
     auto consumer_axis = consumer_root[m.second];
-    root_id_map.push_back(std::make_pair(producer_axis, consumer_axis));
+    root_id_map.emplace_back(std::make_pair(producer_axis, consumer_axis));
   }
   return root_id_map;
 }
