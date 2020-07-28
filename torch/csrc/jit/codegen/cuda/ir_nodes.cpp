@@ -865,7 +865,6 @@ std::vector<std::pair<int, int>> TensorDomain::mapDomainPandC(
       continue;
     }
 
-    // consumer_to_producer[itc] = itp;
     dom_map.emplace_back(std::make_pair(itp, itc));
     itc++;
     itp++;
@@ -888,11 +887,6 @@ std::vector<std::pair<IterDomain*, IterDomain*>> TensorDomain::mapRootPandC(
   return root_id_map;
 }
 
-// Create a map from consumer root IterDomains -> producer root IterDomains.
-// Constrain will restrict which consumer root IterDomains we map to the
-// producer IterDomains. Only those root consumer IDs present in
-// consumer_root_dims_to_map will be attempted to map to their corresponding
-// producer IDs.
 std::unordered_map<IterDomain*, IterDomain*> TensorDomain::mapRootCtoP(
     const TensorDomain* consumer,
     const TensorDomain* producer,
@@ -909,11 +903,6 @@ std::unordered_map<IterDomain*, IterDomain*> TensorDomain::mapRootCtoP(
   return root_id_map;
 }
 
-// Create a map from producer root IterDomains -> consumer root IterDomains.
-// Constrain will restrict which producer root IterDomains we map to the
-// consumer IterDomains. Only those root producer IDs present in
-// producer_root_dims_to_map will be attempted to map to their corresponding
-// consumer IDs.
 std::unordered_map<IterDomain*, IterDomain*> TensorDomain::mapRootPtoC(
     const TensorDomain* producer,
     const TensorDomain* consumer,
