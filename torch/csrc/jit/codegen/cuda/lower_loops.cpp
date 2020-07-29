@@ -213,6 +213,8 @@ void LoopNestGenerator::initReduction(
     inner_fl->body().push_back(init_stmt);
   }
 
+  init_exprs_.insert(init_stmt);
+
   // Place the allocation
   if (alloc_pos == 0) {
     // If we allocate at the root, look for the provided allocatoin if it
