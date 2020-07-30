@@ -42,8 +42,7 @@ kir::Bool* getPredicate(
 
   std::vector<kir::Bool*> all_preds;
 
-  if (std::find(init_exprs.begin(), init_exprs.end(), tv_ops[0]) ==
-      init_exprs.end()) {
+  if (init_exprs.find(tv_ops[0]) == init_exprs.end()) {
     // Need to start with an output to (effectively) grab its root domain size
     std::vector<bool> overall_contiguity =
         ir_utils::getTVOutput(tv_ops[0])->domain()->contiguity();
