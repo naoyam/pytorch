@@ -42,8 +42,8 @@ kir::Bool* getPredicate(
 
   std::vector<kir::Bool*> all_preds;
 
-  if (std::find(init_exprs.begin(), init_exprs.end(), tv_ops[0])
-      == init_exprs.end()) {
+  if (std::find(init_exprs.begin(), init_exprs.end(), tv_ops[0]) ==
+      init_exprs.end()) {
     // Need to start with an output to (effectively) grab its root domain size
     std::vector<bool> overall_contiguity =
         ir_utils::getTVOutput(tv_ops[0])->domain()->contiguity();
@@ -61,12 +61,12 @@ kir::Bool* getPredicate(
 
         TORCH_INTERNAL_ASSERT(
             inds_.size() == consumer_tv->nDims() ||
-            inds_.size() == consumer_tv->domain()->noReductions().size(),
+                inds_.size() == consumer_tv->domain()->noReductions().size(),
             "Invalid indices vector provided for getPredicate");
 
         TORCH_INTERNAL_ASSERT(
             consumer_tv->domain()->contiguity().size() ==
-            overall_contiguity.size(),
+                overall_contiguity.size(),
             "Invalid expressions in getPredicate, their out domains don't match up,",
             " they shouldn't be in the same loop nest together.");
 
@@ -99,7 +99,8 @@ kir::Bool* getPredicate(
           inds.push_back(new Int(0));
         } else {
           TORCH_INTERNAL_ASSERT(
-              ind_i < inds_.size(), "Ran out of indices to generate predicate.");
+              ind_i < inds_.size(),
+              "Ran out of indices to generate predicate.");
           inds.push_back(inds_[ind_i++]);
         }
       }

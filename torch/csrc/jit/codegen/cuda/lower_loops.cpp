@@ -220,7 +220,8 @@ void LoopNestGenerator::initReduction(
     // If we allocate at the root, look for the provided allocatoin if it
     // exists, and place after it.
     if (alloc_expr != nullptr) {
-      auto it = std::find(lowered_exprs.begin(), lowered_exprs.end(), alloc_expr);
+      auto it =
+          std::find(lowered_exprs.begin(), lowered_exprs.end(), alloc_expr);
       TORCH_INTERNAL_ASSERT(
           it != lowered_exprs.end(),
           "Could not figure out where to initialize the buffer for ",

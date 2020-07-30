@@ -92,8 +92,10 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   void generate(const std::vector<Expr*>& exprs);
 
  public:
-  LoopNestGenerator(Fusion* _fusion, ThreadPredicateMap& _thread_predicates,
-                    const std::vector<Expr*> &exprs)
+  LoopNestGenerator(
+      Fusion* _fusion,
+      ThreadPredicateMap& _thread_predicates,
+      const std::vector<Expr*>& exprs)
       : fusion_(_fusion), thread_predicates_(_thread_predicates) {
     generate(exprs);
   }
