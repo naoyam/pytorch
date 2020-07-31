@@ -4836,9 +4836,6 @@ void testGPU_FusionSmemBlockGemm() {
   tv0->computeAt(tv5, 3);
   tv1->computeAt(tv5, 3);
 
-  tv0->computeAt(tv6, 3);
-  tv1->computeAt(tv6, 3);
-
   // Thread and Block binding
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
