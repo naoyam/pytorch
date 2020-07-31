@@ -4842,6 +4842,7 @@ void testGPU_FusionSmemBlockGemm() {
   // Thread and Block binding
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
+  tv5->axis(-2)->parallelize(ParallelType::TIDy);
   tv5->axis(-1)->parallelize(ParallelType::TIDx);
   // Manual Binding
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
