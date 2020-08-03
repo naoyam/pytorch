@@ -138,7 +138,7 @@ void IndexLowering::handle(TernaryOp* top) {
 namespace {
 
 kir::Allocate* allocateGridReductionFlag(TensorView* out_tv) {
-  auto flag_name = kir::getPredicateFlagName(out_tv);
+  auto flag_name = kir::GridReduction::getPredicateFlagName(out_tv);
   auto flag_var = new kir::NamedScalar(flag_name, DataType::Bool);
   return new kir::Allocate(flag_var, MemoryType::Local, new kir::Int(1));
 }
