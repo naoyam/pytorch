@@ -135,6 +135,16 @@ void IndexLowering::handle(TernaryOp* top) {
   pushBack(new TernaryOp(top->getTernaryOpType(), out, in1, in2, in3));
 }
 
+namespace {
+
+kir::Allocate* allocateGridReductionFlag(TensorView* out_tv) {
+  auto flag_name = kir::getPredicateFlagName(out_tv);
+  auto flag_var = new kir::NamedScalar(flag_name, DataType::Bool);
+  return new kir::Allocate(flag_var, MemoryType::Local, new kir::Int(1));
+}
+
+} // namespace
+
 void IndexLowering::handle(ReductionOp* rop) {
   TORCH_INTERNAL_ASSERT(
       ir_utils::isTVOp(rop),
@@ -220,6 +230,7 @@ void IndexLowering::handle(ReductionOp* rop) {
 
     pushBack(reduce_buffer);
     pushBack(sync_buffer);
+    pushBack(allocateGridReductionFlag(out_tv));
     pushBack(new kir::GridReduction(
         block_reduction == nullptr
             ? new kir::ReductionOp(
