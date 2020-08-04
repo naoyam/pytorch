@@ -1,4 +1,5 @@
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 
 namespace torch {
 namespace jit {
@@ -233,16 +234,15 @@ BestEffortReplay::BestEffortReplay(
   std::vector<Expr*> r_exprs = Exprs::getFrom(
       std::vector<Val*>(replay_domain.begin(), replay_domain.end()));
   std::unordered_map<IterDomain*, Expr*> replay_expr_map;
-  for (auto r_expr : r_exprs)
-    for (auto inp : r_expr->inputs())
-      if (inp->getValType().value() == ValType::IterDomain) {
-        auto id = inp->as<IterDomain>();
-        TORCH_INTERNAL_ASSERT(
-            replay_expr_map.find(id) == replay_expr_map.end(),
-            "Error trying to map rfactor root domain during replay. IterDomain's shouldn't have more than one use.");
-        // Only want to forward rfactor in map
-        replay_expr_map[id] = r_expr;
-      }
+  for (auto r_expr : r_exprs) {
+    for (auto id : ir_utils::filterVals<IterDomain>(r_expr->inputs())) {
+      TORCH_INTERNAL_ASSERT(
+          replay_expr_map.find(id) == replay_expr_map.end(),
+          "Error trying to map rfactor root domain during replay. IterDomain's shouldn't have more than one use.");
+      // Only want to forward rfactor in map
+      replay_expr_map[id] = r_expr;
+    }
+  }
 
   std::string err_str(
       "Error during replay, a computeAt was called that conflicts with an rfactor call.");

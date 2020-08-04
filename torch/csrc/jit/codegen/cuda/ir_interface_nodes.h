@@ -194,6 +194,8 @@ class GPULower;
  */
 class TORCH_CUDA_API TensorView : public Val {
  public:
+  static constexpr ValType type = ValType::TensorView;
+
   ~TensorView() = default;
 
   TensorView(const TensorView& other) = delete;

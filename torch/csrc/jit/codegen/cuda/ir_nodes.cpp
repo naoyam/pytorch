@@ -277,13 +277,15 @@ bool ReductionOp::sameAs(const ReductionOp* other) const {
       init()->sameAs(other->init()));
 }
 
+constexpr ValType IterDomain::type;
+
 IterDomain::IterDomain(
     Val* _start,
     Val* _extent,
     ParallelType _parallel_type,
     IterType _iter_type,
     bool _is_rfactor_domain)
-    : Val(ValType::IterDomain, DataType::Int, false),
+    : Val(type, DataType::Int, false),
       start_(_start),
       extent_(_extent),
       parallel_type_(_parallel_type),
