@@ -231,8 +231,6 @@ class TORCH_CUDA_API TernaryOp : public Expr {
  */
 class TORCH_CUDA_API IterDomain : public Val {
  public:
-  static constexpr ValType type = ValType::IterDomain;
-
   ~IterDomain() = default;
 
   IterDomain() = delete;

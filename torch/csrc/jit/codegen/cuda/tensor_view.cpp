@@ -24,13 +24,13 @@ DataType aten_opt_type_map(const c10::optional<at::ScalarType>& scalar_type) {
 }
 } // namespace
 
-constexpr ValType TensorView::type;
-
 TensorView::TensorView(TensorDomain* _domain, DataType dtype)
     : Val(ValType::TensorView, dtype), domain_(_domain) {}
 
 TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
-    : Val(type, aten_opt_type_map(tensor_type->scalarType()), false) {
+    : Val(ValType::TensorView,
+          aten_opt_type_map(tensor_type->scalarType()),
+          false) {
   std::vector<IterDomain*> sizes;
   std::vector<bool> contig_info;
 
