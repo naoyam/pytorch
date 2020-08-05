@@ -51,6 +51,9 @@ class FilterIterator {
   }
 };
 
+// An iterable view to a given container of Val pointers. Only returns
+// Vals of a given Val type.
+// NOTE: Add a non-const iterator if needed.
 template <typename FilterType, typename InputIt>
 class FilteredView {
  public:
