@@ -8,21 +8,6 @@ namespace fuser {
 
 namespace ir_utils {
 
-#if 0
-template <
-    typename FilterType,
-    template <typename, typename...> typename Container,
-    typename ElementType>
-Container<FilterType*> filterVals(const Container<ElementType*>& container) {
-  Container<FilterType*> out;
-  for (auto& s : container) {
-    if (s->getValType() == FilterType::type) {
-      out.push_back(s->template as<FilterType>());
-    }
-  }
-  return out;
-}
-#else
 template <typename FilterType, typename InputIt>
 class FilterIterator {
  public:
@@ -93,7 +78,6 @@ template <typename FilterType, typename ContainerType>
 auto filterVals(const ContainerType& inputs) {
   return filterVals<FilterType>(inputs.begin(), inputs.end());
 }
-#endif
 
 } // namespace ir_utils
 } // namespace fuser
