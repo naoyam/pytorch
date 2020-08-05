@@ -255,15 +255,12 @@ BestEffortReplay::BestEffortReplay(
     std::vector<IterDomain*> r_inps;
     std::vector<IterDomain*> t_inps;
 
-    for (auto inp : t_expr->inputs()) {
-      if (inp->getValType() == ValType::IterDomain) {
-        auto t_inp = inp->as<IterDomain>();
-        t_inps.push_back(t_inp);
-        // There might not be a mapping, that could be okay.
-        auto it = id_map_.find(t_inp);
-        if (it != id_map_.end())
-          r_inps.push_back(it->second);
-      }
+    for (auto t_inp : ir_utils::filterVals<IterDomain>(t_expr->inputs())) {
+      t_inps.push_back(t_inp);
+      // There might not be a mapping, that could be okay.
+      auto it = id_map_.find(t_inp);
+      if (it != id_map_.end())
+        r_inps.push_back(it->second);
     }
 
     bool has_rfactor =
@@ -334,13 +331,10 @@ BestEffortReplay::BestEffortReplay(
       continue;
     }
     // Take target_domain inputs out of map:
-    for (auto inp : t_expr->inputs()) {
-      if (inp->getValType() == ValType::IterDomain) {
-        auto t_inp = inp->as<IterDomain>();
-        auto it = id_map_.find(t_inp);
-        if (leaf_ids_.find(it->second) != leaf_ids_.end()) {
-          leaf_ids_.erase(it->second);
-        }
+    for (auto t_inp : ir_utils::filterVals<IterDomain>(t_expr->inputs())) {
+      auto it = id_map_.find(t_inp);
+      if (leaf_ids_.find(it->second) != leaf_ids_.end()) {
+        leaf_ids_.erase(it->second);
       }
     }
 
