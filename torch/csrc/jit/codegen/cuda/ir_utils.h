@@ -26,8 +26,7 @@ Container<FilterType*> filterVals(const Container<ElementType*>& container) {
 template <typename FilterType, typename InputIt>
 class FilterIterator {
  public:
-  FilterIterator(InputIt first, InputIt last):
-      input_it_(first), last_(last) {
+  FilterIterator(InputIt first, InputIt last) : input_it_(first), last_(last) {
     advance();
   }
 
@@ -42,8 +41,7 @@ class FilterIterator {
   }
 
   bool operator==(const FilterIterator& other) const {
-    return input_it_ == other.input_it_ &&
-        last_ == other.last_;
+    return input_it_ == other.input_it_ && last_ == other.last_;
   }
 
   bool operator!=(const FilterIterator& other) const {
@@ -70,9 +68,8 @@ class FilterValContainer {
   using value_type = FilterType*;
   using const_iterator = FilterIterator<FilterType, InputIt>;
 
-  FilterValContainer(InputIt first, InputIt last):
-      input_it_(first), last_(last) {
-  }
+  FilterValContainer(InputIt first, InputIt last)
+      : input_it_(first), last_(last) {}
 
   const_iterator begin() const {
     return const_iterator(input_it_, last_);
