@@ -42,12 +42,9 @@ class FilterIterator {
 
  private:
   void advance() {
-    while (current_ != end_) {
-      if ((*current_)->getValType() == FilterType::type) {
-        break;
-      }
-      ++current_;
-    }
+    current_ = std::find_if(current_, end_, [](const auto& val) {
+      return val->getValType() == FilterType::type;
+    });
   }
 };
 
