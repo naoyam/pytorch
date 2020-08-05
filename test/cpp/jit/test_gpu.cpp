@@ -10,6 +10,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/scheduler.h>
@@ -779,6 +780,50 @@ void testGPU_FusionTensor() {
   auto fuser_tensor = new TensorView(tensor_type);
   TORCH_CHECK(fuser_tensor->getDataType().value() == DataType::Float);
   TORCH_CHECK(fuser_tensor->domain() != nullptr);
+}
+
+void testGPU_FusionFilterVals() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeDummyTensor(1);
+  auto tv1 = makeDummyTensor(1);
+  auto scalar0 = new Float(0);
+  auto scalar1 = new Int(0);
+
+  std::vector<Val*> vals = {tv0, scalar0, tv1, scalar1};
+
+  /*
+    This doesn't compile
+  ../test/cpp/jit/test_gpu.cpp:800:51: error: no matching function for call to ‘std::vector<torch::jit::fuser::TensorView*>::vector(torch::jit::fuser::ir_utils::FilteredView<torch::jit::fuser::TensorView, __gnu_cxx::__normal_iterator<torch::jit::fuser::Val* const*, std::vector<torch::jit::fuser::Val*> > >::const_iterator, torch::jit::fuser::ir_utils::FilteredView<torch::jit::fuser::TensorView, __gnu_cxx::__normal_iterator<torch::jit::fuser::Val* const*, std::vector<torch::jit::fuser::Val*> > >::const_iterator)’
+       ir_utils::filterVals<TensorView>(vals).end());
+                                                   ^
+In file included from /usr/include/c++/8/vector:64,
+                 from ../c10/util/StringUtil.h:11,
+                 from ../c10/util/Exception.h:5,
+                 from ../c10/core/Device.h:5,
+                 from ../c10/core/Allocator.h:6,
+                 from ../aten/src/ATen/ATen.h:7,
+                 from ../torch/csrc/jit/ir/attributes.h:2,
+                 from ../torch/csrc/jit/ir/ir.h:3,
+                 from ../test/cpp/jit/test_base.h:5,
+                 from ../test/cpp/jit/test_gpu.cpp:3:
+/usr/include/c++/8/bits/stl_vector.h:543:2: note: candidate: ‘template<class _InputIterator, class> std::vector<_Tp, _Alloc>::vector(_InputIterator, _InputIterator, const allocator_type&)’
+  vector(_InputIterator __first, _InputIterator __last,
+  */
+#if 0
+  std::vector<TensorView*> tvs(
+      ir_utils::filterVals<TensorView>(vals).begin(),
+      ir_utils::filterVals<TensorView>(vals).end());
+#else
+  std::vector<TensorView*> tvs;
+  for (const auto& tv: ir_utils::filterVals<TensorView>(vals)) {
+    tvs.push_back(tv);
+  }
+#endif
+
+  TORCH_CHECK(tvs.size() == 2);
+  return;
 }
 
 void testGPU_FusionTVSplit() {
