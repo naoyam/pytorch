@@ -30,7 +30,7 @@ class FilterIterator {
   }
 
   FilterIterator operator++(int) {
-    auto before_increment = *this;
+    const auto before_increment = *this;
     ++current_;
     advance();
     return before_increment;
@@ -48,15 +48,15 @@ class FilterIterator {
   }
 
  private:
-  Iterator current_;
-  const Iterator end_;
-
- private:
   void advance() {
     current_ = std::find_if(current_, end_, [](const auto& val) {
       return dynamic_cast<const FilterType*>(val) != nullptr;
     });
   }
+
+ private:
+  Iterator current_;
+  const Iterator end_;
 };
 
 // An iterable view to a given container of Val pointers. Only returns
