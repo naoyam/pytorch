@@ -2,6 +2,8 @@
 
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
+#include <iterator>
+
 namespace torch {
 namespace jit {
 namespace fuser {
@@ -11,6 +13,12 @@ namespace ir_utils {
 template <typename FilterType, typename Iterator>
 class FilterIterator {
  public:
+  using iterator_category = std::forward_iterator_tag;
+  using difference_type = std::ptrdiff_t;
+  using value_type = FilterType*;
+  using pointer = value_type*;
+  using reference = value_type&;
+
   FilterIterator(Iterator begin, Iterator end) : current_(begin), end_(end) {
     advance();
   }
