@@ -790,39 +790,29 @@ void testGPU_FusionFilterVals() {
   auto tv1 = makeDummyTensor(1);
   auto scalar0 = new Float(0);
   auto scalar1 = new Int(0);
+  auto scalar2 = new Int(1);
 
-  std::vector<Val*> vals = {tv0, scalar0, tv1, scalar1};
+  std::vector<Val*> vals = {tv0, scalar0, tv1, scalar1, scalar2};
 
-  /*
-    This doesn't compile
-  ../test/cpp/jit/test_gpu.cpp:800:51: error: no matching function for call to ‘std::vector<torch::jit::fuser::TensorView*>::vector(torch::jit::fuser::ir_utils::FilteredView<torch::jit::fuser::TensorView, __gnu_cxx::__normal_iterator<torch::jit::fuser::Val* const*, std::vector<torch::jit::fuser::Val*> > >::const_iterator, torch::jit::fuser::ir_utils::FilteredView<torch::jit::fuser::TensorView, __gnu_cxx::__normal_iterator<torch::jit::fuser::Val* const*, std::vector<torch::jit::fuser::Val*> > >::const_iterator)’
-       ir_utils::filterVals<TensorView>(vals).end());
-                                                   ^
-In file included from /usr/include/c++/8/vector:64,
-                 from ../c10/util/StringUtil.h:11,
-                 from ../c10/util/Exception.h:5,
-                 from ../c10/core/Device.h:5,
-                 from ../c10/core/Allocator.h:6,
-                 from ../aten/src/ATen/ATen.h:7,
-                 from ../torch/csrc/jit/ir/attributes.h:2,
-                 from ../torch/csrc/jit/ir/ir.h:3,
-                 from ../test/cpp/jit/test_base.h:5,
-                 from ../test/cpp/jit/test_gpu.cpp:3:
-/usr/include/c++/8/bits/stl_vector.h:543:2: note: candidate: ‘template<class _InputIterator, class> std::vector<_Tp, _Alloc>::vector(_InputIterator, _InputIterator, const allocator_type&)’
-  vector(_InputIterator __first, _InputIterator __last,
-  */
-#if 0
   std::vector<TensorView*> tvs(
       ir_utils::filterVals<TensorView>(vals).begin(),
       ir_utils::filterVals<TensorView>(vals).end());
-#else
-  std::vector<TensorView*> tvs;
-  for (const auto& tv: ir_utils::filterVals<TensorView>(vals)) {
-    tvs.push_back(tv);
-  }
-#endif
-
   TORCH_CHECK(tvs.size() == 2);
+  TORCH_CHECK(tvs[0] == tv0);
+  TORCH_CHECK(tvs[1] == tv1);
+
+  std::vector<Float*> floats(
+      ir_utils::filterVals<Float>(vals).begin(),
+      ir_utils::filterVals<Float>(vals).end());
+  TORCH_CHECK(floats.size() == 1);
+  TORCH_CHECK(floats[0] == scalar0);
+
+  std::vector<Int*> ints(
+      ir_utils::filterVals<Int>(vals).begin(),
+      ir_utils::filterVals<Int>(vals).end());
+  TORCH_CHECK(ints.size() == 2);
+  TORCH_CHECK(ints[0] == scalar1);
+  TORCH_CHECK(ints[1] == scalar2);
   return;
 }
 
