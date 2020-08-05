@@ -19,10 +19,21 @@ class FilterIterator {
     return (*current_)->template as<FilterType>();
   }
 
+  FilterType* operator->() const {
+    return (*this);
+  }
+
   FilterIterator& operator++() {
     ++current_;
     advance();
     return *this;
+  }
+
+  FilterIterator operator++(int) {
+    auto before_increment = *this;
+    ++current_;
+    advance();
+    return before_increment;
   }
 
   bool operator==(const FilterIterator& other) const {
@@ -43,7 +54,7 @@ class FilterIterator {
  private:
   void advance() {
     current_ = std::find_if(current_, end_, [](const auto& val) {
-      return val->getValType() == FilterType::type;
+      return dynamic_cast<const FilterType*>(val) != nullptr;
     });
   }
 };
