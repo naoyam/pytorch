@@ -8,25 +8,28 @@ namespace fuser {
 
 namespace ir_utils {
 
-template <typename FilterType, typename InputIt>
+template <typename FilterType, typename Iterator>
 class FilterIterator {
  public:
-  FilterIterator(InputIt first, InputIt last) : input_it_(first), last_(last) {
+  FilterIterator(Iterator begin, Iterator end) : current_(begin), end_(end) {
     advance();
   }
 
   FilterType* operator*() const {
-    return (*input_it_)->template as<FilterType>();
+    return (*current_)->template as<FilterType>();
   }
 
   FilterIterator& operator++() {
-    ++input_it_;
+    ++current_;
     advance();
     return *this;
   }
 
   bool operator==(const FilterIterator& other) const {
-    return input_it_ == other.input_it_ && last_ == other.last_;
+    TORCH_INTERNAL_ASSERT(
+        end_ == other.end_,
+        "Comparing two FilteredViews that originate from different containers");
+    return current_ == other.current_;
   }
 
   bool operator!=(const FilterIterator& other) const {
@@ -34,49 +37,57 @@ class FilterIterator {
   }
 
  private:
-  InputIt input_it_;
-  InputIt last_;
+  Iterator current_;
+  const Iterator end_;
 
+ private:
   void advance() {
-    while (input_it_ != last_) {
-      if ((*input_it_)->getValType() == FilterType::type) {
+    while (current_ != end_) {
+      if ((*current_)->getValType() == FilterType::type) {
         break;
       }
-      ++input_it_;
+      ++current_;
     }
   }
 };
 
 template <typename FilterType, typename InputIt>
-class FilterValContainer {
+class FilteredView {
  public:
   using value_type = FilterType*;
   using const_iterator = FilterIterator<FilterType, InputIt>;
 
-  FilterValContainer(InputIt first, InputIt last)
-      : input_it_(first), last_(last) {}
+  FilteredView(InputIt first, InputIt last) : input_it_(first), last_(last) {}
 
-  const_iterator begin() const {
+  const_iterator cbegin() const {
     return const_iterator(input_it_, last_);
   }
 
-  const_iterator end() const {
+  const_iterator begin() const {
+    return cbegin();
+  }
+
+  const_iterator cend() const {
     return const_iterator(last_, last_);
   }
 
+  const_iterator end() const {
+    return cend();
+  }
+
  private:
-  InputIt input_it_;
-  InputIt last_;
+  const InputIt input_it_;
+  const InputIt last_;
 };
 
 template <typename FilterType, typename InputIt>
 auto filterVals(InputIt first, InputIt last) {
-  return FilterValContainer<FilterType, InputIt>(first, last);
+  return FilteredView<FilterType, InputIt>(first, last);
 }
 
 template <typename FilterType, typename ContainerType>
 auto filterVals(const ContainerType& inputs) {
-  return filterVals<FilterType>(inputs.begin(), inputs.end());
+  return filterVals<FilterType>(inputs.cbegin(), inputs.cend());
 }
 
 } // namespace ir_utils
