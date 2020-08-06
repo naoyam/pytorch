@@ -389,7 +389,7 @@ void ComputeAt::setupOutputs() {
   const auto& terminating_outputs =
       FusionGuard::getCurFusion()->getTerminatingOutputs();
 
-  for (auto out : ir_utils::filterVals<TensorView>(
+  for (auto out : ir_utils::filterByType<TensorView>(
            FusionGuard::getCurFusion()->outputs())) {
     if (tv_data.find(out) != tv_data.end()) {
       if (tv_data[out].touched()) {

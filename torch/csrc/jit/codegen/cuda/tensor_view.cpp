@@ -410,7 +410,7 @@ TensorView* TensorView::cache_before() {
     // After:  Prev TV -> New TV (CB) -> This TV
     // Iterate over origin expression inputs for cache_before on outputs
     for (TensorView* origin_input :
-         ir_utils::filterVals<TensorView>(expr_inputs)) {
+         ir_utils::filterByType<TensorView>(expr_inputs)) {
       if (origin_input->hasComputeAt() &&
           origin_input->getComputeAtView() == this) {
         TransformReplay::replayPasC(producer, consumer, -1);
@@ -492,7 +492,7 @@ TensorView* TensorView::cache_after() {
     for (auto expr : fusion()->unordered_uses(consumer)) {
       auto expr_outputs = expr->outputs();
       for (TensorView* output :
-           ir_utils::filterVals<TensorView>(expr_outputs)) {
+           ir_utils::filterByType<TensorView>(expr_outputs)) {
         if (output->hasComputeAt()) {
           TransformReplay::replayPasC(consumer, output, -1);
           auto output_ca_pos = output->getThisComputeAtAxis();

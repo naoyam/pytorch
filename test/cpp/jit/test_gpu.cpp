@@ -795,21 +795,21 @@ void testGPU_FusionFilterVals() {
   std::vector<Val*> vals = {tv0, scalar0, tv1, scalar1, scalar2};
 
   std::vector<TensorView*> tvs(
-      ir_utils::filterVals<TensorView>(vals).begin(),
-      ir_utils::filterVals<TensorView>(vals).end());
+      ir_utils::filterByType<TensorView>(vals).begin(),
+      ir_utils::filterByType<TensorView>(vals).end());
   TORCH_CHECK(tvs.size() == 2);
   TORCH_CHECK(tvs[0] == tv0);
   TORCH_CHECK(tvs[1] == tv1);
 
   std::vector<Float*> floats(
-      ir_utils::filterVals<Float>(vals).begin(),
-      ir_utils::filterVals<Float>(vals).end());
+      ir_utils::filterByType<Float>(vals).begin(),
+      ir_utils::filterByType<Float>(vals).end());
   TORCH_CHECK(floats.size() == 1);
   TORCH_CHECK(floats[0] == scalar0);
 
   std::vector<Int*> ints(
-      ir_utils::filterVals<Int>(vals).begin(),
-      ir_utils::filterVals<Int>(vals).end());
+      ir_utils::filterByType<Int>(vals).begin(),
+      ir_utils::filterByType<Int>(vals).end());
   TORCH_CHECK(ints.size() == 2);
   TORCH_CHECK(ints[0] == scalar1);
   TORCH_CHECK(ints[1] == scalar2);

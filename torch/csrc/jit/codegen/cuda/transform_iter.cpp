@@ -235,7 +235,7 @@ BestEffortReplay::BestEffortReplay(
       std::vector<Val*>(replay_domain.begin(), replay_domain.end()));
   std::unordered_map<IterDomain*, Expr*> replay_expr_map;
   for (auto r_expr : r_exprs) {
-    for (auto id : ir_utils::filterVals<IterDomain>(r_expr->inputs())) {
+    for (auto id : ir_utils::filterByType<IterDomain>(r_expr->inputs())) {
       TORCH_INTERNAL_ASSERT(
           replay_expr_map.find(id) == replay_expr_map.end(),
           "Error trying to map rfactor root domain during replay. IterDomain's shouldn't have more than one use.");
@@ -255,7 +255,7 @@ BestEffortReplay::BestEffortReplay(
     std::vector<IterDomain*> r_inps;
     std::vector<IterDomain*> t_inps;
 
-    for (auto t_inp : ir_utils::filterVals<IterDomain>(t_expr->inputs())) {
+    for (auto t_inp : ir_utils::filterByType<IterDomain>(t_expr->inputs())) {
       t_inps.push_back(t_inp);
       // There might not be a mapping, that could be okay.
       auto it = id_map_.find(t_inp);
@@ -331,7 +331,7 @@ BestEffortReplay::BestEffortReplay(
       continue;
     }
     // Take target_domain inputs out of map:
-    for (auto t_inp : ir_utils::filterVals<IterDomain>(t_expr->inputs())) {
+    for (auto t_inp : ir_utils::filterByType<IterDomain>(t_expr->inputs())) {
       auto it = id_map_.find(t_inp);
       if (leaf_ids_.find(it->second) != leaf_ids_.end()) {
         leaf_ids_.erase(it->second);

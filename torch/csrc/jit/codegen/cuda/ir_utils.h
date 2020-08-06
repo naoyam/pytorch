@@ -100,13 +100,13 @@ class FilteredView {
 };
 
 template <typename FilterType, typename InputIt>
-auto filterVals(InputIt first, InputIt last) {
+auto filterByType(InputIt first, InputIt last) {
   return FilteredView<FilterType, InputIt>(first, last);
 }
 
 template <typename FilterType, typename ContainerType>
-auto filterVals(const ContainerType& inputs) {
-  return filterVals<FilterType>(inputs.cbegin(), inputs.cend());
+auto filterByType(const ContainerType& inputs) {
+  return filterByType<FilterType>(inputs.cbegin(), inputs.cend());
 }
 
 } // namespace ir_utils
