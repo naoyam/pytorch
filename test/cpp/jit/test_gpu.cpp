@@ -5991,6 +5991,49 @@ void testGPU_FusionThreadPredicate() {
   TORCH_CHECK(aten_output_tv3.allclose(cg_output_tv3));
 }
 
+void testGPU_FusionIndexingWithBroadcast1() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeConcreteTensor({100, 200});
+  fusion.addInput(tv0);
+  TensorView* tv1 = makeConcreteTensor({100, 100, 200});
+  fusion.addInput(tv1);
+
+  TensorView* tv2 = add(tv0, new Float(1));
+  TensorView* tv3 = broadcast(tv2, {true, false, false});
+  TensorView* tv4 = add(tv3, tv1);
+  fusion.addOutput(tv4);
+
+  fusion.printMath();
+  fusion.printKernel();
+}
+
+void testGPU_FusionIndexingWithBroadcast2() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeConcreteTensor({100, 200});
+  fusion.addInput(tv0);
+  TensorView* tv1 = makeConcreteTensor({100, 100, 200});
+  fusion.addInput(tv1);
+
+  TensorView* tv2 = add(tv0, new Float(1));
+  TensorView* tv3 = broadcast(tv2, {true, false, false});
+  TensorView* tv4 = add(tv3, tv1);
+  fusion.addOutput(tv4);
+
+  fusion.printMath();
+  //fusion.printKernel();
+
+  tv2->computeAt(tv4, 1);
+
+  fusion.printMath();
+  fusion.printKernel();
+}
+
 } // namespace jit
 } // namespace torch
 
