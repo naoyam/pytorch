@@ -6236,6 +6236,57 @@ void testGPU_FusionComputeAtMultiBCast() {
   ASSERT_ANY_THROW(tv1->computeAt(tv3, -1));
 }
 
+void testGPU_FusionComputeAtBCastReduction() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  //auto tv0 = makeDummyTensor(2);
+  int x = 100;
+  int y = 200;
+  int z = 300;
+  auto tv0 = makeConcreteTensor({x, y});
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Float(1));
+
+  auto tv2 = sum(tv1, {0});
+  auto tv3 = broadcast(tv2, {false, true});
+  //auto tv4 = makeDummyTensor(2);
+  auto tv4 = makeConcreteTensor({y, x});
+  fusion.addInput(tv4);
+  auto tv5 = add(tv3, tv4);
+  fusion.addOutput(tv5);
+
+  // broadcast then reduce
+  auto tv6 = broadcast(tv1, {true, false, false});
+  auto tv7 = sum(tv6, {-1});
+  //auto tv8 = makeDummyTensor(2);
+  auto tv8 = makeConcreteTensor({z, x});
+  fusion.addInput(tv8);
+  auto tv9 = mul(tv7, tv8);
+  fusion.addOutput(tv9);
+
+  fusion.printMath();
+  fusion.printKernel();
+  std::cout << std::endl;
+
+  if (std::getenv("NO_COMPUTE_AT")) {
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    return;
+  }
+
+  tv0->computeAt(tv5, 1);
+
+  std::cerr << "After computeAt" << std::endl;
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+}
+
 } // namespace jit
 } // namespace torch
 

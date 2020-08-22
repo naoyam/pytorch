@@ -220,7 +220,8 @@ namespace jit {
   _(GPU_FusionBranches)                             \
   _(GPU_FusionThreadPredicate)                      \
   _(GPU_FusionLSTMCell)                             \
-  _(GPU_FusionComputeAtMultiBCast)
+  _(GPU_FusionComputeAtMultiBCast)                  \
+  _(GPU_FusionComputeAtBCastReduction)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
   _(ArgumentSpec)               \
