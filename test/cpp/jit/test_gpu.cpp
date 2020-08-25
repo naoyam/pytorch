@@ -6259,6 +6259,31 @@ void testGPU_FusionComputeAtMultiReduction() {
   return;
 }
 
+void testGPU_FusionComputeAtMultiReduction2() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  int x = 100;
+  int y = 200;
+  auto tv0 = makeConcreteTensor({x, y});
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Float(1));
+
+  auto tv2 = sum(tv1, {1});
+  auto tv3 = add(tv2, new Float(1));
+  fusion.addOutput(tv3);
+  auto tv4 = sum(tv1, {1});
+  auto tv5 = add(tv4, new Float(1));
+  fusion.addOutput(tv5);
+
+  tv1->computeAt(tv2, -1);
+
+  fusion.printMath();
+  fusion.printKernel();
+  return;
+}
+
 } // namespace jit
 } // namespace torch
 
