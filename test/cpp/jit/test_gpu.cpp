@@ -6236,6 +6236,29 @@ void testGPU_FusionComputeAtMultiBCast() {
   ASSERT_ANY_THROW(tv1->computeAt(tv3, -1));
 }
 
+void testGPU_FusionComputeAtMultiReduction() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  int x = 100;
+  int y = 200;
+  auto tv0 = makeConcreteTensor({x, y});
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Float(1));
+
+  auto tv2 = sum(tv1, {1});
+  fusion.addOutput(tv2);
+  auto tv3 = sum(tv1, {1});
+  fusion.addOutput(tv3);
+
+  tv1->computeAt(tv2, -1);
+
+  fusion.printMath();
+  fusion.printKernel();
+  return;
+}
+
 } // namespace jit
 } // namespace torch
 
