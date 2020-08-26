@@ -1740,7 +1740,7 @@ void testGPU_FusionComputeAtMultiConsumers() {
   tv1->computeAt(computeAtTarget, 1);
 
   TensorView* affected_tensors[] = {tv1, tv2, tv3};
-  for (auto tv: affected_tensors) {
+  for (auto tv : affected_tensors) {
     TORCH_CHECK(tv->nDims() == computeAtTarget->nDims());
   }
 
@@ -1750,7 +1750,7 @@ void testGPU_FusionComputeAtMultiConsumers() {
   TORCH_CHECK(!tv3->hasComputeAt());
 
   computeAtTarget->axis(0)->parallelize(ParallelType::BIDx);
-  for (auto tv: affected_tensors) {
+  for (auto tv : affected_tensors) {
     tv->axis(-1)->parallelize(ParallelType::TIDx);
   }
 
@@ -1812,7 +1812,7 @@ void testGPU_FusionComputeAtCommonConsumer1() {
   fusion.printKernel();
 
   TensorView* affected_tensors[] = {tv1, tv2, tv3, tv4};
-  for (auto tv: affected_tensors) {
+  for (auto tv : affected_tensors) {
     TORCH_CHECK(tv->nDims() == computeAtTarget->nDims());
   }
 
@@ -1824,7 +1824,7 @@ void testGPU_FusionComputeAtCommonConsumer1() {
 
   computeAtTarget->axis(0)->parallelize(ParallelType::BIDx);
 
-  for (auto tv: affected_tensors) {
+  for (auto tv : affected_tensors) {
     tv->axis(-1)->parallelize(ParallelType::TIDx);
   }
 
@@ -2077,7 +2077,7 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
   tv1->computeAt(computeAtTarget, 1);
 
   TensorView* affected_tensors[] = {tv1, tv2, tv3, tv4, tv6};
-  for (auto tv: affected_tensors) {
+  for (auto tv : affected_tensors) {
     TORCH_CHECK(tv->nDims() == computeAtTarget->nDims());
   }
 
@@ -2090,7 +2090,7 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
 
   computeAtTarget->axis(0)->parallelize(ParallelType::BIDx);
 
-  for (auto tv: affected_tensors) {
+  for (auto tv : affected_tensors) {
     tv->axis(-1)->parallelize(ParallelType::TIDx);
   }
 
