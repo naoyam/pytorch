@@ -6271,11 +6271,9 @@ void testGPU_FusionComputeAtMultiReduction2() {
   auto tv1 = add(tv0, new Float(1));
 
   auto tv2 = sum(tv1, {1});
-  auto tv3 = add(tv2, new Float(1));
-  fusion.addOutput(tv3);
-  auto tv4 = sum(tv1, {1});
-  auto tv5 = add(tv4, new Float(1));
-  fusion.addOutput(tv5);
+  auto tv3 = sum(tv1, {1});
+  auto tv4 = add(tv2, tv3);
+  fusion.addOutput(tv4);
 
   tv1->computeAt(tv2, -1);
 
