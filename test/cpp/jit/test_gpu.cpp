@@ -1712,11 +1712,9 @@ void testGPU_FusionAdvancedComputeAt() {
 }
 
 void testGPU_FusionComputeAtMultiConsumers() {
-  /*
-   * tv1 = tv0 * 0.5
-   * tv2 = tv1 * -1
-   * tv3 = tv2 * -2
-   */
+  // tv1 = tv0 * 0.5
+  // tv2 = tv1 * -1
+  // tv3 = tv2 * -2
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -1771,18 +1769,15 @@ void testGPU_FusionComputeAtMultiConsumers() {
 
   TORCH_CHECK(at::allclose(kernel_tv2, t2));
   TORCH_CHECK(at::allclose(kernel_tv3, t3));
-  return;
 }
 
 // Similar to ComputeAtMultiConsumers, but with a common consumer.
 void testGPU_FusionComputeAtCommonConsumer1() {
-  /*
-   * tv1 = tv0 * 0.5
-   * tv2 = tv1 * -1
-   * tv3 = tv2 * -2
-   * tv4 = tv2 + tv3
-   * tv5 = tv4 * 5
-   */
+  // tv1 = tv0 * 0.5
+  // tv2 = tv1 * -1
+  // tv3 = tv2 * -2
+  // tv4 = tv2 + tv3
+  // tv5 = tv4 * 5
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -1849,17 +1844,14 @@ void testGPU_FusionComputeAtCommonConsumer1() {
   TORCH_CHECK(at::allclose(kernel_tv3, t3));
   TORCH_CHECK(at::allclose(kernel_tv4, t4));
   TORCH_CHECK(at::allclose(kernel_tv5, t5));
-  return;
 }
 
 void testGPU_FusionComputeAtCommonConsumer2() {
-  /*
-   * tv1 = tv0 * 0.5
-   * tv2 = tv1 * -1
-   * tv3 = tv2 * -1
-   * tv4 = tv1 + 4
-   * tv5 = tv3 + tv4
-   */
+   // tv1 = tv0 * 0.5
+   // tv2 = tv1 * -1
+   // tv3 = tv2 * -1
+   // tv4 = tv1 + 4
+   // tv5 = tv3 + tv4
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -1944,14 +1936,12 @@ void testGPU_FusionComputeAtCommonConsumer2() {
 // Similar to the above common consumer test but adds an additional
 // tensor that has no common consumer with the other tensors.
 void testGPU_FusionComputeAtCommonConsumer3() {
-  /*
-   * tv1 = tv0 * 0.5
-   * tv2 = tv1 * -1
-   * tv3 = tv2 * -1
-   * tv4 = tv1 + 4
-   * tv5 = tv2 + tv3
-   * tv6 = tv1 + 6
-   */
+  // tv1 = tv0 * 0.5
+  // tv2 = tv1 * -1
+  // tv3 = tv2 * -1
+  // tv4 = tv1 + 4
+  // tv5 = tv2 + tv3
+  // tv6 = tv1 + 6
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -2046,14 +2036,12 @@ void testGPU_FusionComputeAtCommonConsumer3() {
 // Similar to ComputeAtCommonConsumer1 but with an addtiona ltensor
 // that does not have data dependency with the consumer.
 void testGPU_FusionComputeAtNoCommonConsumer() {
-  /*
-   * tv1 = tv0 * 0.5
-   * tv2 = tv1 * -1
-   * tv3 = tv1 * -2
-   * tv4 = tv2 + tv3
-   * tv5 = tv4 * 5
-   * tv6 = tv1 * 6
-   */
+  // tv1 = tv0 * 0.5
+  // tv2 = tv1 * -1
+  // tv3 = tv1 * -2
+  // tv4 = tv2 + tv3
+  // tv5 = tv4 * 5
+  // tv6 = tv1 * 6
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -2118,7 +2106,6 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
   TORCH_CHECK(at::allclose(kernel_tv4, t4));
   TORCH_CHECK(at::allclose(kernel_tv5, t5));
   TORCH_CHECK(at::allclose(kernel_tv6, t6));
-  return;
 }
 
 void testGPU_FusionScalarInputs() {
