@@ -1847,11 +1847,11 @@ void testGPU_FusionComputeAtCommonConsumer1() {
 }
 
 void testGPU_FusionComputeAtCommonConsumer2() {
-   // tv1 = tv0 * 0.5
-   // tv2 = tv1 * -1
-   // tv3 = tv2 * -1
-   // tv4 = tv1 + 4
-   // tv5 = tv3 + tv4
+  // tv1 = tv0 * 0.5
+  // tv2 = tv1 * -1
+  // tv3 = tv2 * -1
+  // tv4 = tv1 + 4
+  // tv5 = tv3 + tv4
   Fusion fusion;
   FusionGuard fg(&fusion);
 
