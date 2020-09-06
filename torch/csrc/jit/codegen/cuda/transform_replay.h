@@ -118,6 +118,7 @@ namespace fuser {
 
 class TensorDomain;
 class TensorView;
+class ComputeDomain;
 
 class TORCH_CUDA_API TransformReplay {
  public:
@@ -125,6 +126,7 @@ class TORCH_CUDA_API TransformReplay {
   static std::pair<TensorDomain*, unsigned int> replayPasC(
       const TensorDomain* producer,
       const TensorDomain* consumer,
+      const ComputeDomain* consumer_cd,
       int consumer_compute_at_axis);
 
   // Replay producer as consumer, returns {producer, producer_compute_at_axis}.

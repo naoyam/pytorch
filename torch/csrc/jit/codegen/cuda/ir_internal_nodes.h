@@ -545,6 +545,55 @@ class TORCH_CUDA_API TensorDomain : public Val {
   const std::vector<bool> contiguity_;
 };
 
+class TORCH_CUDA_API ComputeDomain {
+ public:
+  ComputeDomain(const TensorView* tv);
+  ComputeDomain(const std::vector<IterDomain*>& domain,
+                const std::vector<const TensorView*>& tensors);
+
+  size_t nDims() const {
+    return domain_.size();
+  }
+
+  const std::vector<IterDomain*>& domain() const {
+    return domain_;
+  }
+
+  const std::unordered_set<IterDomain*>& getRootDomain() const {
+    return root_domain_;
+  }
+
+  const auto& tensors() const {
+    return tensors_;
+  }
+
+  IterDomain* getAxis(IterDomain* id) const {
+    auto it = std::find(domain().begin(), domain().end(), id);
+    TORCH_INTERNAL_ASSERT(it != domain().end(),
+                          "Domain, ", id, " not found.");
+    return *it;
+  }
+
+  // Return a map from IterDomains in ComputeDomain to IterDomains in a given domain
+  std::unordered_map<IterDomain*, IterDomain*> mapRootDomain(
+      const TensorDomain* td,
+      const std::unordered_set<IterDomain*>& compute_root_ids) const;
+
+  void split(int axis);
+
+  ComputeDomain* computeAt(const TensorView* tv) const;
+
+  std::ostream& print(std::ostream& os) const;
+
+  void setRootDomain();
+
+  std::vector<IterDomain*> domain_;
+  std::vector<const TensorView*> tensors_;
+  std::unordered_set<IterDomain*> root_domain_;
+};
+
+std::ostream& operator<<(std::ostream& os, const ComputeDomain& cd);
+
 /*
  * Representation a split on an IterDomain by "factor"
  * TODO: Implement split by nparts

@@ -177,6 +177,8 @@ void IRPrinter::handle(const TensorView* tv) {
       os << "T" << tv->getComputeAtView()->name();
       os << ", " << tv->getRelativeComputeAtAxis() << " )";
     }
+
+    os << " " << *(tv->getComputeDomain());
   }
 }
 

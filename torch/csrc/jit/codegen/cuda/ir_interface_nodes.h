@@ -254,6 +254,15 @@ class TORCH_CUDA_API TensorView : public Val {
     return compute_at_view_;
   }
 
+  ComputeDomain* getComputeDomain() const {
+    TORCH_INTERNAL_ASSERT(compute_domain_ != nullptr);
+    return compute_domain_;
+  }
+
+  IterDomain* getComputeAxis(int pos) const {
+    return getComputeDomain()->getAxis(axis(pos));
+  }
+
   size_t nDims() const;
 
   // Return compute at axis relative to this domain
@@ -379,6 +388,10 @@ class TORCH_CUDA_API TensorView : public Val {
   // computeAt with outputs relative to eachother
   void setComputeAt(TensorView* computeAtView, int thisPos, int relPos);
 
+  void setComputeDomain(ComputeDomain* cd) {
+    compute_domain_ = cd;
+  }
+
  private:
   int normalizeAxisPos(int pos) const {
     if (pos < 0) {
@@ -404,12 +417,15 @@ class TORCH_CUDA_API TensorView : public Val {
 
   void setThisComputeAtAxis();
 
+  void setDefaultComputeDomain();
+
  private:
   TensorDomain* domain_ = nullptr;
   TensorView* compute_at_view_ = nullptr;
   // compute at axis in compute at view
   unsigned int relative_compute_at_axis_ = 0;
   unsigned int this_compute_at_axis_ = 0;
+  ComputeDomain* compute_domain_ = nullptr;
   MemoryType memory_type_ = MemoryType::Local;
 };
 

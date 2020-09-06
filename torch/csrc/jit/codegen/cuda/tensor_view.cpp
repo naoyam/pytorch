@@ -25,7 +25,10 @@ DataType aten_opt_type_map(const c10::optional<at::ScalarType>& scalar_type) {
 } // namespace
 
 TensorView::TensorView(TensorDomain* _domain, DataType dtype, MemoryType mtype)
-    : Val(ValType::TensorView, dtype), domain_(_domain), memory_type_(mtype) {}
+    : Val(ValType::TensorView, dtype), domain_(_domain),
+      memory_type_(mtype) {
+  setDefaultComputeDomain();
+}
 
 TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
     : Val(ValType::TensorView,
@@ -85,6 +88,7 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
 
   domain_ = new TensorDomain(sizes, contig_info);
   name_ = fusion_->registerVal(this);
+  setDefaultComputeDomain();
 }
 
 TensorView::TensorView(const TensorView* src, IrCloner* ir_cloner)
@@ -93,7 +97,13 @@ TensorView::TensorView(const TensorView* src, IrCloner* ir_cloner)
       compute_at_view_(ir_cloner->clone(src->compute_at_view_)),
       relative_compute_at_axis_(src->relative_compute_at_axis_),
       this_compute_at_axis_(src->this_compute_at_axis_),
-      memory_type_(src->memory_type_) {}
+      memory_type_(src->memory_type_) {
+  // TODO: what to do for compute domain when cloning?
+}
+
+void TensorView::setDefaultComputeDomain() {
+  compute_domain_ = new ComputeDomain(this);
+}
 
 bool TensorView::hasReduction() const {
   return domain()->hasReduction();
@@ -303,11 +313,28 @@ TensorView* TensorView::split(int axis, Val* factor) {
           getThisComputeAtAxis());
 
   domain()->split(axis, factor);
+  getComputeDomain()->split(axis);
   return this;
 }
 
+// TODO: Merge this with split(int, Val*)
 TensorView* TensorView::split(int axis, unsigned int factor) {
+  TORCH_INTERNAL_ASSERT(nDims() > 0, "Tried to do split on a 0-dim TensorView");
+
+  if (axis < 0)
+    axis += domain()->nDims();
+
+  if (getComputeAtView() != nullptr)
+    if (axis < (int)getThisComputeAtAxis())
+      TORCH_CHECK(
+          false,
+          "Cannot split axis within compute at range. Axis = ",
+          axis,
+          " thisComputeAtAxis = ",
+          getThisComputeAtAxis());
+
   domain()->split(axis, new Int(factor));
+  getComputeDomain()->split(axis);
   return this;
 }
 
@@ -372,6 +399,7 @@ TensorView* TensorView::rFactor(const std::vector<int>& axes) {
 
   // Set domain of consumer
   setDomain(consumer_domain);
+  setDefaultComputeDomain();
   TensorView* consumer = this;
 
   // Setup dependency chain, inserting producer before this op.
