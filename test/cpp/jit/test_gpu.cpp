@@ -6707,6 +6707,27 @@ void testGPU_FusionComputeAtMultiBCast() {
   ASSERT_ANY_THROW(tv1->computeAt(tv3, -1));
 }
 
+void testGPU_FusionComputeDomain() {
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    fusion.printMath();
+    fusion.printKernel();
+    return;
+  }
+}
+
 } // namespace jit
 } // namespace torch
 
