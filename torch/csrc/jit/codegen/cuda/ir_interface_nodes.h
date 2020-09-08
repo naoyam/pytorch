@@ -259,10 +259,6 @@ class TORCH_CUDA_API TensorView : public Val {
     return compute_domain_;
   }
 
-  IterDomain* getComputeAxis(int pos) const {
-    return getComputeDomain()->getAxis(axis(pos));
-  }
-
   size_t nDims() const;
 
   // Return compute at axis relative to this domain

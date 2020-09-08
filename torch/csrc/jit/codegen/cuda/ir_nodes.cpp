@@ -1018,107 +1018,144 @@ std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(
       TransformRFactor::runReplay2(this, axes)};
 }
 
-ComputeDomain::ComputeDomain(const std::vector<IterDomain*>& domain,
-                             const std::vector<const TensorView*>& tensors):
-  domain_(domain), tensors_(tensors) {
-  setRootDomain();
+bool ComputeAxis::sameAs(const IterDomain* id1, const IterDomain* id2) {
+  return id1 == id2 ||
+      (ScalarCheck::sameAs(id1->start(), id2->start()) &&
+       ScalarCheck::sameAs(id1->extent(), id2->extent()));
+}
+
+std::ostream& ComputeAxis::print(std::ostream& os) const {
+  if (isComputedAt()) {
+    os << "->";
+  }
+  return os << getEffectiveDomain();
+}
+
+std::ostream& operator<<(std::ostream& os, const ComputeAxis& ca) {
+  return ca.print(os);
+}
+
+#if 0
+ComputeDomain::ComputeDomain(const std::vector<IterDomain*>& domain):
+    axes_({domain.begin(), domain.end()}) {
+  //setRootDomain();
+}
+#endif
+
+ComputeDomain::ComputeDomain(const TensorView* tv,
+                             const std::deque<ComputeAxis*>& axes):
+    tv_(tv),  axes_(axes) {
+  //setRootDomain();
 }
 
 ComputeDomain::ComputeDomain(const TensorView* tv):
-    ComputeDomain(tv->domain()->domain(), {tv->nDims(), tv}) {}
+    tv_(tv) {
+  std::transform(tv->domain()->domain().begin(),
+                 tv->domain()->domain().end(),
+                 std::back_inserter(axes_),
+                 [](IterDomain* id) {
+                   return new ComputeAxis(id);
+                 });
+}
 
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
     const TensorDomain* td,
     const std::unordered_set<IterDomain*>& compute_root_ids) const {
   auto root_dom = td->getMaybeRFactorDomain();
+  //auto compute_root_dom = getRootDomain();
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
   for (const auto& id: root_dom) {
-    auto it = std::find_if(getRootDomain().begin(), getRootDomain().end(),
+    auto it = std::find_if(compute_root_ids.begin(), compute_root_ids.end(),
                            [id](const IterDomain* d) {
                              std::cerr << "Checking CD dom: " << d << std::endl;
-                             return (id == d) ||
-                                 (ScalarCheck::sameAs(id->extent(), d->extent()) &&
-                                  ScalarCheck::sameAs(id->start(), d->start()));
+                             return ComputeAxis::sameAs(id, d);
                            });
-    if (it == getRootDomain().end()) {
+    if (it == compute_root_ids.end()) {
       std::cerr << "No matching id found for " << id << std::endl;
       continue;
     }
-    auto compute_id = *it;
-    if (compute_root_ids.find(compute_id) == compute_root_ids.end()) continue;
-    root_id_map.emplace(compute_id, id);
+    root_id_map.emplace(*it, id);
   }
   return root_id_map;
 }
 
-void ComputeDomain::split(int axis) {
-  std::cerr << "Splitting compute domain: " << nDims() << std::endl;
-  auto tv = tensors_.at(axis);
-  auto new_id_left = tv->domain()->domain().at(axis);
-  auto new_id_right = tv->domain()->domain().at(axis+1);
-  domain_.at(axis) = new_id_left;
-  domain_.insert(domain_.begin() + axis + 1, new_id_right);
-  tensors_.insert(tensors_.begin() + axis + 1,
-                  tensors_.at(axis));
-  setRootDomain();
-  std::cerr << "Splitting compute domain done: " << nDims() << std::endl;
+void ComputeDomain::split(int axis_idx) {
+  //std::cerr << "Splitting compute domain: " << nDims() << std::endl;
+  auto new_id_left = tv_->domain()->domain().at(axis_idx);
+  auto new_id_right = tv_->domain()->domain().at(axis_idx+1);
+  axes_.at(axis_idx)->set(new_id_left);
+  axes_.emplace(axes_.begin() + axis_idx + 1, new ComputeAxis(new_id_right));
+  //setRootDomain();
+  //std::cerr << "Splitting compute domain done: " << nDims() << std::endl;
 }
 
-ComputeDomain* ComputeDomain::computeAt(const TensorView* tv) const {
-  const TensorDomain* td = tv->domain();
-  auto ca_dom_end = domain_.begin();
+void ComputeDomain::computeAt(const ComputeDomain* target) {
+  const TensorDomain* td = tv_->domain();
+  auto ca_axes_end = target->axes().begin();
   size_t own_id_begin = td->nDims();
   for (size_t i = 0; i < td->nDims(); ++i) {
     auto id = td->domain().at(i);
     std::cerr << "CD::computeAt tv dom: " << id << std::endl;
-    auto it = std::find_if(domain_.begin(), domain_.end(),
-                           [&id](const auto& d) {
-                             return d->sameAs(id);
+    auto it = std::find_if(target->axes().begin(), target->axes().end(),
+                           [&id](const ComputeAxis* ca) {
+                             return ca->sameAs(id);
                            });
-    if (it == domain_.end()) {
+    if (it == target->axes().end()) {
       std::cerr << "Mismatch found; remainig doms are its own dom" << std::endl;
       own_id_begin = i;
       break;
     } else {
-      ca_dom_end = it + 1;
+      ca_axes_end = it + 1;
     }
   }
   auto num_own_doms = td->nDims() - own_id_begin;
   std::cerr << "num own doms: " << num_own_doms << std::endl;
-  std::vector<IterDomain*> doms;
-  std::vector<const TensorView*> tensors;
 
-  std::copy(domain_.begin(), ca_dom_end,
-            std::back_inserter(doms));
-  std::copy(td->domain().begin() + own_id_begin,
-            td->domain().end(),
-            std::back_inserter(doms));
-
-  for (size_t i = 0; i < doms.size(); ++i) {
-    if (i < doms.size() - num_own_doms) {
-      tensors.push_back(tensors_.at(i));
+  // TODO: reset target axis so that indirect reference should work
+  size_t cd_idx = 0;
+  for (auto it = target->axes().begin(); it != ca_axes_end; ++it, ++cd_idx) {
+    if (cd_idx < nDims()) {
+      axes_.at(cd_idx)->set(*it);
     } else {
-      tensors.push_back(tv);
+      axes_.push_back(new ComputeAxis(*it));
     }
   }
 
-  return new ComputeDomain(doms, tensors);
+  for (auto it = td->domain().begin() + own_id_begin; it != td->domain().end(); ++it, ++cd_idx) {
+    if (cd_idx < nDims()) {
+      axes_.at(cd_idx)->set(*it);
+    } else {
+      axes_.push_back(new ComputeAxis(*it));
+    }
+  }
 }
 
+#if 0
 void ComputeDomain::setRootDomain() {
   std::cerr << "set root domain of " << *this << std::endl;
+  auto current_domain = getDomain();
   auto root_vals = IterVisitor::getInputsTo(
-      std::vector<Val*>(domain().begin(), domain().end()));
+      std::vector<Val*>(current_domain.begin(), current_domain.end()));
   root_domain_ = {ir_utils::filterByType<IterDomain>(root_vals).begin(),
                   ir_utils::filterByType<IterDomain>(root_vals).end()};
 }
+#else
+std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
+  auto current_domain = getDomain();
+  auto root_vals = IterVisitor::getInputsTo(
+      std::vector<Val*>(current_domain.begin(), current_domain.end()));
+  std::unordered_set<IterDomain*> root_domain =
+      {ir_utils::filterByType<IterDomain>(root_vals).begin(),
+       ir_utils::filterByType<IterDomain>(root_vals).end()};
+  return root_domain;
+}
+#endif
 
 std::ostream& ComputeDomain::print(std::ostream& os) const {
-  os << "compute_domain(";
+  os << "compute_domain(" << " T" << tv_->name() << ",";
   for (size_t i = 0; i < nDims(); ++i) {
     os << " {";
-    os << domain().at(i);
-    os << ", T" << tensors().at(i)->name();
+    os << *(axes().at(i));
     os << "}";
   }
   os << " )";

@@ -196,10 +196,12 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
       (unsigned int)consumer_compute_at_axis <= consumer_cd->nDims(),
       "Invalid axis in transform replayPasC.");
 
+  std::vector<IterDomain*> consumer_domain = consumer_cd->getDomain();
+
   // consumer ids we need to match in producer
   std::vector<IterDomain*> consumer_CA_ids(
-      consumer_cd->domain().begin(),
-      consumer_cd->domain().begin() + consumer_compute_at_axis);
+      consumer_domain.begin(),
+      consumer_domain.begin() + consumer_compute_at_axis);
 
   for (const auto& id: consumer_CA_ids) {
     std::cerr << "consumer CA ID: " << id << std::endl;
@@ -209,15 +211,15 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
   std::unordered_set<Val*> consumer_CA_root_vals = IterVisitor::getInputsTo(
       std::vector<Val*>(consumer_CA_ids.begin(), consumer_CA_ids.end()));
 
-  for (const auto& id: consumer_CA_root_vals) {
-    std::cerr << "consumer CA root val: " << id << std::endl;
-  }
-
   std::unordered_set<IterDomain*> consumer_CA_root_ids;
   for (auto val : consumer_CA_root_vals) {
     if (val->getValType().value() == ValType::IterDomain) {
       consumer_CA_root_ids.emplace(val->as<IterDomain>());
     }
+  }
+
+  for (const auto& id: consumer_CA_root_ids) {
+    std::cerr << "consumer CA root ID: " << id << std::endl;
   }
 
   // Map of consumer_CA_root_ids to related producer_CA_ids
@@ -341,7 +343,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
   // Add axes in (2)
   std::unordered_set<IterDomain*> consumer_CA_ids_set(
       consumer_CA_ids.begin(), consumer_CA_ids.end());
-  for (auto c_id : consumer_cd->domain()) {
+  for (auto c_id : consumer_domain) {
     auto it = replay_PasC.getReplay().find(c_id);
     if (it != replay_PasC.getReplay().end()) {
       auto id = it->second;
@@ -572,9 +574,7 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayPasC(
       replayPasC(producer->domain(), consumer->domain(), consumer->getComputeDomain(),
                  compute_at_axis);
   producer->setDomain(replay.first);
-  ComputeDomain* producer_new_compute_domain =
-      consumer->getComputeDomain()->computeAt(producer);
-  producer->setComputeDomain(producer_new_compute_domain);
+  producer->getComputeDomain()->computeAt(consumer->getComputeDomain());
   return {producer, replay.second};
 }
 

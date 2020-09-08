@@ -545,51 +545,104 @@ class TORCH_CUDA_API TensorDomain : public Val {
   const std::vector<bool> contiguity_;
 };
 
+class TORCH_CUDA_API ComputeAxis {
+ public:
+
+  explicit ComputeAxis(IterDomain* id): id_(id) {}
+  explicit ComputeAxis(const ComputeAxis* other): compute_at_(other) {}
+
+  void set(const ComputeAxis* other) {
+    nullify();
+    compute_at_ = other;
+  }
+
+  void set(IterDomain* id) {
+    nullify();
+    id_ = id;
+  }
+
+  bool isComputedAt() const {
+    return compute_at_ != nullptr;
+  }
+
+  IterDomain* getEffectiveDomain() const {
+    sanityCheck();
+    if (isComputedAt()) {
+      return compute_at_->getEffectiveDomain();
+    } else {
+      return id_;
+    }
+  }
+
+  std::ostream& print(std::ostream& os) const;
+
+  static bool sameAs(const IterDomain* id1, const IterDomain* id2);
+
+  bool sameAs(const IterDomain* other) const {
+    return sameAs(getEffectiveDomain(), other);
+  }
+
+ private:
+  void nullify() {
+    id_ = nullptr;
+    compute_at_ = nullptr;
+  }
+
+  void sanityCheck() const {
+    TORCH_INTERNAL_ASSERT((id_ != nullptr && compute_at_ == nullptr) ||
+                          (id_ == nullptr && compute_at_ != nullptr));
+  }
+  
+ private:
+  IterDomain* id_ = nullptr;
+  const ComputeAxis* compute_at_ = nullptr;
+};
+
+std::ostream& operator<<(std::ostream& os, const ComputeAxis& ca);
+
 class TORCH_CUDA_API ComputeDomain {
  public:
-  ComputeDomain(const TensorView* tv);
-  ComputeDomain(const std::vector<IterDomain*>& domain,
-                const std::vector<const TensorView*>& tensors);
+  explicit ComputeDomain(const TensorView* tv);
+  explicit ComputeDomain(const TensorView* tv,
+                         const std::deque<ComputeAxis*>& axes);
 
   size_t nDims() const {
-    return domain_.size();
+    return axes_.size();
   }
 
-  const std::vector<IterDomain*>& domain() const {
-    return domain_;
+  std::vector<IterDomain*> getDomain() const {
+    std::vector<IterDomain*> domain(nDims(), nullptr);
+    std::transform(axes().begin(), axes().end(), domain.begin(),
+                   [](const ComputeAxis* ca) {
+                     return ca->getEffectiveDomain();
+                   });
+    return domain;
   }
 
-  const std::unordered_set<IterDomain*>& getRootDomain() const {
-    return root_domain_;
+  const std::deque<ComputeAxis*>& axes() const {
+    return axes_;
   }
 
-  const auto& tensors() const {
-    return tensors_;
-  }
-
-  IterDomain* getAxis(IterDomain* id) const {
-    auto it = std::find(domain().begin(), domain().end(), id);
-    TORCH_INTERNAL_ASSERT(it != domain().end(),
-                          "Domain, ", id, " not found.");
-    return *it;
-  }
+  std::unordered_set<IterDomain*> getRootDomain() const;
 
   // Return a map from IterDomains in ComputeDomain to IterDomains in a given domain
   std::unordered_map<IterDomain*, IterDomain*> mapRootDomain(
       const TensorDomain* td,
       const std::unordered_set<IterDomain*>& compute_root_ids) const;
 
-  void split(int axis);
+  void split(int axis_idx);
 
-  ComputeDomain* computeAt(const TensorView* tv) const;
+  void computeAt(const ComputeDomain* target);
 
   std::ostream& print(std::ostream& os) const;
 
-  void setRootDomain();
+ private:
+  //void setRootDomain();
 
-  std::vector<IterDomain*> domain_;
-  std::vector<const TensorView*> tensors_;
-  std::unordered_set<IterDomain*> root_domain_;
+ private:
+  const TensorView* tv_;
+  std::deque<ComputeAxis*> axes_;
+  //std::unordered_set<IterDomain*> root_domain_;
 };
 
 std::ostream& operator<<(std::ostream& os, const ComputeDomain& cd);
