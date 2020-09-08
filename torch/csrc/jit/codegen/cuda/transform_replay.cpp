@@ -386,6 +386,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
 std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
     const TensorDomain* consumer,
     const TensorDomain* producer,
+    const ComputeDomain* producer_cd,
     int producer_compute_at_axis) {
   if (producer_compute_at_axis < 0)
     producer_compute_at_axis += (int)producer->nDims() + 1;
@@ -561,14 +562,13 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayPasC(
     TensorView* producer,
     TensorView* consumer,
     int compute_at_axis) {
-  // If this is a reduction operation, we may call transform_replay on
-  // the
-
   std::cerr << "replayPasC: " << producer << " -> " << consumer << std::endl;
 
+  // If this is a reduction operation, we may call transform_replay on the
   // tensor view. When this happens, just return thet target view.
   if (producer == consumer)
     return {producer, 0};
+
 
   std::pair<TensorDomain*, unsigned int> replay =
       replayPasC(producer->domain(), consumer->domain(), consumer->getComputeDomain(),
@@ -587,8 +587,10 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayCasP(
   if (consumer == producer)
     return {consumer, 0};
   std::pair<TensorDomain*, unsigned int> replay =
-      replayCasP(consumer->domain(), producer->domain(), compute_at_axis);
+      replayCasP(consumer->domain(), producer->domain(), producer->getComputeDomain(),
+                 compute_at_axis);
   consumer->setDomain(replay.first);
+  producer->getComputeDomain()->computeAt(producer->getComputeDomain());
   return {consumer, replay.second};
 }
 

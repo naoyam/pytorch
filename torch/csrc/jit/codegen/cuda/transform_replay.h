@@ -139,6 +139,7 @@ class TORCH_CUDA_API TransformReplay {
   static std::pair<TensorDomain*, unsigned int> replayCasP(
       const TensorDomain* consumer,
       const TensorDomain* producer,
+      const ComputeDomain* producer_cd,
       int producer_compute_at_axis);
 
   // Replay producer as consumer, returns {consumer, consumer_compute_at_axis}.
