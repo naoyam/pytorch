@@ -24,7 +24,7 @@ namespace cuda {
 //
 // Note, the uniqueness of the ide generated for a given input set is only local
 // to the instance of `InputsIdLookup`.
-TORCH_CUDA_API class InputsIdLookup {
+class TORCH_CUDA_API InputsIdLookup {
  public:
   // constructor where maximum cache size is fixed during init
   explicit InputsIdLookup(size_t max_cache_size = 10)
