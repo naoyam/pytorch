@@ -1018,11 +1018,81 @@ std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(
       TransformRFactor::runReplay2(this, axes)};
 }
 
+namespace {
+class BroadcastMapping: public BackwardVisitor {
+ public:
+  using BackwardVisitor::handle;
+
+  BroadcastMapping(Fusion* fusion) {
+    traverseFrom(fusion, fusion->outputs(), false);
+  }
+
+  void handle(BinaryOp* bop) override {
+    if (!ir_utils::isTVOp(bop)) return;
+    for (const auto input: bop->inputs()) {
+      if (input->getValType().value() != ValType::TensorView) continue;
+      const TensorView* input_tv = input->as<TensorView>();
+      const auto& input_root = input_tv->getRootDomain();
+      const auto& output_root = bop->output(0)->as<TensorView>()->getRootDomain();
+      for (size_t i = 0; i < input_root.size(); ++i) {
+        if (!input_root.at(i)->isBroadcast()) continue;
+        if (output_root.at(i)->isBroadcast()) {
+          continue;
+        }
+        //std::cerr << "Concrete ID found: "
+        //<< input_root.at(i) << " -> " << output_root.at(i) << std::endl;
+        map_.insert({input_root.at(i), output_root.at(i)});
+      }
+    }
+  }
+
+  // Mapping from a broadcast domain to its concrete domain
+  std::unordered_map<const IterDomain*, const IterDomain*> map_;
+
+  static const IterDomain* getConcreteDomain(const IterDomain* bcast_dom) {
+    BroadcastMapping bcast_mapping(bcast_dom->fusion());
+    auto it = bcast_mapping.map_.find(bcast_dom);
+    TORCH_INTERNAL_ASSERT(it != bcast_mapping.map_.end());
+    return it->second;
+  }
+};
+
+} // namespace
+
 bool ComputeAxis::sameAs(const IterDomain* id1, const IterDomain* id2) {
-  return id1 == id2 ||
-      (ScalarCheck::sameAs(id1->start(), id2->start()) &&
-       ScalarCheck::sameAs(id1->extent(), id2->extent()));
+  if (id1 == id2) return true;
+
+  if (id1->isBroadcast()) {
+    id1 = BroadcastMapping::getConcreteDomain(id1);
+  }
+  if (id2->isBroadcast()) {
+    id2 = BroadcastMapping::getConcreteDomain(id2);
+  }
+
+  return ScalarCheck::sameAs(id1->start(), id2->start()) &&
+      ScalarCheck::sameAs(id1->extent(), id2->extent());
 }
+
+void ComputeAxis::checkLoop() {
+  std::vector<const ComputeAxis*> visited;
+  const ComputeAxis* ca = this;
+  visited.push_back(ca);
+  while (ca->isComputedAt()) {
+    const ComputeAxis* next = ca->getComputeAt();
+    if (std::find(visited.begin(), visited.end(), next) != visited.end()) {
+      // loop detected
+      std::cerr << "Loop detected; already visited:";
+      for (const auto& ca: visited) {
+        std::cerr << " " << (void*)ca;
+      }
+      std::cerr << "; next: " << (void*)next << std::endl;
+      TORCH_INTERNAL_ASSERT(false, "loop detected");
+    }
+    ca = next;
+    visited.push_back(ca);
+  }
+}
+
 
 std::ostream& ComputeAxis::print(std::ostream& os) const {
   if (isComputedAt()) {
@@ -1059,12 +1129,10 @@ ComputeDomain::ComputeDomain(const TensorView* tv):
 }
 
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
-    const TensorDomain* td,
+    const std::vector<IterDomain*>& root_domain,
     const std::unordered_set<IterDomain*>& compute_root_ids) const {
-  auto root_dom = td->getMaybeRFactorDomain();
-  //auto compute_root_dom = getRootDomain();
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
-  for (const auto& id: root_dom) {
+  for (const auto& id: root_domain) {
     auto it = std::find_if(compute_root_ids.begin(), compute_root_ids.end(),
                            [id](const IterDomain* d) {
                              std::cerr << "Checking CD dom: " << d << std::endl;
@@ -1089,6 +1157,9 @@ void ComputeDomain::split(int axis_idx) {
   //std::cerr << "Splitting compute domain done: " << nDims() << std::endl;
 }
 
+// Adapt this compute domain so that it is computed under the target
+// domain. TensorDomain is assumed to be already transformed by
+// replayPasC or replayCasP.
 void ComputeDomain::computeAt(const ComputeDomain* target) {
   const TensorDomain* td = tv_->domain();
   auto ca_axes_end = target->axes().begin();
@@ -1108,16 +1179,30 @@ void ComputeDomain::computeAt(const ComputeDomain* target) {
       ca_axes_end = it + 1;
     }
   }
-  auto num_own_doms = td->nDims() - own_id_begin;
-  std::cerr << "num own doms: " << num_own_doms << std::endl;
 
-  // TODO: reset target axis so that indirect reference should work
+  auto num_ca_doms = std::distance(target->axes().begin(), ca_axes_end);
+  auto num_own_doms = td->nDims() - own_id_begin;
+
+  std::cerr << "New compute domain has " << num_ca_doms << " shared domains and "
+            << num_own_doms << " own domains." << std::endl;
+
+  if (num_own_doms == 0 && num_ca_doms < target->axes().size()) {
+    std::cerr << "All domains are matched, but not all of the target CA domains are used. Carry the remaining ones." << std::endl;
+    ca_axes_end = target->axes().end();
+  }
+
   size_t cd_idx = 0;
   for (auto it = target->axes().begin(); it != ca_axes_end; ++it, ++cd_idx) {
     if (cd_idx < nDims()) {
+      //std::cerr << "current axis: " << *(axes_.at(cd_idx)) << " (" << (axes_.at(cd_idx)) << ") " << std::endl;
+      //std::cerr << "setting it to: " << *(*it) << " (" << *it << ") " << std::endl;
+      //std::cerr << "next: " << (*it)->getComputeAt() << std::endl;
       axes_.at(cd_idx)->set(*it);
+      //std::cerr << "reset axis: " << *(axes_.at(cd_idx)) << std::endl;
     } else {
+      //std::cerr << "Appending a new axis\n";
       axes_.push_back(new ComputeAxis(*it));
+      //std::cerr << "new axis: " << *(axes_.back()) << std::endl;
     }
   }
 

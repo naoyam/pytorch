@@ -551,15 +551,27 @@ class TORCH_CUDA_API ComputeAxis {
   explicit ComputeAxis(IterDomain* id): id_(id) {}
   explicit ComputeAxis(const ComputeAxis* other): compute_at_(other) {}
 
+  const ComputeAxis* getComputeAt() const {
+    return compute_at_;
+  }
+
   void set(const ComputeAxis* other) {
+    //std::cerr << "other->getTerminatingAxis(): " << other->getTerminatingAxis() << std::endl;
+    if (other->getTerminatingAxis() == this->getTerminatingAxis()) {
+      // prevent looping
+      return;
+    }
     nullify();
     compute_at_ = other;
+    checkLoop();
   }
 
   void set(IterDomain* id) {
     nullify();
     id_ = id;
   }
+
+  void checkLoop();
 
   bool isComputedAt() const {
     return compute_at_ != nullptr;
@@ -590,9 +602,17 @@ class TORCH_CUDA_API ComputeAxis {
 
   void sanityCheck() const {
     TORCH_INTERNAL_ASSERT((id_ != nullptr && compute_at_ == nullptr) ||
-                          (id_ == nullptr && compute_at_ != nullptr));
+                          (id_ == nullptr && compute_at_ != nullptr && compute_at_ != this));
   }
-  
+
+  const ComputeAxis* getTerminatingAxis() const {
+    auto axis = this;
+    while (axis->isComputedAt()) {
+      axis = axis->getComputeAt();
+    }
+    return axis;
+  }
+
  private:
   IterDomain* id_ = nullptr;
   const ComputeAxis* compute_at_ = nullptr;
@@ -627,7 +647,7 @@ class TORCH_CUDA_API ComputeDomain {
 
   // Return a map from IterDomains in ComputeDomain to IterDomains in a given domain
   std::unordered_map<IterDomain*, IterDomain*> mapRootDomain(
-      const TensorDomain* td,
+      const std::vector<IterDomain*>& root_domain,
       const std::unordered_set<IterDomain*>& compute_root_ids) const;
 
   void split(int axis_idx);
