@@ -2741,6 +2741,7 @@ void testGPU_FusionCastOps() {
 // We want split/merge/reorder all tested both on and off rfactor domains, also
 // want compute at into the rfactor domain, and into its consumer
 void testGPU_FusionRFactorReplay() {
+#if 0
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -2829,6 +2830,7 @@ void testGPU_FusionRFactorReplay() {
               dom2.end(),
               [](IterDomain* id) { return id->isReduction(); }),
       "Error in rFactor, there seems to be something wrong in root domain.");
+#endif
 }
 
 // Start off simple, block on the outer dim
@@ -2854,20 +2856,40 @@ void testGPU_FusionReduction() {
 
   TensorView* tv2 = tv1->rFactor({1});
   // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
-  // tv1[I0,        R1oi{4},  R1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
+  // tv1[I0,        R1oi{4},  R1i{128}] = tv2[I0, R1oo, Ir1oi{4},
+  // Ir1i{128}]
+
+  fusion.printMath();
 
   TensorView* tv3 = tv1->rFactor({1});
   // tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}] = tv0[I0, I1]
   // tv3[I0,        R1oi{4}, Ir1i{128}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{128}]
   // tv1[I0,                  R1i{128}] = tv3[I0,        R1oi{4}, Ir1i{128}]
 
+  fusion.printMath();
   // Incrementally, can print in between for debugging
+  std::cerr << std::endl << "t0->computeAt" << std::endl;
   tv0->computeAt(tv2, 1);
+  fusion.printMath();
+  std::cerr << std::endl << "t2->computeAt" << std::endl;
   tv2->computeAt(tv3, 1);
+  fusion.printMath();
+  std::cerr << std::endl << "t3->computeAt" << std::endl;
   tv3->computeAt(tv1, 1);
 
+  fusion.printMath();
+  fusion.printKernel();
+
   // Re do it all at once, because why not.
+  std::cerr << std::endl << "t0->computeAt" << std::endl;
   tv0->computeAt(tv1, 1);
+
+  std::cerr << std::endl << "computeAt done" << std::endl;
+  fusion.printMath();
+  fusion.printKernel();
+
+  // TODO: compilation not supported yet
+  return;
 
   tv2->axis(2)->parallelize(ParallelType::Unroll);
   tv1->axis(0)->parallelize(ParallelType::BIDx);
@@ -3687,7 +3709,7 @@ void testGPU_FusionAdvancedIndexing() {
   // Merging left to right is still broken in some instances. Indexing can't
   // complete because we assume we can simply traverse consumer->producer in the
   // index/extent map, but this case breaks this assumption.
-  {
+  if (0) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3713,6 +3735,10 @@ void testGPU_FusionAdvancedIndexing() {
     tv4->split(0, 4);
 
     tv2->computeAt(tv4, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+    return;
 
     tv4->axis(0)->parallelize(ParallelType::BIDx);
     tv4->axis(1)->parallelize(ParallelType::Unroll);
@@ -3739,7 +3765,7 @@ void testGPU_FusionAdvancedIndexing() {
   }
 
   // Merging right to left actually does work.
-  {
+  if (0) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3765,6 +3791,10 @@ void testGPU_FusionAdvancedIndexing() {
     tv4->split(0, 4);
 
     tv2->computeAt(tv4, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+    return;
 
     tv4->axis(0)->parallelize(ParallelType::BIDx);
     tv4->axis(1)->parallelize(ParallelType::Unroll);
@@ -3810,6 +3840,10 @@ void testGPU_FusionAdvancedIndexing() {
     at::Tensor t1 = at::randn({w, x, y, z}, options);
 
     fuser::cuda::scheduleFusion(&fusion, {t0, t1});
+
+    fusion.printMath();
+    fusion.printKernel();
+    return;
 
     torch::jit::fuser::cuda::FusionExecutor fe;
     fe.compileFusion(&fusion);
@@ -6708,7 +6742,8 @@ void testGPU_FusionComputeAtMultiBCast() {
 }
 
 void testGPU_FusionComputeDomain() {
-  {
+  if (std::getenv("all") || std::getenv("case1")) {
+    std::cerr << "\nCase 1\n" << std::endl;
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -6724,7 +6759,151 @@ void testGPU_FusionComputeDomain() {
     tv1->computeAt(tv2, -1);
     fusion.printMath();
     fusion.printKernel();
-    return;
+  }
+  if (std::getenv("all") || std::getenv("case2")) {
+    std::cerr << "\nCase 2\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, 1);
+    fusion.printMath();
+    //fusion.printKernel();
+  }
+  if (std::getenv("all") || std::getenv("case3")) {
+    std::cerr << "\nCase 3\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    auto tv3 = add(tv1, tv2);
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv3, -1);
+    fusion.printMath();
+    //fusion.printKernel();
+  }
+  if (std::getenv("all") || std::getenv("case4")) {
+    std::cerr << "\nCase 4\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = broadcast(tv1, {true, false});
+    auto tv3 = makeDummyTensor(2);
+    fusion.addInput(tv3);
+    auto tv4 = add(tv2, tv3);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv4, -1);
+    fusion.printMath();
+    //fusion.printKernel();
+  }
+  if (std::getenv("all") || std::getenv("case5")) {
+    std::cerr << "\nCase 5\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = broadcast(tv1, {false, true});
+    auto tv3 = makeDummyTensor(2);
+    fusion.addInput(tv3);
+    auto tv4 = add(tv2, tv3);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv4, -1);
+    fusion.printMath();
+    //fusion.printKernel();
+  }
+  // no common consumer
+  if (std::getenv("all") || std::getenv("case6")) {
+    std::cerr << "\nCase 6\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    auto tv3 = add(tv2, new Float(1));
+    auto tv4 = add(tv1, new Float(1));
+    auto tv5 = add(tv4, new Float(1));
+    fusion.addOutput(tv3);
+    fusion.addOutput(tv5);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv3, -1);
+    fusion.printMath();
+    //fusion.printKernel();
+  }
+  // reduction
+  if (std::getenv("all") || std::getenv("case7")) {
+    std::cerr << "\nCase 7\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(1));
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    tv2->computeAt(tv3, -1);
+    fusion.printMath();
+    //fusion.printKernel();
+  }
+  if (std::getenv("all") || std::getenv("case8")) {
+    std::cerr << "\nCase 8\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(1));
+    auto tv4 = sum(tv1, {1});
+    auto tv5 = add(tv4, new Float(1));
+    fusion.addOutput(tv4);
+    fusion.addOutput(tv5);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    fusion.printMath();
+    //fusion.printKernel();
   }
 }
 
