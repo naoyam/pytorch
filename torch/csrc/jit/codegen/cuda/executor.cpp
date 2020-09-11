@@ -63,6 +63,9 @@ void FusionExecutor::debugCompileFusionFromStr(
       fusion_id_ > 0, "assign a fusion_id_ <= 0 is not accepted.");
 }
 
+// Temporary workaround
+#define fusion_ (*fusion_tmp_)
+
 void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   TORCH_INTERNAL_ASSERT(
       !fusion->outputs().empty(), "No output found for this kernel, aborting.");
@@ -74,8 +77,12 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   }
 
   // Clone the fusion so we can store it
+#if 0
   fusion_ = *fusion;
   FusionGuard fg(&fusion_);
+#else
+  fusion_tmp_ = fusion;
+#endif
   options_ = options;
 
   TORCH_INTERNAL_ASSERT(

@@ -111,6 +111,7 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
 
  private:
   Fusion fusion_;
+  Fusion* fusion_tmp_;
 
   bool has_block_reductions = false;
   bool has_grid_reductions = false;
