@@ -6741,172 +6741,6 @@ void testGPU_FusionComputeAtMultiBCast() {
   ASSERT_ANY_THROW(tv1->computeAt(tv3, -1));
 }
 
-void testGPU_FusionComputeDomain() {
-  if (std::getenv("all") || std::getenv("case1")) {
-    std::cerr << "\nCase 1\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(1);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = add(tv1, new Float(2));
-    fusion.addOutput(tv2);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv2, -1);
-    fusion.printMath();
-    fusion.printKernel();
-  }
-  if (std::getenv("all") || std::getenv("case2")) {
-    std::cerr << "\nCase 2\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(2);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = add(tv1, new Float(2));
-    fusion.addOutput(tv2);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv2, 1);
-    fusion.printMath();
-    //fusion.printKernel();
-  }
-  if (std::getenv("all") || std::getenv("case3")) {
-    std::cerr << "\nCase 3\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(1);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = add(tv1, new Float(2));
-    auto tv3 = add(tv1, tv2);
-    fusion.addOutput(tv3);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv3, -1);
-    fusion.printMath();
-    //fusion.printKernel();
-  }
-  if (std::getenv("all") || std::getenv("case4")) {
-    std::cerr << "\nCase 4\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(1);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = broadcast(tv1, {true, false});
-    auto tv3 = makeDummyTensor(2);
-    fusion.addInput(tv3);
-    auto tv4 = add(tv2, tv3);
-    fusion.addOutput(tv4);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv4, -1);
-    fusion.printMath();
-    //fusion.printKernel();
-  }
-  if (std::getenv("all") || std::getenv("case5")) {
-    std::cerr << "\nCase 5\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(1);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = broadcast(tv1, {false, true});
-    auto tv3 = makeDummyTensor(2);
-    fusion.addInput(tv3);
-    auto tv4 = add(tv2, tv3);
-    fusion.addOutput(tv4);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv4, -1);
-    fusion.printMath();
-    //fusion.printKernel();
-  }
-  // no common consumer
-  if (std::getenv("all") || std::getenv("case6")) {
-    std::cerr << "\nCase 6\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(1);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = add(tv1, new Float(1));
-    auto tv3 = add(tv2, new Float(1));
-    auto tv4 = add(tv1, new Float(1));
-    auto tv5 = add(tv4, new Float(1));
-    fusion.addOutput(tv3);
-    fusion.addOutput(tv5);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv3, -1);
-    fusion.printMath();
-    //fusion.printKernel();
-  }
-  // reduction
-  if (std::getenv("all") || std::getenv("case7")) {
-    std::cerr << "\nCase 7\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(2);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = sum(tv1, {1});
-    auto tv3 = add(tv2, new Float(1));
-    fusion.addOutput(tv3);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv2, -1);
-    tv2->computeAt(tv3, -1);
-    fusion.printMath();
-    //fusion.printKernel();
-  }
-  if (std::getenv("all") || std::getenv("case8")) {
-    std::cerr << "\nCase 8\n" << std::endl;
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(2);
-    fusion.addInput(tv0);
-
-    auto tv1 = add(tv0, new Float(1));
-    auto tv2 = sum(tv1, {1});
-    auto tv3 = add(tv2, new Float(1));
-    auto tv4 = sum(tv1, {1});
-    auto tv5 = add(tv4, new Float(1));
-    fusion.addOutput(tv4);
-    fusion.addOutput(tv5);
-
-    fusion.printMath();
-
-    tv1->computeAt(tv2, -1);
-    fusion.printMath();
-    //fusion.printKernel();
-  }
-}
-
 void testGPU_FusionComputeAtMultiReduction() {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -7002,6 +6836,317 @@ void testGPU_FusionComputeAtBCastReduction() {
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
+}
+
+void testGPU_FusionComputeDomain() {
+  if (std::getenv("all") || std::getenv("case1")) {
+    std::cerr << "\nCase 1\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t2 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+  if (std::getenv("all") || std::getenv("case2")) {
+    std::cerr << "\nCase 2\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, 1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(1)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::BIDx);
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+  if (std::getenv("all") || std::getenv("case3")) {
+    std::cerr << "\nCase 3\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    auto tv3 = add(tv1, tv2);
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv3, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    //int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t3});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1 + 2.0;
+    auto aten_t3 = aten_t1 + aten_t2;
+    TORCH_CHECK(aten_t3.allclose(t3));
+  }
+  if (std::getenv("all") || std::getenv("case4")) {
+    std::cerr << "\nCase 4\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = broadcast(tv1, {true, false});
+    auto tv3 = makeDummyTensor(2);
+    fusion.addInput(tv3);
+    auto tv4 = add(tv2, tv3);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv4, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::rand({numel_y, numel_x}, options);
+    at::Tensor t4 = at::empty_like(t3, options);
+
+    fe.runFusion({t0, t3}, {t4});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.unsqueeze(0).expand({numel_y, numel_x});
+    auto aten_t4 = aten_t2 + t3;
+    TORCH_CHECK(aten_t4.allclose(t4));
+  }
+
+  if (std::getenv("all") || std::getenv("case5")) {
+    std::cerr << "\nCase 5\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = broadcast(tv1, {false, true});
+    auto tv3 = makeDummyTensor(2);
+    fusion.addInput(tv3);
+    auto tv4 = add(tv2, tv3);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv4, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t4 = at::empty_like(t3, options);
+
+    fe.runFusion({t0, t3}, {t4});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.unsqueeze(1).expand({numel_x, numel_y});
+    auto aten_t4 = aten_t2 + t3;
+    TORCH_CHECK(aten_t4.allclose(t4));
+  }
+  // no common consumer
+  if (std::getenv("all") || std::getenv("case6")) {
+    std::cerr << "\nCase 6\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    auto tv3 = add(tv2, new Float(3));
+    auto tv4 = add(tv1, new Float(4));
+    auto tv5 = add(tv4, new Float(5));
+    fusion.addOutput(tv3);
+    fusion.addOutput(tv5);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv3, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    //int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::empty_like(t0, options);
+    at::Tensor t5 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t3, t5});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t3 = aten_t1 + 2.0 + 3.0;
+    auto aten_t5 = aten_t1 + 4.0 + 5.0;
+    TORCH_CHECK(aten_t3.allclose(t3));
+    TORCH_CHECK(aten_t5.allclose(t5));
+  }
+  // reduction
+  if (std::getenv("all") || std::getenv("case7")) {
+    std::cerr << "\nCase 7\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(1));
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    tv2->computeAt(tv3, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t3 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t3});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.sum({1});
+    auto aten_t3 = aten_t2 + 1.0;
+    TORCH_CHECK(aten_t3.allclose(t3));
+  }
+  if (std::getenv("all") || std::getenv("case8")) {
+    std::cerr << "\nCase 8\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(3));
+    auto tv4 = sum(tv1, {1});
+    auto tv5 = add(tv4, new Float(5));
+    fusion.addOutput(tv3);
+    fusion.addOutput(tv5);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    fusion.printMath();
+
+    std::cerr << "Printing the kernel" << std::endl;
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t3 = at::empty({numel_x}, options);
+    at::Tensor t5 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t3, t5});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.sum({1});
+    auto aten_t3 = aten_t2 + 3;
+    TORCH_CHECK(aten_t3.allclose(t3));
+    auto aten_t4 = aten_t1.sum({1});
+    auto aten_t5 = aten_t4 + 5;
+    TORCH_CHECK(aten_t5.allclose(t5));
+  }
 }
 
 } // namespace jit
