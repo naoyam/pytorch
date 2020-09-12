@@ -7156,6 +7156,83 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t5.allclose(t5));
 #endif
   }
+
+  if (std::getenv("all") || std::getenv("case9")) {
+    std::cerr << "\nCase 9\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    tv2->split(0, 4);
+    tv1->computeAt(tv2, 2);
+
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+    tv1->axis(-1)->parallelize(ParallelType::BIDx);
+    tv2->axis(-1)->parallelize(ParallelType::BIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (std::getenv("all") || std::getenv("case10")) {
+    std::cerr << "\nCase 10\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    tv2->split(0, 4);
+    tv1->computeAt(tv2, 1);
+
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+    tv1->axis(-1)->parallelize(ParallelType::BIDx);
+    tv2->axis(-1)->parallelize(ParallelType::BIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
 }
 
 } // namespace jit

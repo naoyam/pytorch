@@ -1057,6 +1057,33 @@ class BroadcastMapping: public BackwardVisitor {
   }
 };
 
+bool sameAs(Val* v1, Val* v2);
+
+bool sameAs(const Expr* e1, const Expr* e2) {
+  std::cerr << "Checking expr equivalence of " << e1 << " and " << e2 << std::endl;
+  if (e1 == nullptr || e2 == nullptr) return false;
+  if (e1->inputs().size() != e2->inputs().size() ||
+      e1->outputs().size() != e2->outputs().size() ||
+      e1->getExprType() != e2->getExprType()) {
+    return false;
+  }
+  for (size_t i = 0; i < e1->inputs().size(); ++i) {
+    if (!sameAs(e1->input(i), e2->input(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool sameAs(Val* v1, Val* v2) {
+  std::cerr << "Checking val equivalence of " << v1 << " and " << v2 << std::endl;
+  if (v1 == nullptr || v2 == nullptr) return false;
+  if (v1->getOrigin() && v2->getOrigin()) {
+    return sameAs(v1->getOrigin(), v2->getOrigin());
+  }
+  return ScalarCheck::sameAs(v1, v2);
+}
+
 } // namespace
 
 bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
@@ -1069,8 +1096,8 @@ bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
     id2 = BroadcastMapping::getConcreteDomain(id2);
   }
 
-  return ScalarCheck::sameAs(id1->start(), id2->start()) &&
-      ScalarCheck::sameAs(id1->extent(), id2->extent());
+  return sameAs(id1->start(), id2->start()) &&
+      sameAs(id1->extent(), id2->extent());
 }
 
 ComputeDomain::ComputeDomain(const TensorView* tv):
@@ -1123,7 +1150,7 @@ void ComputeDomain::computeAt(ComputeDomain* target,
         });
     if (it == target_axes.end()) {
       std::cerr << "Axis not found: " << this_axis
-                << " of " << *this << std::endl;
+                << " of " << tv_ << std::endl;
       for (const auto target_axis: target_axes) {
         std::cerr << "target axis: " << target_axis << std::endl;
       }
