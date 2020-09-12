@@ -557,9 +557,12 @@ class TORCH_CUDA_API ComputeDomain {
     return axes().size();
   }
 
-  IterDomain* axis(size_t pos) const {
-    TORCH_INTERNAL_ASSERT(pos < nDims());
-    return axes()[pos];
+  IterDomain* axis(size_t idx) const {
+    TORCH_INTERNAL_ASSERT(idx < nDims(),
+                          "Out of range error. Attempting to access axis at offset ",
+                          idx, " of size-", axes_.size(),
+                          " compute domain.");
+    return axes_[idx];
   }
 
   const std::deque<IterDomain*>& axes() const {
@@ -575,7 +578,12 @@ class TORCH_CUDA_API ComputeDomain {
 
   void split(int axis_idx);
 
-  void computeAt(ComputeDomain* target);
+  void computeAt(ComputeDomain* target, size_t target_pos,
+                 size_t pos);
+
+  size_t getPos() const {
+    return pos_;
+  }
 
   std::ostream& print(std::ostream& os) const;
 
@@ -589,13 +597,14 @@ class TORCH_CUDA_API ComputeDomain {
                           " compute domain.");
     axes_[idx] = id;
   }
-  void updateDependents(size_t pos);
+  void updateDependents();
   void registerDependent(ComputeDomain* dependent, size_t pos);
   bool isDependent(const ComputeDomain* cd) const;
 
  private:
-  const TensorView* tv_;
+  const TensorView* tv_ = nullptr;
   std::deque<IterDomain*> axes_;
+  size_t pos_ = 0;
   std::vector<std::pair<size_t, ComputeDomain*>> dependents_;
 };
 

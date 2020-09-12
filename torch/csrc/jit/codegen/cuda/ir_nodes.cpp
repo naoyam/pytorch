@@ -1105,51 +1105,50 @@ void ComputeDomain::split(int axis_idx) {
 // Adapt this compute domain so that it is computed under the target
 // domain. TensorDomain is assumed to be already transformed by
 // replayPasC or replayCasP.
-void ComputeDomain::computeAt(ComputeDomain* target) {
+void ComputeDomain::computeAt(ComputeDomain* target,
+                              size_t target_pos,
+                              size_t pos) {
   const TensorDomain* td = tv_->domain();
-  auto ca_axes_end = target->axes().begin();
-  size_t own_id_begin = td->nDims();
-  // find how many axes match with the target axes
-  for (size_t i = 0; i < td->nDims(); ++i) {
-    auto id = td->domain().at(i);
+  TORCH_INTERNAL_ASSERT(pos <= target_pos);
+  TORCH_INTERNAL_ASSERT(pos <= td->nDims());
+  TORCH_INTERNAL_ASSERT(target_pos <= target->nDims());
+  std::vector<IterDomain*> target_axes{target->axes().begin(),
+                                       target->axes().begin() + target_pos};
+  for (size_t i = 0; i < pos; ++i) {
+    IterDomain* this_axis = td->axis(i);
     auto it = std::find_if(
-        target->axes().begin(), target->axes().end(),
-        [&id](const IterDomain* ca) {
-          return ComputeDomain::sameAxes(id, ca);
+        target_axes.begin(), target_axes.end(),
+        [this_axis](const IterDomain* ca) {
+          return ComputeDomain::sameAxes(this_axis, ca);
         });
-    if (it == target->axes().end()) {
-      own_id_begin = i;
-      break;
-    } else {
-      ca_axes_end = it + 1;
+    if (it == target_axes.end()) {
+      std::cerr << "Axis not found: " << this_axis
+                << " of " << *this << std::endl;
+      for (const auto target_axis: target_axes) {
+        std::cerr << "target axis: " << target_axis << std::endl;
+      }
+      std::cerr << "Target domain: " << *target << std::endl;
+      TORCH_INTERNAL_ASSERT(false);
     }
-  }
-
-  auto num_ca_doms = std::distance(target->axes().begin(), ca_axes_end);
-  const auto num_own_doms = td->nDims() - own_id_begin;
-
-  std::cerr << "New compute domain has " << num_ca_doms << " shared domains and "
-            << num_own_doms << " own domains." << std::endl;
-
-  if (num_own_doms == 0 && num_ca_doms < target->axes().size()) {
-    std::cerr << "All domains are matched, but not all of the target CA domains are used. Carry the remaining ones." << std::endl;
-    ca_axes_end = target->axes().end();
-    num_ca_doms = target->nDims();
+    target_axes.erase(it);
   }
 
   axes_.clear();
 
   // Copy from target domain
-  std::copy(target->axes().begin(), ca_axes_end,
+  std::copy(target->axes().begin(),
+            target->axes().begin() + target_pos,
             std::back_inserter(axes_));
 
+  pos_ = target_pos;
+
   // Set up own compute axes
-  std::copy(td->domain().begin() + own_id_begin,
+  std::copy(td->domain().begin() + pos,
             td->domain().end(),
             std::back_inserter(axes_));
 
-  updateDependents(num_ca_doms);
-  target->registerDependent(this, num_ca_doms);
+  updateDependents();
+  target->registerDependent(this, getPos());
 }
 
 bool ComputeDomain::isDependent(const ComputeDomain* cd) const {
@@ -1161,14 +1160,13 @@ bool ComputeDomain::isDependent(const ComputeDomain* cd) const {
   return false;
 }
 
-void ComputeDomain::updateDependents(size_t pos) {
+void ComputeDomain::updateDependents() {
   for (auto& dep: dependents_) {
-    auto affected_pos = std::min(pos, dep.first);
+    const auto num_axes = dep.first;
     auto affected_cd = dep.second;
-    for (size_t i = 0; i < affected_pos; ++i) {
-      affected_cd->setAxis(i, axis(i));
-    }
-    affected_cd->updateDependents(affected_pos);
+    std::copy(axes().begin(), axes().begin() + num_axes,
+              affected_cd->axes_.begin());
+    affected_cd->updateDependents();
   }
 }
 
@@ -1191,7 +1189,11 @@ std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
 
 std::ostream& ComputeDomain::print(std::ostream& os) const {
   os << "compute_domain(" << " T" << tv_->name() << ",";
-  for (size_t i = 0; i < nDims(); ++i) {
+  for (size_t i = 0; i < pos_; ++i) {
+    os << " {" << axis(i) << "}";
+  }
+  os << " |";
+  for (size_t i = pos_; i < nDims(); ++i) {
     os << " {" << axis(i) << "}";
   }
   os << " )";
