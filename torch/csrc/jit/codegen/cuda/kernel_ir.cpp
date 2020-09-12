@@ -396,6 +396,7 @@ Allocate::Allocate(
 
   if (memory_type_ == MemoryType::Local) {
     if (!size_->isConstScalar()) {
+#if 0
       TORCH_INTERNAL_ASSERT(
           false,
           "Allocations must be based on constant integers for the memory type ",
@@ -403,6 +404,7 @@ Allocate::Allocate(
           " but tried to alloc ",
           buffer_,
           " with symbolic size.");
+#endif
     }
   }
 

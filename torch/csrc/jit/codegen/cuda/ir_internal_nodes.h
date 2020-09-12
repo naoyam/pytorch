@@ -545,101 +545,24 @@ class TORCH_CUDA_API TensorDomain : public Val {
   const std::vector<bool> contiguity_;
 };
 
-class TORCH_CUDA_API ComputeAxis {
- public:
-
-  explicit ComputeAxis(IterDomain* id): id_(id) {}
-  explicit ComputeAxis(const ComputeAxis* other): compute_at_(other) {}
-
-  const ComputeAxis* getComputeAt() const {
-    return compute_at_;
-  }
-
-  void set(const ComputeAxis* other) {
-    //std::cerr << "other->getTerminatingAxis(): " << other->getTerminatingAxis() << std::endl;
-    if (other->getTerminatingAxis() == this->getTerminatingAxis()) {
-      // prevent looping
-      return;
-    }
-    nullify();
-    compute_at_ = other;
-    checkLoop();
-  }
-
-  void set(IterDomain* id) {
-    nullify();
-    id_ = id;
-  }
-
-  void checkLoop();
-
-  bool isComputedAt() const {
-    return compute_at_ != nullptr;
-  }
-
-  IterDomain* getEffectiveDomain() const {
-    sanityCheck();
-    if (isComputedAt()) {
-      return compute_at_->getEffectiveDomain();
-    } else {
-      return id_;
-    }
-  }
-
-  std::ostream& print(std::ostream& os) const;
-
-  static bool sameAs(const IterDomain* id1, const IterDomain* id2);
-
-  bool sameAs(const IterDomain* other) const {
-    return sameAs(getEffectiveDomain(), other);
-  }
-
- private:
-  void nullify() {
-    id_ = nullptr;
-    compute_at_ = nullptr;
-  }
-
-  void sanityCheck() const {
-    TORCH_INTERNAL_ASSERT((id_ != nullptr && compute_at_ == nullptr) ||
-                          (id_ == nullptr && compute_at_ != nullptr && compute_at_ != this));
-  }
-
-  const ComputeAxis* getTerminatingAxis() const {
-    auto axis = this;
-    while (axis->isComputedAt()) {
-      axis = axis->getComputeAt();
-    }
-    return axis;
-  }
-
- private:
-  IterDomain* id_ = nullptr;
-  const ComputeAxis* compute_at_ = nullptr;
-};
-
-std::ostream& operator<<(std::ostream& os, const ComputeAxis& ca);
-
 class TORCH_CUDA_API ComputeDomain {
  public:
   explicit ComputeDomain(const TensorView* tv);
+#if 0
   explicit ComputeDomain(const TensorView* tv,
-                         const std::deque<ComputeAxis*>& axes);
+                         const std::deque<IterDomain*>& axes);
+#endif
 
   size_t nDims() const {
-    return axes_.size();
+    return axes().size();
   }
 
-  std::vector<IterDomain*> getDomain() const {
-    std::vector<IterDomain*> domain(nDims(), nullptr);
-    std::transform(axes().begin(), axes().end(), domain.begin(),
-                   [](const ComputeAxis* ca) {
-                     return ca->getEffectiveDomain();
-                   });
-    return domain;
+  IterDomain* axis(size_t pos) const {
+    TORCH_INTERNAL_ASSERT(pos < nDims());
+    return axes()[pos];
   }
 
-  const std::deque<ComputeAxis*>& axes() const {
+  const std::deque<IterDomain*>& axes() const {
     return axes_;
   }
 
@@ -652,17 +575,28 @@ class TORCH_CUDA_API ComputeDomain {
 
   void split(int axis_idx);
 
-  void computeAt(const ComputeDomain* target);
+  void computeAt(ComputeDomain* target);
 
   std::ostream& print(std::ostream& os) const;
 
+  static bool sameAxes(const IterDomain* id1, const IterDomain* id2);
+
  private:
-  //void setRootDomain();
+  void setAxis(size_t idx, IterDomain* id) {
+    TORCH_INTERNAL_ASSERT(idx < axes_.size(),
+                          "Out of range error. Attempting to access axis at offset ",
+                          idx, " of size-", axes_.size(),
+                          " compute domain.");
+    axes_[idx] = id;
+  }
+  void updateDependents(size_t pos);
+  void registerDependent(ComputeDomain* dependent, size_t pos);
+  bool isDependent(const ComputeDomain* cd) const;
 
  private:
   const TensorView* tv_;
-  std::deque<ComputeAxis*> axes_;
-  //std::unordered_set<IterDomain*> root_domain_;
+  std::deque<IterDomain*> axes_;
+  std::vector<std::pair<size_t, ComputeDomain*>> dependents_;
 };
 
 std::ostream& operator<<(std::ostream& os, const ComputeDomain& cd);

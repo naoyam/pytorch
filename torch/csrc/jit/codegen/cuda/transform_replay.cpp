@@ -197,7 +197,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
       (unsigned int)consumer_compute_at_axis <= consumer_cd->nDims(),
       "Invalid axis in transform replayPasC.");
 
-  std::vector<IterDomain*> consumer_domain = consumer_cd->getDomain();
+  const auto& consumer_domain = consumer_cd->axes();
 
   // consumer ids we need to match in producer
   std::vector<IterDomain*> consumer_CA_ids(
@@ -401,7 +401,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
       (unsigned int)producer_compute_at_axis <= producer_cd->nDims(),
       "Invalid axis in transform replayCasP.");
 
-  std::vector<IterDomain*> producer_domain = producer_cd->getDomain();
+  const auto& producer_domain = producer_cd->axes();
 
   // producer ids we need to match in consumer
   std::vector<IterDomain*> producer_CA_ids(

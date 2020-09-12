@@ -636,13 +636,16 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     auto ca_id = tv->getComputeAtAxis(tv_i).first;
     auto kir_ca_id = kir::lowerValue(ca_id)->as<kir::IterDomain>();
 
+    std::cerr << "Looking up " << ca_id << " (" << kir_ca_id << ")" << std::endl;
+
     loops_it =
-        std::find_if(loops_it, loops.end(), [&kir_ca_id](const auto& loop) {
+        std::find_if(loops_it, loops.end(), [&kir_ca_id](const kir::ForLoop* loop) {
           return kir_ca_id == loop->iter_domain() ||
               loop->iter_domain()->getParallelType() == ParallelType::Unroll;
         });
 
     if (loops_it == loops.end()) {
+      std::cout << "getAllocPoint for " << tv << std::endl;
       for (auto loop : loops) {
         std::cout << loop->iter_domain() << "  ";
       }
