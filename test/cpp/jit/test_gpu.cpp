@@ -7129,11 +7129,10 @@ void testGPU_FusionComputeDomain() {
     tv1->computeAt(tv2, -1);
     fusion.printMath();
 
-    // Doesn't work yet
-#if 0
-    std::cerr << "Printing the kernel" << std::endl;
     fusion.printKernel();
 
+    // Doesn't work yet
+#if 1
     torch::jit::fuser::cuda::FusionExecutor fe;
     std::cerr << "Compiling fusion" << std::endl;
     fe.compileFusion(&fusion);
