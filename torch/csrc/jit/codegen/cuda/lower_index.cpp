@@ -87,8 +87,12 @@ void IndexLowering::handle(UnaryOp* uop) {
     return;
   }
 
+  std::cerr << "IndexLowering UnaryOp: " << uop << std::endl;
+
   const auto in = lowerOperand(uop->in(), uop->out());
   const auto out = lowerOutput(uop);
+
+  std::cerr << "Lowered: " << out << " = " << in << std::endl;
   pushBack(new kir::UnaryOp(uop->getUnaryOpType(), out, in));
 }
 
@@ -148,7 +152,7 @@ void IndexLowering::handle(ReductionOp* rop) {
       "Cannot have a reduction operation on something other than a tensor view, but received ",
       rop);
 
-  std::cerr << "IndexLowering: " << rop << std::endl;
+  std::cerr << "ReductionOp IndexLowering: " << rop << std::endl;
 
   auto out_tv = ir_utils::asTV(rop->out());
 

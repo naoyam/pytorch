@@ -1102,7 +1102,10 @@ bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
 
 ComputeDomain::ComputeDomain(const TensorView* tv):
     tv_(tv), axes_(tv->domain()->domain().begin(),
-                   tv->domain()->domain().end()) {}
+                   tv->domain()->domain().end()),
+    td_map_(tv_->nDims()) {
+  std::iota(td_map_.begin(), td_map_.end(), 0);
+}
 
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
     const std::vector<IterDomain*>& root_domain,
@@ -1144,6 +1147,7 @@ void ComputeDomain::computeAt(ComputeDomain* target,
   std::vector<IterDomain*> target_axes{target->axes().begin(),
                                        target->axes().begin() + target_pos};
   auto target_axes_it = target_axes.begin();
+  td_map_.resize(td->nDims());
   for (size_t i = 0; i < pos; ++i) {
     IterDomain* this_axis = td->axis(i);
     target_axes_it = std::find_if(
@@ -1160,6 +1164,7 @@ void ComputeDomain::computeAt(ComputeDomain* target,
       std::cerr << "Target domain: " << *target << std::endl;
       TORCH_INTERNAL_ASSERT(false);
     }
+    td_map_[i] = std::distance(target_axes.begin(), target_axes_it);
     // Search the rest of td in the remaining target axes
     ++target_axes_it;
   }
@@ -1180,8 +1185,11 @@ void ComputeDomain::computeAt(ComputeDomain* target,
             td->domain().end(),
             std::back_inserter(axes_));
 
+  std::iota(td_map_.begin() + pos, td_map_.end(),
+            num_shared_axes);
+
   updateDependents();
-  target->registerDependent(this, getPos());
+  target->registerDependent(this, getComputeAtPos());
 
   std::cerr << "computeAt done: " << *this << std::endl;
 }
@@ -1224,12 +1232,22 @@ std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
 
 std::ostream& ComputeDomain::print(std::ostream& os) const {
   os << "compute_domain(" << " T" << tv_->name() << ",";
+  auto map_it = td_map_.begin();
   for (size_t i = 0; i < pos_; ++i) {
-    os << " {" << axis(i) << "}";
+    os << " " << axis(i);
+    if (map_it != td_map_.end() && *map_it == i) {
+      os << "@" << std::distance(td_map_.begin(), map_it);
+      ++map_it;
+    }
   }
   os << " |";
   for (size_t i = pos_; i < nDims(); ++i) {
-    os << " {" << axis(i) << "}";
+    os << " " << axis(i);
+    if (map_it != td_map_.end() && *map_it == i) {
+      os << "@" << std::distance(td_map_.begin(), map_it);
+      ++map_it;
+    }
+    ++map_it;
   }
   os << " )";
   return os;

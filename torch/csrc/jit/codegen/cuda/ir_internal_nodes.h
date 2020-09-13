@@ -581,8 +581,26 @@ class TORCH_CUDA_API ComputeDomain {
   void computeAt(ComputeDomain* target, size_t target_pos,
                  size_t pos);
 
-  size_t getPos() const {
+  size_t getComputeAtPos() const {
     return pos_;
+  }
+
+  size_t getPos(size_t td_pos) const {
+    if (td_pos == 0) return 0;
+    auto td_axis = td_pos - 1;
+    auto cd_axis = getComputeDomainAxisIndex(td_axis);
+    return cd_axis + 1;
+  }
+
+  size_t getComputeDomainAxisIndex(size_t td_axis) const {
+    TORCH_INTERNAL_ASSERT(td_axis < td_map_.size());
+    return td_map_.at(td_axis);
+  }
+
+  size_t getTensorDomainAxisIndex(size_t cd_axis) const {
+    auto it = std::find(td_map_.begin(), td_map_.end(), cd_axis);
+    TORCH_INTERNAL_ASSERT(it != td_map_.end());
+    return std::distance(td_map_.begin(), it);
   }
 
   std::ostream& print(std::ostream& os) const;
@@ -604,6 +622,8 @@ class TORCH_CUDA_API ComputeDomain {
  private:
   const TensorView* tv_ = nullptr;
   std::deque<IterDomain*> axes_;
+  // Mapping from TD IterDomain index to CD IterDomain index
+  std::vector<size_t> td_map_;
   size_t pos_ = 0;
   std::vector<std::pair<size_t, ComputeDomain*>> dependents_;
 };

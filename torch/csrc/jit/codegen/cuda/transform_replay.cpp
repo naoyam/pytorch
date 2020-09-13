@@ -406,7 +406,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
   // producer ids we need to match in consumer
   std::vector<IterDomain*> producer_CA_ids(
       producer_domain.begin(),
-      producer_domain.begin() + producer_compute_at_axis);
+      producer_domain.begin() +
+      producer_cd->getPos(producer_compute_at_axis));
   //producer_CA_ids = TensorDomain::noReductions(producer_CA_ids);
 
   for (const auto& id: producer_CA_ids) {
@@ -646,7 +647,8 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayCasP(
       replayCasP(consumer->domain(), producer->domain(), producer->getComputeDomain(),
                  compute_at_axis);
   consumer->setDomain(replay.first);
-  consumer->getComputeDomain()->computeAt(producer->getComputeDomain(), compute_at_axis,
+  consumer->getComputeDomain()->computeAt(producer->getComputeDomain(),
+                                          producer->getComputeDomain()->getPos(compute_at_axis),
                                           replay.second);
   std::cerr << "consumer new CD: " << *consumer->getComputeDomain() << std::endl;
   return {consumer, replay.second};

@@ -1049,11 +1049,14 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
 
   std::vector<Val*> strided_inds;
   for (size_t i = 0; i < root_dom.size(); i++) {
+    std::cerr << "root dom: " << root_dom[i] << std::endl;
     if (root_dom[i]->isReduction() || root_dom[i]->isBroadcast()) {
       continue;
     }
 
     auto kir_root_dom_i = kir::lowerValue(root_dom[i])->as<kir::IterDomain>();
+
+    std::cerr << "root dom (lowered): " << kir_root_dom_i << std::endl;
 
     TORCH_INTERNAL_ASSERT(
         index_map.find(kir_root_dom_i) != index_map.end(),
@@ -1108,9 +1111,11 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
     }
   }
 
+  std::cerr << "getConsumerIndex_impl::strided_inds 1: " << strided_inds << std::endl;
   if (strided_inds.size() == 0)
     strided_inds.push_back(new kir::Int(0));
 
+  std::cerr << "getConsumerIndex_impl::strided_inds 2: " << strided_inds << std::endl;
   return new kir::TensorIndex(consumer_tv, strided_inds);
 }
 

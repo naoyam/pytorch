@@ -625,6 +625,7 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   if (tv->getMemoryType() == MemoryType::Global) {
     return {nullptr, 0};
   }
+  std::cerr << "getAllocPoint of " << tv << std::endl;
 #if 0
   std::cerr << "getAllocPoint of " << tv
             << " in {";
@@ -679,9 +680,11 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   if (original) {
     return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
   } else {
-    if (tv->getComputeDomain()->getPos() > 0) {
-      auto loop_idx = tv->getComputeDomain()->getPos() - 1;
-      if (tv->axis(loop_idx)->isReduction()) {
+    std::cerr << "Searching loop where alloc should be placed\n";
+    if (tv->getComputeDomain()->getComputeAtPos() > 0) {
+      auto loop_idx = tv->getComputeDomain()->getComputeAtPos() - 1;
+      auto tv_axis_idx = tv->getComputeDomain()->getTensorDomainAxisIndex(loop_idx);
+      if (tv->axis(tv_axis_idx)->isReduction()) {
         --loop_idx;
       }
       if (loop_idx >= loops.size()) {
