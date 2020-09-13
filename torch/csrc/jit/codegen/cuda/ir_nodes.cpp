@@ -1135,20 +1135,23 @@ void ComputeDomain::split(int axis_idx) {
 void ComputeDomain::computeAt(ComputeDomain* target,
                               size_t target_pos,
                               size_t pos) {
+  std::cerr << "computeAt: " << *target
+            << ", " << target_pos << ", " << pos << std::endl;
   const TensorDomain* td = tv_->domain();
   TORCH_INTERNAL_ASSERT(pos <= target_pos);
   TORCH_INTERNAL_ASSERT(pos <= td->nDims());
   TORCH_INTERNAL_ASSERT(target_pos <= target->nDims());
   std::vector<IterDomain*> target_axes{target->axes().begin(),
                                        target->axes().begin() + target_pos};
+  auto target_axes_it = target_axes.begin();
   for (size_t i = 0; i < pos; ++i) {
     IterDomain* this_axis = td->axis(i);
-    auto it = std::find_if(
-        target_axes.begin(), target_axes.end(),
+    target_axes_it = std::find_if(
+        target_axes_it, target_axes.end(),
         [this_axis](const IterDomain* ca) {
           return ComputeDomain::sameAxes(this_axis, ca);
         });
-    if (it == target_axes.end()) {
+    if (target_axes_it == target_axes.end()) {
       std::cerr << "Axis not found: " << this_axis
                 << " of " << tv_ << std::endl;
       for (const auto target_axis: target_axes) {
@@ -1157,17 +1160,20 @@ void ComputeDomain::computeAt(ComputeDomain* target,
       std::cerr << "Target domain: " << *target << std::endl;
       TORCH_INTERNAL_ASSERT(false);
     }
-    target_axes.erase(it);
+    // Search the rest of td in the remaining target axes
+    ++target_axes_it;
   }
+
+  auto num_shared_axes = std::distance(target_axes.begin(), target_axes_it);
 
   axes_.clear();
 
   // Copy from target domain
   std::copy(target->axes().begin(),
-            target->axes().begin() + target_pos,
+            target->axes().begin() + num_shared_axes,
             std::back_inserter(axes_));
 
-  pos_ = target_pos;
+  pos_ = num_shared_axes;
 
   // Set up own compute axes
   std::copy(td->domain().begin() + pos,
@@ -1176,6 +1182,8 @@ void ComputeDomain::computeAt(ComputeDomain* target,
 
   updateDependents();
   target->registerDependent(this, getPos());
+
+  std::cerr << "computeAt done: " << *this << std::endl;
 }
 
 bool ComputeDomain::isDependent(const ComputeDomain* cd) const {

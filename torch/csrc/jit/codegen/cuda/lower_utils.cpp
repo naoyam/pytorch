@@ -618,10 +618,21 @@ namespace loop_utils {
 std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops) {
+
+  bool original = std::getenv("ORIGINAL");
+
   // If in global memory, it can be all the way outside the loops.
   if (tv->getMemoryType() == MemoryType::Global) {
     return {nullptr, 0};
   }
+#if 0
+  std::cerr << "getAllocPoint of " << tv
+            << " in {";
+  for (const auto& l: loops) {
+    std::cerr << " " << l;
+  }
+  std::cerr << " }" << std::endl;
+#endif
 
   // Figure out where we want to place alloc/reduction initialization. We want
   // outside an unroll loop, or inside our computeAt point.
@@ -635,36 +646,53 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
 
     auto ca_id = tv->getComputeAtAxis(tv_i).first;
     auto kir_ca_id = kir::lowerValue(ca_id)->as<kir::IterDomain>();
+    if (original) {
+      std::cerr << "Looking up " << ca_id << " (" << kir_ca_id << ")" << std::endl;
 
-    std::cerr << "Looking up " << ca_id << " (" << kir_ca_id << ")" << std::endl;
+      loops_it =
+          std::find_if(loops_it, loops.end(), [&kir_ca_id](const kir::ForLoop* loop) {
+            return kir_ca_id == loop->iter_domain() ||
+                loop->iter_domain()->getParallelType() == ParallelType::Unroll;
+          });
 
-    loops_it =
-        std::find_if(loops_it, loops.end(), [&kir_ca_id](const kir::ForLoop* loop) {
-          return kir_ca_id == loop->iter_domain() ||
-              loop->iter_domain()->getParallelType() == ParallelType::Unroll;
-        });
-
-    if (loops_it == loops.end()) {
-      std::cout << "getAllocPoint for " << tv << std::endl;
-      for (auto loop : loops) {
-        std::cout << loop->iter_domain() << "  ";
+      if (loops_it == loops.end()) {
+        std::cout << "getAllocPoint for " << tv << std::endl;
+        for (auto loop : loops) {
+          std::cout << loop->iter_domain() << "  ";
+        }
+        std::cout << std::endl;
       }
-      std::cout << std::endl;
+      TORCH_INTERNAL_ASSERT(
+          loops_it != loops.end(),
+          "Could not find all required axes for indexing when trying to index into ",
+          tv);
     }
-    TORCH_INTERNAL_ASSERT(
-        loops_it != loops.end(),
-        "Could not find all required axes for indexing when trying to index into ",
-        tv);
-
     if (kir_ca_id->getParallelType() == ParallelType::Unroll) {
       return {alloc_loop, tv_i};
     }
-
-    alloc_loop = *loops_it;
-    ++loops_it;
+    if (original) {
+      alloc_loop = *loops_it;
+      ++loops_it;
+    }
   }
 
-  return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
+  if (original) {
+    return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
+  } else {
+    if (tv->getComputeDomain()->getPos() > 0) {
+      auto loop_idx = tv->getComputeDomain()->getPos() - 1;
+      if (tv->axis(loop_idx)->isReduction()) {
+        --loop_idx;
+      }
+      if (loop_idx >= loops.size()) {
+        std::cerr << "num loops: " << loops.size()
+                  << ", position: " << loop_idx
+                  << std::endl;
+      }
+      alloc_loop = loops.at(loop_idx);
+    }
+    return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
+  }
 }
 
 std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(

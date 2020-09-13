@@ -148,6 +148,8 @@ void IndexLowering::handle(ReductionOp* rop) {
       "Cannot have a reduction operation on something other than a tensor view, but received ",
       rop);
 
+  std::cerr << "IndexLowering: " << rop << std::endl;
+
   auto out_tv = ir_utils::asTV(rop->out());
 
   const bool is_block_reduce = out_tv->hasBlockReduction();
@@ -169,8 +171,12 @@ void IndexLowering::handle(ReductionOp* rop) {
   const auto loops = scope_utils::getLoops(active_scope_expr);
 
   kir::TensorIndex* out = Index::getConsumerIndex(out_tv, loops);
+
+  std::cerr << "consumer index: " << out << std::endl;
   kir::TensorIndex* in = Index::getProducerIndex(
       ir_utils::asTV(rop->in()), ir_utils::asTV(rop->out()), loops);
+
+  std::cerr << "producer index: " << in << std::endl;
 
   kir::ReductionOp* block_reduction_op = nullptr;
   if (is_block_reduce) {

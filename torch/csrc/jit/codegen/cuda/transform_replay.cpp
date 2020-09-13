@@ -557,6 +557,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
     used_IDs.emplace(it->second);
   }
 
+  auto num_shared_axes = new_IDs.size();
+
   // Add axes in (2)
   std::unordered_set<IterDomain*> consumer_CA_ids_set(
       producer_CA_ids.begin(), producer_CA_ids.end());
@@ -593,10 +595,14 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
       new_IDs,
       consumer->contiguity());
 
-  std::cerr << "Replayed consumer domain: " << replayed << std::endl;
+  std::cerr << "Replayed consumer domain: " << replayed
+            << ", num shared axes: " << num_shared_axes
+            << std::endl;
 
   // TODO: computeAt position should be on a position in the compute domain.
-  return {replayed, TensorDomain::noReductions(producer_CA_ids).size()};
+  //return {replayed,
+  //TensorDomain::noReductions(producer_CA_ids).size()};
+  return {replayed, num_shared_axes};
 }
 
 // replay Producer as Consumer
@@ -642,6 +648,7 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayCasP(
   consumer->setDomain(replay.first);
   consumer->getComputeDomain()->computeAt(producer->getComputeDomain(), compute_at_axis,
                                           replay.second);
+  std::cerr << "consumer new CD: " << *consumer->getComputeDomain() << std::endl;
   return {consumer, replay.second};
 }
 

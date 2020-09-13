@@ -850,6 +850,11 @@ kir::TensorIndex* Index::getProducerIndex_impl(
     TensorView* producer_tv,
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops) {
+
+  std::cerr << "getProducerIndex_impl: " << producer_tv << ", "
+            << consumer_tv << std::endl;
+
+
   // producer_tv->domain() is not replayed as the loop strucutre we were
   // provided, so replay it to match consumer_tv which is.
   auto producerAsC = TransformReplay::replayPasC(
