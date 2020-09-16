@@ -6864,7 +6864,7 @@ void testGPU_FusionBCastMerge() {
   at::Tensor t3 = at::rand({numel_x, numel_y, numel_z}, options);
   at::Tensor t4 = at::empty_like(t3, options);
 
-  fe.runFusion({t0, t4}, {t4});
+  fe.runFusion({t0, t3}, {t4});
 
   auto aten_t1 = t0 + 1.0;
   auto aten_t2 = aten_t1.unsqueeze(-1).expand({numel_x, numel_y, numel_z});
