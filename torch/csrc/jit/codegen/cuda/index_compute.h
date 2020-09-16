@@ -152,6 +152,10 @@ class Index {
       TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
 
+  static kir::TensorIndex* getConsumerIndex_impl2(
+      TensorView* consumer,
+      const std::vector<kir::ForLoop*>& loops);
+
   // Producer if it's in global memory
   static kir::TensorIndex* getGlobalProducerIndex(
       TensorView* producer,

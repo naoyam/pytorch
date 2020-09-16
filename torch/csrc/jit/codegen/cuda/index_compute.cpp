@@ -843,6 +843,16 @@ std::unordered_map<kir::ForLoop*, Val*> indexMapFromTV(
   }
   return loop_to_ind_map;
 }
+
+Val* mul_if_nonnull(Val* v1, Val* v2) {
+  if (v1 == nullptr) {
+    return v2;
+  } else if (v2 == nullptr) {
+    return v1;
+  } else {
+    return kir::mulExpr(v1, v2);
+  }
+}
 } // namespace
 
 // Producer index for either shared or local memory
@@ -1119,6 +1129,43 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
   return new kir::TensorIndex(consumer_tv, strided_inds);
 }
 
+kir::TensorIndex* Index::getConsumerIndex_impl2(
+    TensorView* consumer_tv,
+    const std::vector<kir::ForLoop*>& loops) {
+
+  std::cerr << "getConsumerIndex_impl2: "
+            << "Generating index val for " << consumer_tv << std::endl;
+
+  const ComputeDomain* cd = consumer_tv->getComputeDomain();
+  std::vector<Val*> strided_inds;
+  for (size_t i = cd->getComputeAtPos(); i != cd->nDims(); ++i) {
+    IterDomain* axis = cd->axis(i);
+    // Parallelized domain doesn't need offsetting
+    if (axis->isParallelized()) continue;
+    kir::IterDomain* kir_axis = kir::lowerValue(axis)->as<kir::IterDomain>();
+    kir::ForLoop* loop = loops.at(i);
+    Val* idx = loop->index();
+
+    std::cerr << "axis: " << axis
+              << ", kir axis: " << kir_axis
+              << ", idx: " << idx
+              << std::endl;
+
+    //Val* stride = nullptr;
+    Val* stride = new kir::Int(1);
+    for (size_t j = i + 1; j < cd->nDims(); ++j) {
+      IterDomain* axis_j = cd->axis(j);
+      if (axis_j->isParallelized()) continue;
+      Val* extent = kir::lowerValue(axis_j->extent());
+      stride = mul_if_nonnull(stride, extent);
+    }
+
+    strided_inds.push_back(mul_if_nonnull(idx, stride));
+  }
+
+  return new kir::TensorIndex(consumer_tv, strided_inds);
+}
+
 // Producer is the inputs of an expression
 kir::TensorIndex* Index::getProducerIndex(
     TensorView* producer,
@@ -1147,7 +1194,11 @@ kir::TensorIndex* Index::getConsumerIndex(
     return getGlobalConsumerIndex(consumer, loops);
   }
 
-  return getConsumerIndex_impl(consumer, loops);
+  if (std::getenv("INDEX2")) {
+    return getConsumerIndex_impl2(consumer, loops);
+  } else {
+    return getConsumerIndex_impl(consumer, loops);
+  }
 }
 
 // Basically just copy getGlobalConsumerIndex, just don't do the striding and
