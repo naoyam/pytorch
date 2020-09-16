@@ -6830,6 +6830,48 @@ void testGPU_FusionInputsIdLookup() {
   TORCH_CHECK(id_1_relook.eviction == false);
 }
 
+void testGPU_FusionBCastMerge() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  int numel_x = 3;
+  int numel_y = 4;
+  int numel_z = 5;
+
+  auto tv0 = makeConcreteTensor({numel_x, numel_y});
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Float(1));
+  auto tv2 = broadcast(tv1, {false, false, true});
+  auto tv3 = makeConcreteTensor({numel_x, numel_y, numel_z});
+  fusion.addInput(tv3);
+  auto tv4 = add(tv2, tv3);
+  fusion.addOutput(tv4);
+
+  // Works fine without merging but generates invalid code otherwise
+  tv2->merge(1);
+  tv4->merge(1);
+
+  tv1->computeAt(tv4, 1);
+  fusion.printMath();
+  fusion.printKernel();
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+  at::Tensor t3 = at::rand({numel_x, numel_y, numel_z}, options);
+  at::Tensor t4 = at::empty_like(t3, options);
+
+  fe.runFusion({t0, t4}, {t4});
+
+  auto aten_t1 = t0 + 1.0;
+  auto aten_t2 = aten_t1.unsqueeze(-1).expand({numel_x, numel_y, numel_z});
+  auto aten_t4 = aten_t2 + t3;
+  TORCH_CHECK(aten_t4.allclose(t4));
+}
+
 } // namespace jit
 } // namespace torch
 
