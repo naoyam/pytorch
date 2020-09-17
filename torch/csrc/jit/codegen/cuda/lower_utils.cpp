@@ -681,10 +681,16 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
   } else {
     std::cerr << "Searching loop where alloc should be placed\n";
-    if (tv->getComputeDomain()->getComputeAtPos() > 0) {
-      auto loop_idx = tv->getComputeDomain()->getComputeAtPos() - 1;
+    ComputeDomain* cd = tv->getComputeDomain();
+    if (cd->getComputeAtPos() > 0) {
+      size_t loop_idx = cd->getComputeAtPos() - 1;
+      while (!cd->isComputeDomainAxisUsed(loop_idx)) {
+        TORCH_INTERNAL_ASSERT(loop_idx > 0);
+        --loop_idx;
+      }
       auto tv_axis_idx = tv->getComputeDomain()->getTensorDomainAxisIndex(loop_idx);
       if (tv->axis(tv_axis_idx)->isReduction()) {
+        TORCH_INTERNAL_ASSERT(loop_idx > 0);
         --loop_idx;
       }
       if (loop_idx >= loops.size()) {
@@ -693,6 +699,9 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
                   << std::endl;
       }
       alloc_loop = loops.at(loop_idx);
+      std::cerr << "alloc point found at " << loop_idx << std::endl;
+    } else {
+      std::cerr << "compute at pos == 0" << std::endl;
     }
     return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
   }

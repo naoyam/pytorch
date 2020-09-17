@@ -6,8 +6,9 @@
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
-
+#include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/compute_at.h>
 
 #include <sstream>
 
@@ -1100,11 +1101,19 @@ bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
       sameAs(id1->extent(), id2->extent());
 }
 
-ComputeDomain::ComputeDomain(const TensorView* tv):
-    tv_(tv), axes_(tv->domain()->domain().begin(),
-                   tv->domain()->domain().end()),
-    td_map_(tv_->nDims()) {
+ComputeDomain::ComputeDomain(const TensorDomain* td):
+    td_(td->domain()),
+    axes_(td->domain().begin(),
+          td->domain().end()),
+    td_map_(td->nDims()) {
   std::iota(td_map_.begin(), td_map_.end(), 0);
+}
+
+ComputeDomain::ComputeDomain(const TensorDomain* td,
+                             int this_pos,
+                             const ComputeDomain* target,
+                             int target_pos) {
+  computeAt(td, this_pos, target, target_pos);
 }
 
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
@@ -1126,30 +1135,41 @@ std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
 }
 
 void ComputeDomain::split(int axis_idx) {
-  auto new_id_left = tv_->domain()->domain().at(axis_idx);
-  auto new_id_right = tv_->domain()->domain().at(axis_idx+1);
+  auto new_id_left = td_.at(axis_idx);
+  auto new_id_right = td_.at(axis_idx+1);
   setAxis(axis_idx, new_id_left);
   axes_.emplace(axes_.begin() + axis_idx + 1, new_id_right);
 }
 
-// Adapt this compute domain so that it is computed under the target
-// domain. TensorDomain is assumed to be already transformed by
+// Transform this compute domain so that it is computed under the
+// target domain. TensorDomain is assumed to be already transformed by
 // replayPasC or replayCasP.
-void ComputeDomain::computeAt(ComputeDomain* target,
-                              size_t target_pos,
-                              size_t pos) {
+void ComputeDomain::computeAt(const TensorDomain* td,
+                              int this_pos,
+                              const ComputeDomain* target,
+                              int target_pos) {
   std::cerr << "computeAt: " << *target
-            << ", " << target_pos << ", " << pos << std::endl;
-  const TensorDomain* td = tv_->domain();
-  TORCH_INTERNAL_ASSERT(pos <= target_pos);
-  TORCH_INTERNAL_ASSERT(pos <= td->nDims());
-  TORCH_INTERNAL_ASSERT(target_pos <= target->nDims());
+            << ", " << target_pos << ", " << this_pos << std::endl;
+  // reset the current status
+  td_ = td->domain();
+  axes_.clear();
+  td_map_.clear();
+  td_map_.resize(td_.size());
+  pos_ = 0;
+
+  normalizeComputeAtPos(target_pos, target->nDims());
+  normalizeComputeAtPos(this_pos, td->nDims());
+
+  TORCH_INTERNAL_ASSERT(this_pos <= target_pos);
+  TORCH_INTERNAL_ASSERT((size_t)this_pos <= td->nDims());
+  TORCH_INTERNAL_ASSERT((size_t)target_pos <= target->nDims());
+
   std::vector<IterDomain*> target_axes{target->axes().begin(),
                                        target->axes().begin() + target_pos};
   auto target_axes_it = target_axes.begin();
-  td_map_.resize(td->nDims());
-  for (size_t i = 0; i < pos; ++i) {
-    IterDomain* this_axis = td->axis(i);
+
+  for (int i = 0; i < this_pos; ++i) {
+    IterDomain* this_axis = td_.at(i);
     target_axes_it = std::find_if(
         target_axes_it, target_axes.end(),
         [this_axis](const IterDomain* ca) {
@@ -1157,21 +1177,21 @@ void ComputeDomain::computeAt(ComputeDomain* target,
         });
     if (target_axes_it == target_axes.end()) {
       std::cerr << "Axis not found: " << this_axis
-                << " of " << tv_ << std::endl;
+                << " of " << td << std::endl;
       for (const auto target_axis: target_axes) {
         std::cerr << "target axis: " << target_axis << std::endl;
       }
       std::cerr << "Target domain: " << *target << std::endl;
       TORCH_INTERNAL_ASSERT(false);
     }
-    td_map_[i] = std::distance(target_axes.begin(), target_axes_it);
+    td_map_.at(i) = std::distance(target_axes.begin(), target_axes_it);
     // Search the rest of td in the remaining target axes
     ++target_axes_it;
   }
 
-  auto num_shared_axes = std::distance(target_axes.begin(), target_axes_it);
-
-  axes_.clear();
+  //auto num_shared_axes = std::distance(target_axes.begin(),
+  //target_axes_it);
+  auto num_shared_axes = target_pos;
 
   // Copy from target domain
   std::copy(target->axes().begin(),
@@ -1181,17 +1201,31 @@ void ComputeDomain::computeAt(ComputeDomain* target,
   pos_ = num_shared_axes;
 
   // Set up own compute axes
-  std::copy(td->domain().begin() + pos,
-            td->domain().end(),
+  std::copy(td_.begin() + this_pos,
+            td_.end(),
             std::back_inserter(axes_));
 
-  std::iota(td_map_.begin() + pos, td_map_.end(),
+  std::iota(td_map_.begin() + this_pos, td_map_.end(),
             num_shared_axes);
 
   updateDependents();
-  target->registerDependent(this, getComputeAtPos());
 
+  fixupPosition();
   std::cerr << "computeAt done: " << *this << std::endl;
+}
+
+void ComputeDomain::fixupPosition() {
+  for (size_t i = pos_; i > 0; --i) {
+    IterDomain* cd_left = axis(i-1);
+    IterDomain* td_left = td_.at(getTensorDomainAxisIndex(i-1));
+    if (cd_left == td_left) {
+      --pos_;
+    }
+  }
+}
+
+void ComputeDomain::registerAsDependent(ComputeDomain* target) {
+  target->registerDependent(this, getComputeAtPos());
 }
 
 bool ComputeDomain::isDependent(const ComputeDomain* cd) const {
@@ -1231,7 +1265,7 @@ std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
 }
 
 std::ostream& ComputeDomain::print(std::ostream& os) const {
-  os << "compute_domain(" << " T" << tv_->name() << ",";
+  os << "compute_domain(";
   auto map_it = td_map_.begin();
   for (size_t i = 0; i < pos_; ++i) {
     os << " " << axis(i);
@@ -1247,7 +1281,6 @@ std::ostream& ComputeDomain::print(std::ostream& os) const {
       os << "@" << std::distance(td_map_.begin(), map_it);
       ++map_it;
     }
-    ++map_it;
   }
   os << " )";
   return os;

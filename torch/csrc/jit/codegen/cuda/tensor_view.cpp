@@ -102,7 +102,7 @@ TensorView::TensorView(const TensorView* src, IrCloner* ir_cloner)
 }
 
 void TensorView::setDefaultComputeDomain() {
-  compute_domain_ = new ComputeDomain(this);
+  compute_domain_ = new ComputeDomain(domain());
 }
 
 bool TensorView::hasReduction() const {

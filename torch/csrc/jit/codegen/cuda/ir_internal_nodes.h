@@ -547,11 +547,11 @@ class TORCH_CUDA_API TensorDomain : public Val {
 
 class TORCH_CUDA_API ComputeDomain {
  public:
-  explicit ComputeDomain(const TensorView* tv);
-#if 0
-  explicit ComputeDomain(const TensorView* tv,
-                         const std::deque<IterDomain*>& axes);
-#endif
+  explicit ComputeDomain(const TensorDomain* td);
+  explicit ComputeDomain(const TensorDomain* td,
+                         int this_pos,
+                         const ComputeDomain* target,
+                         int target_pos);
 
   size_t nDims() const {
     return axes().size();
@@ -569,6 +569,12 @@ class TORCH_CUDA_API ComputeDomain {
     return axes_;
   }
 
+  void computeAt(const TensorDomain* td,
+                 int this_pos,
+                 const ComputeDomain* target,
+                 int target_pos);
+
+
   std::unordered_set<IterDomain*> getRootDomain() const;
 
   // Return a map from IterDomains in ComputeDomain to IterDomains in a given domain
@@ -577,9 +583,6 @@ class TORCH_CUDA_API ComputeDomain {
       const std::unordered_set<IterDomain*>& compute_root_ids) const;
 
   void split(int axis_idx);
-
-  void computeAt(ComputeDomain* target, size_t target_pos,
-                 size_t pos);
 
   size_t getComputeAtPos() const {
     return pos_;
@@ -597,6 +600,10 @@ class TORCH_CUDA_API ComputeDomain {
     return td_map_.at(td_axis);
   }
 
+  bool isComputeDomainAxisUsed(size_t cd_axis) const {
+    return std::find(td_map_.begin(), td_map_.end(), cd_axis) != td_map_.end();
+  }
+
   size_t getTensorDomainAxisIndex(size_t cd_axis) const {
     auto it = std::find(td_map_.begin(), td_map_.end(), cd_axis);
     TORCH_INTERNAL_ASSERT(it != td_map_.end());
@@ -607,6 +614,9 @@ class TORCH_CUDA_API ComputeDomain {
 
   static bool sameAxes(const IterDomain* id1, const IterDomain* id2);
 
+  void registerAsDependent(ComputeDomain* target);
+  void registerDependent(ComputeDomain* dependent, size_t pos);
+
  private:
   void setAxis(size_t idx, IterDomain* id) {
     TORCH_INTERNAL_ASSERT(idx < axes_.size(),
@@ -616,11 +626,11 @@ class TORCH_CUDA_API ComputeDomain {
     axes_[idx] = id;
   }
   void updateDependents();
-  void registerDependent(ComputeDomain* dependent, size_t pos);
   bool isDependent(const ComputeDomain* cd) const;
+  void fixupPosition();
 
  private:
-  const TensorView* tv_ = nullptr;
+  std::vector<IterDomain*> td_;
   std::deque<IterDomain*> axes_;
   // Mapping from TD IterDomain index to CD IterDomain index
   std::vector<size_t> td_map_;
