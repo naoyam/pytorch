@@ -361,6 +361,7 @@ TensorView* TensorView::merge(int axis_o, int axis_i) {
           getThisComputeAtAxis());
 
   domain()->merge(axis_o, axis_i);
+  getComputeDomain()->merge(domain(), axis_o, axis_i);
   return this;
 }
 

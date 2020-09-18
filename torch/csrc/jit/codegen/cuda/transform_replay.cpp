@@ -407,7 +407,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
   std::vector<IterDomain*> producer_CA_ids(
       producer_domain.begin(),
       producer_domain.begin() +
-      producer_cd->getPos(producer_compute_at_axis));
+      producer_cd->getComputeDomainPos(producer_compute_at_axis));
   //producer_CA_ids = TensorDomain::noReductions(producer_CA_ids);
 
   for (const auto& id: producer_CA_ids) {
@@ -626,7 +626,7 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayPasC(
   producer->getComputeDomain()->computeAt(producer->domain(),
                                           replay.second,
                                           consumer->getComputeDomain(),
-                                          consumer->getComputeDomain()->getPos(compute_at_axis));
+                                          consumer->getComputeDomain()->getComputeDomainPos(compute_at_axis));
   producer->getComputeDomain()->registerAsDependent(consumer->getComputeDomain());
   std::cerr << "producer new CD: " << *producer->getComputeDomain() << std::endl;
   return {producer, replay.second};
@@ -652,7 +652,7 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayCasP(
   consumer->getComputeDomain()->computeAt(consumer->domain(),
                                           replay.second,
                                           producer->getComputeDomain(),
-                                          producer->getComputeDomain()->getPos(compute_at_axis));
+                                          producer->getComputeDomain()->getComputeDomainPos(compute_at_axis));
   consumer->getComputeDomain()->registerAsDependent(producer->getComputeDomain());
   std::cerr << "consumer new CD: " << *consumer->getComputeDomain() << std::endl;
   return {consumer, replay.second};

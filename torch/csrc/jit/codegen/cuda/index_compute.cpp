@@ -1043,6 +1043,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
               << ", " << loop_extent
               << ", " << consumer_cd_axis
               << std::endl;
+    TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_idx));
+    TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_extent));
     idx_extent_map.insert({producer_dom, {loop_idx, loop_extent, consumer_cd_axis, own_id}});
   }
 
@@ -1090,13 +1092,13 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       TORCH_INTERNAL_ASSERT(consumer_expr->getExprType() == ExprType::Merge);
       IterDomain* consumer_inner_id = consumer_expr->as<Merge>()->inner();
       IterDomain* consumer_outer_id = consumer_expr->as<Merge>()->outer();
-      Val* inner_extent = consumer_inner_id->extent(); // lower?
+      Val* inner_extent = kir::lowerValue(consumer_inner_id->extent());
       Val* inner_idx = kir::modExpr(out_idx, inner_extent);
-      Val* outer_idx = kir::ceilDivExpr(out_idx, inner_extent);
-      Val* outer_extent = consumer_outer_id->extent();
+      Val* outer_idx = kir::divExpr(out_idx, inner_extent);
+      Val* outer_extent = kir::lowerValue(consumer_outer_id->extent());
       if (!own_id) {
-        TORCH_INTERNAL_ASSERT(out_idx->isZeroInt() &&
-                              out_extent->isZeroInt());
+        TORCH_INTERNAL_ASSERT(out_idx->isZeroInt(), "Invalid idx: ", out_idx);
+        TORCH_INTERNAL_ASSERT(out_extent->isOneInt(), "Invalid extent: ", out_extent);
       }
       if (out_idx->isZeroInt()) {
         inner_idx = new kir::Int(0);
@@ -1393,10 +1395,10 @@ kir::TensorIndex* Index::getProducerIndex(
     return getGlobalProducerIndex(producer, consumer, loops);
   }
 
-  if (std::getenv("PINDEX2")) {
-    return getProducerIndex_impl2(producer, consumer, loops);
-  } else {
+  if (std::getenv("PINDEX1")) {
     return getProducerIndex_impl(producer, consumer, loops);
+  } else {
+    return getProducerIndex_impl2(producer, consumer, loops);
   }
 }
 
@@ -1412,10 +1414,10 @@ kir::TensorIndex* Index::getConsumerIndex(
     return getGlobalConsumerIndex(consumer, loops);
   }
 
-  if (std::getenv("CINDEX2")) {
-    return getConsumerIndex_impl2(consumer, loops);
-  } else {
+  if (std::getenv("CINDEX1")) {
     return getConsumerIndex_impl(consumer, loops);
+  } else {
+    return getConsumerIndex_impl2(consumer, loops);
   }
 }
 

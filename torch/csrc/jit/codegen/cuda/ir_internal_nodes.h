@@ -584,11 +584,15 @@ class TORCH_CUDA_API ComputeDomain {
 
   void split(const TensorDomain* new_td, int axis_idx);
 
+  void merge(const TensorDomain* new_td, int axis_o, int axis_i);
+
   size_t getComputeAtPos() const {
     return pos_;
   }
 
-  size_t getPos(size_t td_pos) const {
+  // Returns the ComputeDomain position that corresponds to the
+  // given TensorDomain position
+  size_t getComputeDomainPos(size_t td_pos) const {
     if (td_pos == 0) return 0;
     auto td_axis = td_pos - 1;
     auto cd_axis = getComputeDomainAxisIndex(td_axis);
@@ -618,13 +622,33 @@ class TORCH_CUDA_API ComputeDomain {
   void registerDependent(ComputeDomain* dependent, size_t pos);
 
  private:
-  void setAxis(size_t idx, IterDomain* id) {
-    TORCH_INTERNAL_ASSERT(idx < axes_.size(),
+  void setAxis(size_t cd_axis, IterDomain* id) {
+    TORCH_INTERNAL_ASSERT(cd_axis < axes_.size(),
                           "Out of range error. Attempting to access axis at offset ",
-                          idx, " of size-", axes_.size(),
+                          cd_axis, " of size-", axes_.size(),
                           " compute domain.");
-    axes_[idx] = id;
+    axes_[cd_axis] = id;
   }
+
+  void insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis) {
+    TORCH_INTERNAL_ASSERT(cd_axis <= axes_.size(),
+                          "Out of range error. Attempting to insert axis at offset ",
+                          cd_axis, " of size-", axes_.size(),
+                          " compute domain.");
+    axes_.insert(axes_.begin() + cd_axis, cd_id);
+    td_map_.insert(td_map_.begin() + td_axis, cd_axis);
+  }
+
+  void eraseAxis(size_t cd_axis) {
+    TORCH_INTERNAL_ASSERT(cd_axis < axes_.size(),
+                          "Out of range error. Attempting to erase axis at offset ",
+                          cd_axis, " of size-", axes_.size(),
+                          " compute domain.");
+    auto td_axis = getTensorDomainAxisIndex(cd_axis);
+    td_map_.erase(td_map_.begin() + td_axis);
+    axes_.erase(axes_.begin() + cd_axis);
+  }
+
   void updateDependents();
   bool isDependent(const ComputeDomain* cd) const;
   void fixupPosition();

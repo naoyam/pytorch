@@ -1135,12 +1135,26 @@ std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
 }
 
 void ComputeDomain::split(const TensorDomain* new_td, int axis_idx) {
-  std::cerr << "Splitting CD, " << *this << ", at " << axis_idx << std::endl;
-  auto new_id_left = new_td->domain().at(axis_idx);
-  auto new_id_right = new_td->domain().at(axis_idx+1);
-  setAxis(axis_idx, new_id_left);
-  axes_.emplace(axes_.begin() + axis_idx + 1, new_id_right);
-  std::cerr << "Split done: " << * this << std::endl;
+  auto cd_axis_idx = getComputeDomainAxisIndex(axis_idx);
+  TORCH_INTERNAL_ASSERT(cd_axis_idx >= getComputeAtPos());
+  td_ = new_td->domain();
+  auto new_id_left = td_.at(axis_idx);
+  auto new_id_right = td_.at(axis_idx+1);
+  setAxis(cd_axis_idx, new_id_left);
+  insertAxis(cd_axis_idx + 1, new_id_right, axis_idx + 1);
+}
+
+void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
+  if (axis_o > axis_i) {
+    std::swap(axis_o, axis_i);
+  }
+  auto cd_axis_o = getComputeDomainAxisIndex(axis_o);
+  auto cd_axis_i = getComputeDomainAxisIndex(axis_i);
+  TORCH_INTERNAL_ASSERT(cd_axis_o >= getComputeAtPos());
+  TORCH_INTERNAL_ASSERT(cd_axis_i >= getComputeAtPos());
+  td_ = new_td->domain();
+  setAxis(cd_axis_o, new_td->domain().at(axis_o));
+  eraseAxis(cd_axis_i);
 }
 
 // Transform this compute domain so that it is computed under the
