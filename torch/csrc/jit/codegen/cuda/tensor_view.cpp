@@ -314,7 +314,7 @@ TensorView* TensorView::split(int axis, Val* factor) {
           getThisComputeAtAxis());
 
   domain()->split(axis, factor);
-  getComputeDomain()->split(axis);
+  getComputeDomain()->split(domain(), axis);
   return this;
 }
 
@@ -335,7 +335,7 @@ TensorView* TensorView::split(int axis, unsigned int factor) {
           getThisComputeAtAxis());
 
   domain()->split(axis, new Int(factor));
-  getComputeDomain()->split(axis);
+  getComputeDomain()->split(domain(), axis);
   return this;
 }
 

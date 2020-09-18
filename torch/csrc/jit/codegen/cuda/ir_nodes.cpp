@@ -1098,7 +1098,7 @@ bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
   }
 
   return sameAs(id1->start(), id2->start()) &&
-      sameAs(id1->extent(), id2->extent());
+      sameAs(id1->rawExtent(), id2->rawExtent());
 }
 
 ComputeDomain::ComputeDomain(const TensorDomain* td):
@@ -1134,11 +1134,13 @@ std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
   return root_id_map;
 }
 
-void ComputeDomain::split(int axis_idx) {
-  auto new_id_left = td_.at(axis_idx);
-  auto new_id_right = td_.at(axis_idx+1);
+void ComputeDomain::split(const TensorDomain* new_td, int axis_idx) {
+  std::cerr << "Splitting CD, " << *this << ", at " << axis_idx << std::endl;
+  auto new_id_left = new_td->domain().at(axis_idx);
+  auto new_id_right = new_td->domain().at(axis_idx+1);
   setAxis(axis_idx, new_id_left);
   axes_.emplace(axes_.begin() + axis_idx + 1, new_id_right);
+  std::cerr << "Split done: " << * this << std::endl;
 }
 
 // Transform this compute domain so that it is computed under the

@@ -582,7 +582,7 @@ class TORCH_CUDA_API ComputeDomain {
       const std::vector<IterDomain*>& root_domain,
       const std::unordered_set<IterDomain*>& compute_root_ids) const;
 
-  void split(int axis_idx);
+  void split(const TensorDomain* new_td, int axis_idx);
 
   size_t getComputeAtPos() const {
     return pos_;
