@@ -1135,6 +1135,9 @@ std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
 }
 
 void ComputeDomain::split(const TensorDomain* new_td, int axis_idx) {
+  std::cerr << "Splitting: " << *this
+            << " at " << axis_idx
+            << std::endl;
   auto cd_axis_idx = getComputeDomainAxisIndex(axis_idx);
   TORCH_INTERNAL_ASSERT(cd_axis_idx >= getComputeAtPos());
   td_ = new_td->domain();
@@ -1142,9 +1145,13 @@ void ComputeDomain::split(const TensorDomain* new_td, int axis_idx) {
   auto new_id_right = td_.at(axis_idx+1);
   setAxis(cd_axis_idx, new_id_left);
   insertAxis(cd_axis_idx + 1, new_id_right, axis_idx + 1);
+  std::cerr << "Split completed: " << *this
+            << std::endl;
 }
 
 void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
+  std::cerr << "Merging " << axis_o << " and " << axis_i
+            << " of " << *this << std::endl;
   if (axis_o > axis_i) {
     std::swap(axis_o, axis_i);
   }
@@ -1155,6 +1162,8 @@ void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
   td_ = new_td->domain();
   setAxis(cd_axis_o, new_td->domain().at(axis_o));
   eraseAxis(cd_axis_i);
+  std::cerr << "Merge completed: " << *this
+            << std::endl;
 }
 
 // Transform this compute domain so that it is computed under the
@@ -1240,6 +1249,59 @@ void ComputeDomain::fixupPosition() {
   }
 }
 
+void ComputeDomain::setAxis(size_t cd_axis, IterDomain* id) {
+  TORCH_INTERNAL_ASSERT(cd_axis < axes_.size(),
+                        "Out of range error. Attempting to access axis at offset ",
+                        cd_axis, " of size-", axes_.size(),
+                        " compute domain.");
+  axes_[cd_axis] = id;
+}
+
+void ComputeDomain::insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis) {
+  TORCH_INTERNAL_ASSERT(cd_axis <= axes_.size(),
+                        "Out of range error. Attempting to insert axis at offset ",
+                        cd_axis, " of size-", axes_.size(),
+                        " compute domain.");
+  axes_.insert(axes_.begin() + cd_axis, cd_id);
+  // shift right and increment
+  td_map_.resize(td_map_.size() + 1);
+  for (auto i = td_axis; i < td_map_.size() - 1; ++i) {
+    td_map_.at(i + 1) = td_map_.at(i) + 1;
+  }
+  td_map_.at(td_axis) = cd_axis;
+  sanityCheck();
+}
+
+void ComputeDomain::eraseAxis(size_t cd_axis) {
+  TORCH_INTERNAL_ASSERT(cd_axis < axes_.size(),
+                        "Out of range error. Attempting to erase axis at offset ",
+                        cd_axis, " of size-", axes_.size(),
+                        " compute domain.");
+  auto td_axis = getTensorDomainAxisIndex(cd_axis);
+  axes_.erase(axes_.begin() + cd_axis);
+  // shift and decrement
+  for (auto i = td_axis; i < td_map_.size() - 1; ++i) {
+    td_map_[i] = td_map_[i+1] - 1;
+  }
+  td_map_.resize(td_map_.size() - 1);
+  sanityCheck();
+}
+
+void ComputeDomain::sanityCheck() const {
+  auto td_ndims = td_.size();
+  TORCH_INTERNAL_ASSERT(td_ndims == td_map_.size());
+  TORCH_INTERNAL_ASSERT(td_ndims <= nDims());
+  if (td_ndims > 0) {
+    // Make sure td_map is in an increasing order
+    auto prev_cd_pos = td_map_[0];
+    for (size_t i = 1; i < td_map_.size(); ++i) {
+      auto cd_pos = td_map_[i];
+      TORCH_INTERNAL_ASSERT(cd_pos > prev_cd_pos);
+      prev_cd_pos = cd_pos;
+    }
+  }
+}
+
 void ComputeDomain::registerAsDependent(ComputeDomain* target) {
   target->registerDependent(this, getComputeAtPos());
 }
@@ -1298,6 +1360,7 @@ std::ostream& ComputeDomain::print(std::ostream& os) const {
       ++map_it;
     }
   }
+  os << ", " << td_map_;
   os << " )";
   return os;
 }

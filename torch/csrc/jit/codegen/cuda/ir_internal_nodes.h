@@ -622,36 +622,13 @@ class TORCH_CUDA_API ComputeDomain {
   void registerDependent(ComputeDomain* dependent, size_t pos);
 
  private:
-  void setAxis(size_t cd_axis, IterDomain* id) {
-    TORCH_INTERNAL_ASSERT(cd_axis < axes_.size(),
-                          "Out of range error. Attempting to access axis at offset ",
-                          cd_axis, " of size-", axes_.size(),
-                          " compute domain.");
-    axes_[cd_axis] = id;
-  }
-
-  void insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis) {
-    TORCH_INTERNAL_ASSERT(cd_axis <= axes_.size(),
-                          "Out of range error. Attempting to insert axis at offset ",
-                          cd_axis, " of size-", axes_.size(),
-                          " compute domain.");
-    axes_.insert(axes_.begin() + cd_axis, cd_id);
-    td_map_.insert(td_map_.begin() + td_axis, cd_axis);
-  }
-
-  void eraseAxis(size_t cd_axis) {
-    TORCH_INTERNAL_ASSERT(cd_axis < axes_.size(),
-                          "Out of range error. Attempting to erase axis at offset ",
-                          cd_axis, " of size-", axes_.size(),
-                          " compute domain.");
-    auto td_axis = getTensorDomainAxisIndex(cd_axis);
-    td_map_.erase(td_map_.begin() + td_axis);
-    axes_.erase(axes_.begin() + cd_axis);
-  }
-
+  void setAxis(size_t cd_axis, IterDomain* id);
+  void insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis);
+  void eraseAxis(size_t cd_axis);
+  void sanityCheck() const;
+  void fixupPosition();
   void updateDependents();
   bool isDependent(const ComputeDomain* cd) const;
-  void fixupPosition();
 
  private:
   std::vector<IterDomain*> td_;

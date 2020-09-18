@@ -850,10 +850,8 @@ Val* mulx(Val* v1, Val* v2) {
     return v2;
   } else if (v2 == nullptr) {
     return v1;
-  } else if (v1->isZeroInt()) {
-    return v1;
-  } else if (v2->isZeroInt()) {
-    return v2;
+  } else if (v1->isZeroInt() || v2->isZeroInt()) {
+    return new kir::Int(0);
   } else if (v1->isOneInt()) {
     return v2;
   } else if (v2->isOneInt()) {
@@ -862,6 +860,21 @@ Val* mulx(Val* v1, Val* v2) {
     return kir::mulExpr(v1, v2);
   }
 }
+
+Val* addx(Val* v1, Val* v2) {
+  if (v1 == nullptr) {
+    return v2;
+  } else if (v2 == nullptr) {
+    return v1;
+  } else if (v1->isZeroInt()) {
+    return v2;
+  } else if (v2->isZeroInt()) {
+    return v1;
+  } else {
+    return kir::addExpr(v1, v2);
+  }
+}
+
 } // namespace
 
 // Producer index for either shared or local memory
@@ -1070,8 +1083,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       TORCH_INTERNAL_ASSERT(!(!std::get<3>(inner_map->second) &&
                               std::get<3>(outer_map->second)),
                             "Invalid combination of inner and outer IDs");
-      Val* in_idx = kir::addExpr(mulx(outer_idx, inner_extent),
-                                 inner_idx);
+      Val* in_idx = addx(mulx(outer_idx, inner_extent), inner_idx);
       Val* in_extent = mulx(outer_extent, inner_extent);
       Expr* consumer_expr = inner_consumer_id->getOrigin();
       TORCH_INTERNAL_ASSERT(consumer_expr->getExprType() == ExprType::Split);
@@ -1149,7 +1161,11 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     Val* idx = std::get<1>(root_inds[i]);
     Val* stride = nullptr;
     for (size_t j = i + 1; j < root_inds.size(); ++j) {
-      stride = mulx(stride, std::get<2>(root_inds[j]));
+      //stride = mulx(stride, std::get<2>(root_inds[j]));
+      auto root_domain_j = root_domain.at(std::get<0>(root_inds[j]));
+      if (root_domain_j->isParallelized()) continue;
+      auto root_extent = kir::lowerValue(root_domain_j->extent());
+      stride = mulx(stride, root_extent);
     }
     Val* strided_offset = mulx(idx, stride);
     strided_inds.push_back(strided_offset);
