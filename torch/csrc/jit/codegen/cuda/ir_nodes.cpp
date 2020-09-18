@@ -1082,6 +1082,12 @@ bool sameAs(Val* v1, Val* v2) {
   if (v1->getOrigin() && v2->getOrigin()) {
     return sameAs(v1->getOrigin(), v2->getOrigin());
   }
+  // TODO (CD): This is a temporary unsafe workaround. If a value is 1,
+  // assume it originates from a broadcast dimension and matches with
+  // any other given dimnsion. This is cheating and must be fixed.
+  if (v1->isOneInt() || v2->isOneInt()) {
+    return true;
+  }
   return ScalarCheck::sameAs(v1, v2);
 }
 
@@ -1174,7 +1180,8 @@ void ComputeDomain::computeAt(const TensorDomain* td,
                               const ComputeDomain* target,
                               int target_pos) {
   std::cerr << "computeAt: " << *target
-            << ", " << target_pos << ", " << this_pos << std::endl;
+            << " at " << target_pos
+            << ", td: " << td << " at " << this_pos << std::endl;
   // reset the current status
   td_ = td->domain();
   axes_.clear();
@@ -1203,10 +1210,8 @@ void ComputeDomain::computeAt(const TensorDomain* td,
     if (target_axes_it == target_axes.end()) {
       std::cerr << "Axis not found: " << this_axis
                 << " of " << td << std::endl;
-      for (const auto target_axis: target_axes) {
-        std::cerr << "target axis: " << target_axis << std::endl;
-      }
-      std::cerr << "Target domain: " << *target << std::endl;
+      std::cerr << "Target axes: " << target_axes
+                << ", target domain: " << *target << std::endl;
       TORCH_INTERNAL_ASSERT(false);
     }
     td_map_.at(i) = std::distance(target_axes.begin(), target_axes_it);
