@@ -1287,17 +1287,30 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
     const std::vector<kir::ForLoop*>& loops) {
 
   std::cerr << "getConsumerIndex_impl2: "
-            << "Generating index val for " << consumer_tv << std::endl;
+            << "Generating index val for " << consumer_tv
+            << ", #loops: " << loops.size()
+            << std::endl;
 
   const ComputeDomain* cd = consumer_tv->getComputeDomain();
+  // TODO: TV compute-at position vs CD position
+  auto tv_ca_pos = consumer_tv->getThisComputeAtAxis();
+  if (tv_ca_pos == consumer_tv->nDims()) {
+    // no indexing needed
+    return new kir::TensorIndex(consumer_tv, {});
+  }
+  auto left_most_own_axis = cd->getComputeDomainAxisIndex(tv_ca_pos);
   std::vector<Val*> strided_inds;
-  for (size_t i = cd->getComputeAtPos(); i != cd->nDims(); ++i) {
+  for (size_t i = left_most_own_axis; i < cd->nDims(); ++i) {
     IterDomain* axis = cd->axis(i);
+    std::cerr << "CD axis at " << i << ": " << axis << std::endl;
     // Parallelized domain doesn't need offsetting
     if (axis->isParallelized()) continue;
     // Broadcast domain doesn't contribute to offsetting
     if (axis->isBroadcast()) continue;
+    // Reduction domain doesn't contribute to offsetting
+    if (axis->isReduction()) continue;
     kir::IterDomain* kir_axis = kir::lowerValue(axis)->as<kir::IterDomain>();
+    TORCH_INTERNAL_ASSERT(i < loops.size());
     kir::ForLoop* loop = loops.at(i);
     Val* idx = loop->index();
 
@@ -1309,14 +1322,20 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
     //Val* stride = nullptr;
     Val* stride = new kir::Int(1);
     for (size_t j = i + 1; j < cd->nDims(); ++j) {
+      std::cerr << "j: " << j << std::endl;
       IterDomain* axis_j = cd->axis(j);
+      std::cerr << "axis_j: " << axis_j << std::endl;
       if (axis_j->isParallelized()) continue;
+      if (axis_j->isBroadcast()) continue;
+      if (axis_j->isReduction()) continue;
       Val* extent = kir::lowerValue(axis_j->extent());
       stride = mul_if_nonnull(stride, extent);
     }
 
     strided_inds.push_back(mul_if_nonnull(idx, stride));
   }
+
+  std::cerr << "strided inds: " << strided_inds << std::endl;
 
   return new kir::TensorIndex(consumer_tv, strided_inds);
 }

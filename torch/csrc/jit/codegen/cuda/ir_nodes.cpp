@@ -1217,10 +1217,10 @@ void ComputeDomain::computeAt(const TensorDomain* td,
 void ComputeDomain::fixupPosition() {
   for (size_t i = pos_; i > 0; --i) {
     IterDomain* cd_left = axis(i-1);
+    if (!isComputeDomainAxisUsed(i-1)) break;
     IterDomain* td_left = td_.at(getTensorDomainAxisIndex(i-1));
-    if (cd_left == td_left) {
-      --pos_;
-    }
+    if (cd_left != td_left) break;
+    --pos_;
   }
 }
 

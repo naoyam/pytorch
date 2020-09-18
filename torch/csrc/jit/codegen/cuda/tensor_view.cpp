@@ -170,6 +170,7 @@ TensorView* TensorView::unsafeClone() const {
   new_view->this_compute_at_axis_ = this_compute_at_axis_;
   new_view->memory_type_ = memory_type_;
   new_view->name_ = name();
+  *(new_view->compute_domain_) = *compute_domain_;
   return new_view;
 }
 

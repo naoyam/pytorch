@@ -122,6 +122,9 @@ void LoopNestGenerator::initReduction(
   auto alloc_loop = alloc_point.first;
   auto alloc_pos = alloc_point.second;
 
+  std::cerr << "initReduction: " << tv
+            << ", alloc_pos: " << alloc_pos << std::endl;
+
   // Grab the IDs that will be involved in the initialization, ignore reduction
   // dimensions. Everything else will be iterated over to cover the entire
   // buffer. Index compute will ignore [block, grid]Dims depending on buffer
@@ -155,6 +158,7 @@ void LoopNestGenerator::initReduction(
   // Work through the iter domains that we need to initialize on, outside to
   // inside, to construct the loop nest for the initialization.
   for (auto id : ids) {
+    std::cerr << "id: " << id << std::endl;
     kir::ForLoop* new_fl;
 
     if (id->isThread()) {
@@ -183,10 +187,12 @@ void LoopNestGenerator::initReduction(
   if (init_loop_nest == nullptr) {
     // If no loops were generated, than our init_stmt is all we need
     init_loop_nest = init_stmt;
+    std::cerr << "no loop generated\n";
   } else {
     // If there were for loops generated, place the init_stmt in the inner most
     // for loop.
     inner_fl->body().push_back(init_stmt);
+    std::cerr << "append init to loop body: " << inner_fl->index() << std::endl;
   }
 
   // If we don't have an alloc_loop defined it means it needs to go in

@@ -625,7 +625,9 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   if (tv->getMemoryType() == MemoryType::Global) {
     return {nullptr, 0};
   }
-  std::cerr << "getAllocPoint of " << tv << std::endl;
+  std::cerr << "getAllocPoint of " << tv
+            << ", #loops: " << loops.size()
+            << std::endl;
 #if 0
   std::cerr << "getAllocPoint of " << tv
             << " in {";
@@ -682,26 +684,40 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   } else {
     std::cerr << "Searching loop where alloc should be placed\n";
     ComputeDomain* cd = tv->getComputeDomain();
-    if (cd->getComputeAtPos() > 0) {
-      size_t loop_idx = cd->getComputeAtPos() - 1;
+    if (tv->getThisComputeAtAxis() > 0) {
+      // Note that CD compute-at position can be different from TV
+      // compute-at position for now
+      size_t loop_idx = cd->getComputeDomainAxisIndex(tv->getThisComputeAtAxis() - 1);
       while (!cd->isComputeDomainAxisUsed(loop_idx)) {
         TORCH_INTERNAL_ASSERT(loop_idx > 0);
         --loop_idx;
       }
-      auto tv_axis_idx = tv->getComputeDomain()->getTensorDomainAxisIndex(loop_idx);
-      if (tv->axis(tv_axis_idx)->isReduction()) {
-        TORCH_INTERNAL_ASSERT(loop_idx > 0);
+      auto tv_axis_idx = cd->getTensorDomainAxisIndex(loop_idx);
+      bool outside_loop = false;
+      while (tv->axis(tv_axis_idx)->isReduction()) {
+        if (tv_axis_idx == 0) {
+          outside_loop = true;
+          alloc_loop = nullptr;
+          std::cerr << "All dims are reductions\n";
+          break;
+        }
+        --tv_axis_idx;
         --loop_idx;
       }
       if (loop_idx >= loops.size()) {
         std::cerr << "num loops: " << loops.size()
                   << ", position: " << loop_idx
                   << std::endl;
+        TORCH_INTERNAL_ASSERT(loop_idx < loops.size());
       }
-      alloc_loop = loops.at(loop_idx);
-      std::cerr << "alloc point found at " << loop_idx << std::endl;
+      if (!outside_loop) {
+        alloc_loop = loops.at(loop_idx);
+        std::cerr << "alloc point found at " << loop_idx << std::endl;
+      } else {
+        std::cerr << "alloc point outside loops" << std::endl;
+      }
     } else {
-      std::cerr << "compute at pos == 0" << std::endl;
+      std::cerr << "alloc point outside loops" << std::endl;
     }
     return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
   }
