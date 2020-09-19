@@ -7506,41 +7506,28 @@ void testGPU_FusionComputeDomain() {
     auto aten_t2 = t0 + 1.0 + 1.0;
     TORCH_CHECK(aten_t2.allclose(t2));
   }
-  return;
 
-  if (std::getenv("all") || std::getenv("case12")) {
-    std::cerr << "\nCase 12\n" << std::endl;
+  if (std::getenv("all") || std::getenv("case17")) {
+    std::cerr << "\nCase 17\n" << std::endl;
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    auto tv0 = makeDummyTensor(3);
+    auto tv0 = makeDummyTensor(2);
     fusion.addInput(tv0);
 
     auto tv1 = add(tv0, new Float(1));
-    auto tv2 = add(tv1, new Float(1));
-    auto tv3 = broadcast(tv2, {false, false, false, true});
-    auto tv4 = makeDummyTensor(4);
-    fusion.addInput(tv4);
-    auto tv5 = add(tv3, tv4);
-    fusion.addOutput(tv5);
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(3));
+    fusion.addOutput(tv3);
 
-#if 0
-    tv3->merge(2);
-    tv4->merge(2);
-    tv5->merge(2);
-#endif
+    fusion.printMath();
 
-    //tv1->reorder({{1, 2}, {2, 1}});
+    tv0->computeAt(tv3, -1);
 
-    tv1->computeAt(tv5, 1);
     fusion.printMath();
     fusion.printKernel();
 
-
-    return;
-    tv2->axis(0)->parallelize(ParallelType::BIDy);
-    tv1->axis(-1)->parallelize(ParallelType::BIDx);
-    tv2->axis(-1)->parallelize(ParallelType::BIDx);
+    tv0->computeAt(tv2, -1);
 
     fusion.printMath();
     fusion.printKernel();
@@ -7553,12 +7540,57 @@ void testGPU_FusionComputeDomain() {
     int numel_y = 99;
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor t0 = at::rand({numel_x, numel_y}, options);
-    at::Tensor t2 = at::empty_like(t0, options);
+    at::Tensor t3 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t3});
+
+    auto aten_t3 = (t0 + 1.0).sum({1}) + 3.0;
+    TORCH_CHECK(aten_t3.allclose(t3));
+  }
+
+  if (std::getenv("all") || std::getenv("case18")) {
+    std::cerr << "\nCase 18\n" << std::endl;
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    fusion.addOutput(tv2);
+
+    tv2->split(1, 4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -2);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::TIDx);
+    tv2->axis(2)->parallelize(ParallelType::TIDy);
+    tv1->axis(2)->parallelize(ParallelType::TIDy);
+
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x}, options);
 
     fe.runFusion({t0}, {t2});
 
-    auto aten_t2 = t0 + 1.0 + 1.0;
-    TORCH_CHECK(aten_t2.allclose(t2));
+    auto aten_t2 = (t0 + 1.0).sum({1});
+    TORCH_CHECK(aten_t2.allclose(t2),
+                "Error of: ", aten_t2.sub(t2).abs().max());
   }
 }
 
