@@ -1060,9 +1060,24 @@ class BroadcastMapping: public BackwardVisitor {
 
 bool sameAs(Val* v1, Val* v2);
 
+Val* omitMul1(Expr* e) {
+  if (e->getExprType() == ExprType::BinaryOp) {
+    auto bop = e->as<BinaryOp>();
+    if (bop->getBinaryOpType() == BinaryOpType::Mul) {
+      if (bop->lhs()->isOneInt()) {
+        return bop->rhs();
+      } else if (bop->rhs()->isOneInt()) {
+        return bop->lhs();
+      }
+    }
+  }
+  return nullptr;
+}
+
 bool sameAs(const Expr* e1, const Expr* e2) {
   std::cerr << "Checking expr equivalence of " << e1 << " and " << e2 << std::endl;
   if (e1 == nullptr || e2 == nullptr) return false;
+
   if (e1->inputs().size() != e2->inputs().size() ||
       e1->outputs().size() != e2->outputs().size() ||
       e1->getExprType() != e2->getExprType()) {
@@ -1077,23 +1092,37 @@ bool sameAs(const Expr* e1, const Expr* e2) {
 }
 
 bool sameAs(Val* v1, Val* v2) {
-  std::cerr << "Checking val equivalence of " << v1 << " and " << v2 << std::endl;
   if (v1 == nullptr || v2 == nullptr) return false;
-  if (v1->getOrigin() && v2->getOrigin()) {
-    return sameAs(v1->getOrigin(), v2->getOrigin());
-  }
+
   // TODO (CD): This is a temporary unsafe workaround. If a value is 1,
   // assume it originates from a broadcast dimension and matches with
   // any other given dimnsion. This is cheating and must be fixed.
   if (v1->isOneInt() || v2->isOneInt()) {
     return true;
   }
+
+  if (v1->getOrigin() && v2->getOrigin()) {
+    return sameAs(v1->getOrigin(), v2->getOrigin());
+  } else if (v1->getOrigin()) {
+    auto v = omitMul1(v1->getOrigin());
+    if (v) {
+      return sameAs(v, v2);
+    }
+  } else if (v2->getOrigin()) {
+    auto v = omitMul1(v2->getOrigin());
+    if (v) {
+      return sameAs(v1, v);
+    }
+  }
+
   return ScalarCheck::sameAs(v1, v2);
 }
 
 } // namespace
 
 bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
+  std::cerr << "Checking ID equivalence of " << id1 << " and " << id2 << std::endl;
+
   if (id1 == id2) return true;
 
   if (id1->isBroadcast()) {
