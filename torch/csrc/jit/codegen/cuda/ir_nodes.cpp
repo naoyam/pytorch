@@ -1121,9 +1121,14 @@ bool sameAs(Val* v1, Val* v2) {
 } // namespace
 
 bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
-  std::cerr << "Checking ID equivalence of " << id1 << " and " << id2 << std::endl;
+  std::stringstream debug_msg;
+  debug_msg << "Checking ID equivalence of " << id1 << " and " << id2;
 
-  if (id1 == id2) return true;
+  if (id1 == id2) {
+    debug_msg << " -> true";
+    std::cerr << debug_msg.str() << std::endl;
+    return true;
+  }
 
   if (id1->isBroadcast()) {
     id1 = BroadcastMapping::getConcreteDomain(id1);
@@ -1132,8 +1137,11 @@ bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
     id2 = BroadcastMapping::getConcreteDomain(id2);
   }
 
-  return sameAs(id1->start(), id2->start()) &&
+  bool result = sameAs(id1->start(), id2->start()) &&
       sameAs(id1->rawExtent(), id2->rawExtent());
+  std::cerr << debug_msg.str()
+            << " -> " << result << std::endl;
+  return result;
 }
 
 ComputeDomain::ComputeDomain(const TensorDomain* td):
