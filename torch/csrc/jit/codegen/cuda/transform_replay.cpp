@@ -175,18 +175,24 @@ TensorDomain* TransformReplay::fullSelfReplay(
 
 namespace {
 // TODO (CD)
-IterDomain* replayMapFind(const std::unordered_map<IterDomain*, IterDomain*>& map,
-                          IterDomain* id) {
-  auto it = std::find_if(map.begin(), map.end(),
+template <typename IterDomainContainer>
+std::vector<IterDomain*> replayMapFind(
+    std::unordered_map<IterDomain*, IterDomain*> map,
+    const IterDomainContainer& ids) {
+  std::vector<IterDomain*> mapped_ids;
+  for (const IterDomain* id: ids) {
+    auto it = std::find_if(map.begin(), map.end(),
                            [id](const auto& map_kv) {
                              IterDomain* id_in_map = map_kv.first;
                              return ComputeDomain::sameAxes(id, id_in_map);
                            });
-  if (it != map.end()) {
-    return it->second;
-  } else {
-    return nullptr;
+    if (it != map.end()) {
+      auto mapped_id = it->second;
+      map.erase(it);
+      mapped_ids.push_back(mapped_id);
+    }
   }
+  return mapped_ids;
 }
 } // namespace
 
@@ -282,8 +288,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
-  for (auto c_id : consumer_CA_ids) {
 #if 0
+  for (auto c_id : consumer_CA_ids) {
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
       TORCH_INTERNAL_ASSERT(
@@ -293,21 +299,17 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
           ", requested in replay.");
       continue;
     }
-    if (leaf_ids.find(it->second) != leaf_ids.end())
+    if (leaf_ids.find(it->second) != leaf_ids.end()) {
       leaf_ids.erase(it->second);
-#else
-    // TODO (CD)
-    auto replayed_id = replayMapFind(replay_PasC.getReplay(), c_id);
-    if (replayed_id == nullptr) {
-      std::cerr << "Consumer CA ID not found in replay map: "
-                << c_id << std::endl;
-      continue;
     }
+  }
+#else
+  for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_CA_ids)) {
     if (leaf_ids.find(replayed_id) != leaf_ids.end()) {
       leaf_ids.erase(replayed_id);
     }
-#endif
   }
+#endif
 
   // leaf_ids now contains all producer ID products that are not used to satisfy
   // the computeAt Turn into a  map so we can play forward these IDs in producer
@@ -355,36 +357,34 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
   std::vector<IterDomain*> new_IDs;
   std::unordered_set<IterDomain*> used_IDs;
   // Add axes in (1)
-  for (auto c_id : consumer_CA_ids) {
 #if 0
+  for (auto c_id : consumer_CA_ids) {
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
       TORCH_INTERNAL_ASSERT(
           c_id->isBroadcast(),
           "Could not find axis, ",
-          c_id,
+           c_id,
           ", requested in replay.");
       continue;
     }
     auto replayed_id = it->second;
-#else
-    // TODO (CD)
-    auto replayed_id = replayMapFind(replay_PasC.getReplay(), c_id);
-    if (replayed_id == nullptr) {
-      continue;
-    }
-#endif
     std::cerr << "(1): " << replayed_id << std::endl;
     new_IDs.push_back(replayed_id);
     used_IDs.emplace(replayed_id);
   }
+#else
+  for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_CA_ids)) {
+    std::cerr << "(1): " << replayed_id << std::endl;
+    new_IDs.push_back(replayed_id);
+    used_IDs.emplace(replayed_id);
+  }
+#endif
 
   unsigned int producer_compute_at_axis = new_IDs.size();
   // Add axes in (2)
-  std::unordered_set<IterDomain*> consumer_CA_ids_set(
-      consumer_CA_ids.begin(), consumer_CA_ids.end());
-  for (auto c_id : consumer_domain) {
 #if 0
+  for (auto c_id : consumer_domain) {
     auto it = replay_PasC.getReplay().find(c_id);
     if (it != replay_PasC.getReplay().end()) {
       auto id = it->second;
@@ -394,17 +394,16 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
         used_IDs.emplace(id);
       }
     }
-#else
-    auto replayed_id = replayMapFind(replay_PasC.getReplay(), c_id);
-    if (replayed_id) {
-      if (used_IDs.find(replayed_id) == used_IDs.end()) {
-        std::cerr << "(2): " << replayed_id << std::endl;
-        new_IDs.push_back(replayed_id);
-        used_IDs.emplace(replayed_id);
-      }
-    }
-#endif
   }
+#else
+  for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_domain)) {
+    if (used_IDs.find(replayed_id) == used_IDs.end()) {
+      std::cerr << "(2): " << replayed_id << std::endl;
+      new_IDs.push_back(replayed_id);
+      used_IDs.emplace(replayed_id);
+    }
+  }
+#endif
 
   // Add axes in (3)
   for (auto id : producer->domain()) {
@@ -530,8 +529,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
-  for (auto p_id : producer_CA_ids) {
 #if 0
+  for (auto p_id : producer_CA_ids) {
     auto it = replay_CasP.getReplay().find(p_id);
     TORCH_INTERNAL_ASSERT(
         it != replay_CasP.getReplay().end(),
@@ -539,14 +538,17 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
         p_id,
         ", requested in replay.");
     auto replayed_id = it->second;
-#else
-    // TODO (CD)
-    auto replayed_id = replayMapFind(replay_CasP.getReplay(), p_id);
-    if (replayed_id == nullptr) continue;
-#endif
-    if (leaf_ids.find(replayed_id) != leaf_ids.end())
+    if (leaf_ids.find(replayed_id) != leaf_ids.end()) {
       leaf_ids.erase(replayed_id);
+    }
   }
+#else
+  for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_CA_ids)) {
+    if (leaf_ids.find(replayed_id) != leaf_ids.end()) {
+      leaf_ids.erase(replayed_id);
+    }
+  }
+#endif
 
   // leaf_ids now contains all consumer ID products that are not used to satisfy
   // the computeAt Turn into a  map so we can play forward these IDs in consumer
@@ -592,8 +594,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
   std::vector<IterDomain*> new_IDs;
   std::unordered_set<IterDomain*> used_IDs;
   // Add axes in (1)
-  for (auto p_id : producer_CA_ids) {
 #if 0
+  for (auto p_id : producer_CA_ids) {
     auto it = replay_CasP.getReplay().find(p_id);
     TORCH_INTERNAL_ASSERT(
         it != replay_CasP.getReplay().end(),
@@ -601,36 +603,38 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
         p_id,
         ", requested in replay.");
     auto replayed_id = it->second;
-#else
-    auto replayed_id = replayMapFind(replay_CasP.getReplay(), p_id);
-    if (replayed_id == nullptr) continue;
-#endif
     new_IDs.push_back(replayed_id);
     used_IDs.emplace(replayed_id);
   }
+#else
+  for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_CA_ids)) {
+    new_IDs.push_back(replayed_id);
+    used_IDs.emplace(replayed_id);
+  }
+#endif
 
   auto num_shared_axes = new_IDs.size();
 
   // Add axes in (2)
-  std::unordered_set<IterDomain*> consumer_CA_ids_set(
-      producer_CA_ids.begin(), producer_CA_ids.end());
-  for (auto p_id : producer->domain()) {
-    IterDomain* replayed_id = nullptr;
 #if 0
+  for (auto p_id : producer->domain()) {
     auto it = replay_CasP.getReplay().find(p_id);
     if (it != replay_CasP.getReplay().end()) {
-      replayed_id = it->second;
-    }
-#else
-    replayed_id = replayMapFind(replay_CasP.getReplay(), p_id);
-#endif
-    if (replayed_id) {
+      IterDomain* replayed_id = it->second;
       if (used_IDs.find(replayed_id) == used_IDs.end()) {
         new_IDs.push_back(replayed_id);
         used_IDs.emplace(replayed_id);
       }
     }
   }
+#else
+  for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer->domain())) {
+    if (used_IDs.find(replayed_id) == used_IDs.end()) {
+      new_IDs.push_back(replayed_id);
+      used_IDs.emplace(replayed_id);
+    }
+  }
+#endif
 
   // Add axes in (3)
   for (auto id : consumer->domain()) {

@@ -1154,17 +1154,19 @@ ComputeDomain::ComputeDomain(const TensorDomain* td,
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
     const std::vector<IterDomain*>& root_domain,
     const std::unordered_set<IterDomain*>& compute_root_ids) const {
+  auto root_ids = compute_root_ids;
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
   for (const auto& id: root_domain) {
     auto it = std::find_if(
-        compute_root_ids.begin(), compute_root_ids.end(),
+        root_ids.begin(), root_ids.end(),
         [id](const IterDomain* d) {
           return ComputeDomain::sameAxes(id, d);
         });
-    if (it == compute_root_ids.end()) {
+    if (it == root_ids.end()) {
       continue;
     }
     root_id_map.emplace(*it, id);
+    root_ids.erase(it);
   }
   return root_id_map;
 }
