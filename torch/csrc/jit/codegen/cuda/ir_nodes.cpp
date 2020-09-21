@@ -1058,6 +1058,105 @@ class BroadcastMapping: public BackwardVisitor {
   }
 };
 
+class MatchingIterDomainSearch: public IterVisitor {
+ public:
+  using IterVisitor::handle;
+
+  void handle(BinaryOp* bop) override {
+    if (!ir_utils::isTVOp(bop)) return;
+    const TensorView* base_tv = nullptr;
+    for (const auto input: bop->inputs()) {
+      if (input->getValType().value() != ValType::TensorView) continue;
+      if (base_tv == nullptr) {
+        base_tv = input->as<TensorView>();
+        continue;
+      }
+      const TensorView* tv = input->as<TensorView>();
+      addToEquivalentSets(base_tv, tv);
+    }
+    const TensorView* out_tv = bop->output(0)->as<TensorView>();
+    addToEquivalentSets(base_tv, out_tv);
+  }
+
+  void addToEquivalentSets(const TensorView* tv_x,
+                           const TensorView* tv_y) {
+    TORCH_INTERNAL_ASSERT(tv_x != nullptr);
+    TORCH_INTERNAL_ASSERT(tv_y != nullptr);
+    if (tv_x == tv_y) return;
+    const auto& root_x = tv_x->getRootDomain();
+    const auto& root_y = tv_y->getRootDomain();
+    for (size_t i = 0; i < root_x.size(); ++i) {
+      addToEquivalentSets(root_x[i], root_y[i]);
+    }
+  }
+
+  void addToEquivalentSets(const IterDomain *id_x,
+                           const IterDomain *id_y) {
+    auto it_x = equivalent_sets_.find(id_x->extent());
+    auto it_y = equivalent_sets_.find(id_y->extent());
+    //std::cerr << "Equivalent IDs: " << id_x << " == " << id_y << std::endl;
+    if (it_x != equivalent_sets_.end() &&
+        it_y != equivalent_sets_.end()) {
+      //std::cerr << "joining two sets\n";
+      // both already exist; join them
+      if (it_x->second != it_y->second) {
+        // already pointing to the same set
+        return;
+      }
+      auto x_set = it_x->second;
+      auto y_set = it_y->second;
+      for (const auto id_in_y: *y_set) {
+        x_set->insert(id_in_y);
+      }
+      equivalent_sets_[id_y->extent()] = x_set;
+    } else if (it_x != equivalent_sets_.end()) {
+      //std::cerr << "Adding " << id_y << " to the existing set for " << id_x << std::endl;
+      // id_y is a new ID
+      auto x_set = it_x->second;
+      x_set->insert(id_y->extent());
+      equivalent_sets_.insert({id_y->extent(), x_set});
+    } else if (it_y != equivalent_sets_.end()) {
+      //std::cerr << "Adding " << id_x << " to the existing set for " << id_y << std::endl;
+      // id_x is a new ID
+      auto y_set = it_y->second;
+      y_set->insert(id_x->extent());
+      equivalent_sets_.insert({id_x->extent(), y_set});
+    } else {
+      //std::cerr << "Creating a new equiv set\n";
+      // both are new
+      auto id_set = std::make_shared<std::unordered_set<const Val*>>();
+      id_set->insert(id_x->extent());
+      id_set->insert(id_y->extent());
+      equivalent_sets_.insert({id_x->extent(), id_set});
+      equivalent_sets_.insert({id_y->extent(), id_set});
+    }
+  }
+
+  // Mapping from a broadcast domain to its concrete domain
+  std::unordered_map<const Val*,
+                     std::shared_ptr<std::unordered_set<const Val*>>> equivalent_sets_;
+
+  static bool isEquivalent(const Val* id_x,
+                           const Val* id_y) {
+    Fusion* fusion = id_x->fusion();
+    MatchingIterDomainSearch search;
+    search.traverseFrom(fusion, fusion->outputs(), false);
+
+    auto it = search.equivalent_sets_.find(id_x);
+    if (it == search.equivalent_sets_.end()) {
+      // id_x not detected at all
+      //std::cerr << id_x << " not found\n";
+      return false;
+    }
+    auto equivalent_set = it->second;
+    bool result = equivalent_set->find(id_y) != equivalent_set->end();
+    if (!result) {
+      //std::cerr << id_y << " not found in the equivalent set\n";
+    }
+    return result;
+  }
+};
+
 bool sameAs(Val* v1, Val* v2);
 
 Val* omitMul1(Expr* e) {
@@ -1075,7 +1174,7 @@ Val* omitMul1(Expr* e) {
 }
 
 bool sameAs(const Expr* e1, const Expr* e2) {
-  std::cerr << "Checking expr equivalence of " << e1 << " and " << e2 << std::endl;
+  //std::cerr << "Checking expr equivalence of " << e1 << " and " << e2 << std::endl;
   if (e1 == nullptr || e2 == nullptr) return false;
 
   if (e1->inputs().size() != e2->inputs().size() ||
@@ -1115,18 +1214,23 @@ bool sameAs(Val* v1, Val* v2) {
     }
   }
 
-  return ScalarCheck::sameAs(v1, v2);
+  if (ScalarCheck::sameAs(v1, v2)) {
+    return true;
+  }
+
+  return MatchingIterDomainSearch::isEquivalent(v1, v2);
 }
 
 } // namespace
 
 bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
+  bool dbg = false;
   std::stringstream debug_msg;
   debug_msg << "Checking ID equivalence of " << id1 << " and " << id2;
 
   if (id1 == id2) {
     debug_msg << " -> true";
-    std::cerr << debug_msg.str() << std::endl;
+    if (dbg) std::cerr << debug_msg.str() << std::endl;
     return true;
   }
 
@@ -1139,8 +1243,11 @@ bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
 
   bool result = sameAs(id1->start(), id2->start()) &&
       sameAs(id1->rawExtent(), id2->rawExtent());
-  std::cerr << debug_msg.str()
-            << " -> " << result << std::endl;
+
+  if (dbg) {
+    std::cerr << debug_msg.str()
+              << " -> " << result << std::endl;
+  }
   return result;
 }
 

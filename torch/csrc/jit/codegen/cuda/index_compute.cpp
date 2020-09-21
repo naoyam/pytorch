@@ -6,6 +6,7 @@
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 
 namespace torch {
 namespace jit {
@@ -1039,8 +1040,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     TORCH_INTERNAL_ASSERT(cd_axis_idx < loops.size());
     Val* loop_idx = loops.at(cd_axis_idx)->index();
     Val* loop_extent = kir::lowerValue(consumer_cd_axis->extent());
-    if (consumer_cd->axis(cd_axis_idx)->isParallelized()) {
-      std::cerr << consumer_cd->axis(cd_axis_idx) << " is parallelized"
+    if (consumer_cd->axis(cd_axis_idx)->isThread()) {
+      std::cerr << consumer_cd->axis(cd_axis_idx) << " is threaded"
                 << "; extent: " << consumer_cd->axis(cd_axis_idx)->extent() << std::endl;
       loop_idx = new kir::Int(0);
       loop_extent = new kir::Int(1);
@@ -1156,22 +1157,87 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
               return std::get<0>(t1) < std::get<0>(t2);
             });
 
-  std::vector<Val*> strided_inds;
+  std::unordered_map<IterDomain*, Val*> dom_idx_map;
   for (size_t i = 0; i < root_inds.size(); ++i) {
-    Val* idx = std::get<1>(root_inds[i]);
-    Val* stride = nullptr;
-    for (size_t j = i + 1; j < root_inds.size(); ++j) {
-      //stride = mulx(stride, std::get<2>(root_inds[j]));
-      auto root_domain_j = root_domain.at(std::get<0>(root_inds[j]));
-      if (root_domain_j->isParallelized()) continue;
-      auto root_extent = kir::lowerValue(root_domain_j->extent());
-      stride = mulx(stride, root_extent);
-    }
-    Val* strided_offset = mulx(idx, stride);
-    strided_inds.push_back(strided_offset);
+    std::cerr << "Root ID: " << std::get<0>(root_inds[i])
+              << " (" << root_domain.at(std::get<0>(root_inds[i])) << ")"
+              << ", idx: " << std::get<1>(root_inds[i])
+              << std::endl;
+    dom_idx_map.insert({root_domain.at(std::get<0>(root_inds[i])),
+                        std::get<1>(root_inds[i])});
   }
 
-  std::cerr << "Strided indices: " << strided_inds << std::endl;
+  // Transform back to the original domain
+  std::vector<Val*> strided_inds;
+  {
+    std::vector<Val*> producer_domain;
+    std::transform(producer_tv->domain()->domain().begin(),
+                   producer_tv->domain()->domain().end(),
+                   std::back_inserter(producer_domain),
+                   [](IterDomain* dom) {
+                     return dom->as<Val>();
+                   });
+    auto producer_exprs = ExprSort::getExprs(producer_tv->fusion(),
+                                             producer_domain);
+    for (auto expr: producer_exprs) {
+      std::cerr << "Producer expr: " << expr;
+      if (expr->getExprType() == ExprType::Split) {
+        Split* split = expr->as<Split>();
+        IterDomain* in = split->in();
+        if (dom_idx_map.find(in) == dom_idx_map.end()) {
+          continue;
+        }
+        Val* in_idx = dom_idx_map.find(in)->second;
+        Val* inner_idx = kir::modExpr(in_idx, kir::lowerValue(split->factor()));
+        Val* outer_idx = kir::divExpr(in_idx, kir::lowerValue(split->factor()));
+        dom_idx_map.insert({split->outer(), outer_idx});
+        dom_idx_map.insert({split->inner(), inner_idx});
+      } else if (expr->getExprType() == ExprType::Merge) {
+        Merge* merge = expr->as<Merge>();
+        if (dom_idx_map.find(merge->inner()) == dom_idx_map.end() ||
+            dom_idx_map.find(merge->outer()) == dom_idx_map.end()) {
+          continue;
+        }
+        Val* inner_idx = dom_idx_map.find(merge->inner())->second;
+        Val* outer_idx = dom_idx_map.find(merge->outer())->second;
+        Val* inner_dim = kir::lowerValue(merge->inner()->extent());
+        Val* out_idx = addx(mulx(outer_idx, inner_dim), inner_idx);
+        dom_idx_map.insert({merge->out(), out_idx});
+      } else {
+        TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ",
+                              expr);
+      }
+    }
+    for (size_t i = 0; i < producer_tv->nDims(); ++i) {
+      IterDomain* prod_id = producer_tv->axis(i);
+      if (dom_idx_map.find(prod_id) == dom_idx_map.end()) {
+        // If the index is determined to be 0, no mapping entry is created.
+        continue;
+      }
+      if (prod_id->isThread() || prod_id->isReduction() ||
+          prod_id->isBroadcast()) {
+        std::cerr << "Ignoring " << prod_id << std::endl;
+        continue;
+      }
+      Val* idx = dom_idx_map.find(prod_id)->second;
+      std::cerr << "Prod idx: " << idx;
+      if (idx->getOrigin()) {
+        std::cerr << " (" << idx->getOrigin() << ")" << std::endl;
+      }
+      Val* extent = nullptr;
+      for (size_t j = i + 1; j < producer_tv->nDims(); ++j) {
+        IterDomain* id = producer_tv->axis(j);
+        if (id->isThread() || id->isReduction() ||
+            id->isBroadcast()) {
+          continue;
+        }
+        extent = mulx(extent, kir::lowerValue(id->extent()));
+      }
+      strided_inds.push_back(mulx(idx, extent));
+    }
+  }
+
+  std::cerr << "getConsumerIndex_impl2: Strided indices: " << strided_inds << std::endl;
 
   return new kir::TensorIndex(producer_tv, strided_inds);
 }
@@ -1362,7 +1428,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
     IterDomain* axis = cd->axis(i);
     std::cerr << "CD axis at " << i << ": " << axis << std::endl;
     // Parallelized domain doesn't need offsetting
-    if (axis->isParallelized()) continue;
+    if (axis->isThread()) continue;
     // Broadcast domain doesn't contribute to offsetting
     if (axis->isBroadcast()) continue;
     // Reduction domain doesn't contribute to offsetting

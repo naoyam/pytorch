@@ -619,8 +619,6 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops) {
 
-  bool original = std::getenv("ORIGINAL");
-
   // If in global memory, it can be all the way outside the loops.
   if (tv->getMemoryType() == MemoryType::Global) {
     return {nullptr, 0};
@@ -628,17 +626,11 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   std::cerr << "getAllocPoint of " << tv
             << ", #loops: " << loops.size()
             << std::endl;
-#if 0
-  std::cerr << "getAllocPoint of " << tv
-            << " in {";
-  for (const auto& l: loops) {
-    std::cerr << " " << l;
-  }
-  std::cerr << " }" << std::endl;
-#endif
 
   // Figure out where we want to place alloc/reduction initialization. We want
   // outside an unroll loop, or inside our computeAt point.
+
+#if 0
   kir::ForLoop* alloc_loop = nullptr;
 
   auto loops_it = loops.begin();
@@ -649,78 +641,73 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
 
     auto ca_id = tv->getComputeAtAxis(tv_i).first;
     auto kir_ca_id = kir::lowerValue(ca_id)->as<kir::IterDomain>();
-    if (original) {
-      std::cerr << "Looking up " << ca_id << " (" << kir_ca_id << ")" << std::endl;
+    std::cerr << "Looking up " << ca_id << " (" << kir_ca_id << ")" << std::endl;
 
-      loops_it =
-          std::find_if(loops_it, loops.end(), [&kir_ca_id](const kir::ForLoop* loop) {
-            return kir_ca_id == loop->iter_domain() ||
-                loop->iter_domain()->getParallelType() == ParallelType::Unroll;
-          });
+    loops_it =
+        std::find_if(loops_it, loops.end(), [&kir_ca_id](const kir::ForLoop* loop) {
+          return kir_ca_id == loop->iter_domain() ||
+              loop->iter_domain()->getParallelType() == ParallelType::Unroll;
+        });
 
-      if (loops_it == loops.end()) {
-        std::cout << "getAllocPoint for " << tv << std::endl;
-        for (auto loop : loops) {
-          std::cout << loop->iter_domain() << "  ";
-        }
-        std::cout << std::endl;
+    if (loops_it == loops.end()) {
+      std::cout << "getAllocPoint for " << tv << std::endl;
+      for (auto loop : loops) {
+        std::cout << loop->iter_domain() << "  ";
       }
-      TORCH_INTERNAL_ASSERT(
-          loops_it != loops.end(),
-          "Could not find all required axes for indexing when trying to index into ",
-          tv);
+      std::cout << std::endl;
     }
+    TORCH_INTERNAL_ASSERT(
+        loops_it != loops.end(),
+        "Could not find all required axes for indexing when trying to index into ",
+        tv);
     if (kir_ca_id->getParallelType() == ParallelType::Unroll) {
+      std::cerr << "Unroll detected at " << tv_i << " (" << kir_ca_id << ")" << std::endl;
       return {alloc_loop, tv_i};
     }
-    if (original) {
-      alloc_loop = *loops_it;
-      ++loops_it;
+    alloc_loop = *loops_it;
+    ++loops_it;
+  }
+#endif
+
+  std::cerr << "Searching loop where alloc should be placed\n";
+  ComputeDomain* cd = tv->getComputeDomain();
+  if (tv->getThisComputeAtAxis() == 0) {
+    std::cerr << "alloc point outside loops" << std::endl;
+    return {nullptr, 0};
+  }
+
+  // TODO (CD): Note that CD compute-at position can be different from
+  // TV compute-at position for now
+  size_t loop_idx = cd->getComputeDomainAxisIndex(tv->getThisComputeAtAxis() - 1);
+  while (!cd->isComputeDomainAxisUsed(loop_idx)) {
+    TORCH_INTERNAL_ASSERT(loop_idx > 0);
+    --loop_idx;
+  }
+  // If an axis is reduction, allocate outside the axis
+  auto tv_axis_idx = cd->getTensorDomainAxisIndex(loop_idx);
+  while (tv->axis(tv_axis_idx)->isReduction()) {
+    if (tv_axis_idx == 0) {
+      std::cerr << "All dims are reductions\n";
+      return {nullptr, 0};
+    }
+    --tv_axis_idx;
+    --loop_idx;
+  }
+  TORCH_INTERNAL_ASSERT(loop_idx < loops.size(), "num loops: ", loops.size(),
+                        ", position: ", loop_idx);
+
+  std::cerr << "alloc point found at " << loop_idx << std::endl;
+
+  // Allocation is outside an unrolled loop
+  for (size_t i = 0; i < tv_axis_idx; ++i) {
+    if (tv->getComputeAtAxis(i).first->getParallelType() == ParallelType::Unroll) {
+      std::cerr << "Unroll detected at " << i << std::endl;
+      auto alloc_loop = (i == 0) ? nullptr : loops.at(i-1);
+      return {alloc_loop, (int64_t)i};
     }
   }
 
-  if (original) {
-    return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
-  } else {
-    std::cerr << "Searching loop where alloc should be placed\n";
-    ComputeDomain* cd = tv->getComputeDomain();
-    if (tv->getThisComputeAtAxis() > 0) {
-      // Note that CD compute-at position can be different from TV
-      // compute-at position for now
-      size_t loop_idx = cd->getComputeDomainAxisIndex(tv->getThisComputeAtAxis() - 1);
-      while (!cd->isComputeDomainAxisUsed(loop_idx)) {
-        TORCH_INTERNAL_ASSERT(loop_idx > 0);
-        --loop_idx;
-      }
-      auto tv_axis_idx = cd->getTensorDomainAxisIndex(loop_idx);
-      bool outside_loop = false;
-      while (tv->axis(tv_axis_idx)->isReduction()) {
-        if (tv_axis_idx == 0) {
-          outside_loop = true;
-          alloc_loop = nullptr;
-          std::cerr << "All dims are reductions\n";
-          break;
-        }
-        --tv_axis_idx;
-        --loop_idx;
-      }
-      if (loop_idx >= loops.size()) {
-        std::cerr << "num loops: " << loops.size()
-                  << ", position: " << loop_idx
-                  << std::endl;
-        TORCH_INTERNAL_ASSERT(loop_idx < loops.size());
-      }
-      if (!outside_loop) {
-        alloc_loop = loops.at(loop_idx);
-        std::cerr << "alloc point found at " << loop_idx << std::endl;
-      } else {
-        std::cerr << "alloc point outside loops" << std::endl;
-      }
-    } else {
-      std::cerr << "alloc point outside loops" << std::endl;
-    }
-    return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
-  }
+  return {loops.at(loop_idx), (int64_t)tv->getThisComputeAtAxis()};
 }
 
 std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(
