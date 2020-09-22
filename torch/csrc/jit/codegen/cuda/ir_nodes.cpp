@@ -1114,6 +1114,7 @@ class MatchingIterDomainSearch: public IterVisitor {
     if (tv_x == tv_y) return;
     const auto& root_x = tv_x->getRootDomain();
     const auto& root_y = tv_y->getRootDomain();
+    TORCH_INTERNAL_ASSERT(root_x.size() == root_y.size());
     for (size_t i = 0; i < root_x.size(); ++i) {
       addToEquivalentSets(root_x[i], root_y[i]);
     }
@@ -1121,43 +1122,51 @@ class MatchingIterDomainSearch: public IterVisitor {
 
   void addToEquivalentSets(const IterDomain *id_x,
                            const IterDomain *id_y) {
-    auto it_x = equivalent_sets_.find(id_x->extent());
-    auto it_y = equivalent_sets_.find(id_y->extent());
-    //std::cerr << "Equivalent IDs: " << id_x << " == " << id_y << std::endl;
+    bool dbg = false;
+    const auto x_key = id_x->extent();
+    const auto y_key = id_y->extent();
+    if (x_key == y_key) {
+      // same pointer; nothing to do
+      return;
+    }
+    auto it_x = equivalent_sets_.find(x_key);
+    auto it_y = equivalent_sets_.find(y_key);
+    if (dbg) std::cerr << "Equivalent IDs: " << id_x << " == " << id_y << std::endl;
     if (it_x != equivalent_sets_.end() &&
         it_y != equivalent_sets_.end()) {
-      //std::cerr << "joining two sets\n";
+      if (dbg) std::cerr << "joining two sets\n";
       // both already exist; join them
-      if (it_x->second != it_y->second) {
-        // already pointing to the same set
+      if (it_x->second == it_y->second) {
+        if (dbg) std::cerr << "already pointing to the same set" << std::endl;
         return;
       }
       auto x_set = it_x->second;
       auto y_set = it_y->second;
       for (const auto id_in_y: *y_set) {
+        if (dbg) std::cerr << "Adding " << id_in_y << " to set for " << id_x << std::endl;
         x_set->insert(id_in_y);
+        equivalent_sets_[id_in_y] = x_set;
       }
-      equivalent_sets_[id_y->extent()] = x_set;
     } else if (it_x != equivalent_sets_.end()) {
-      //std::cerr << "Adding " << id_y << " to the existing set for " << id_x << std::endl;
+      if (dbg) std::cerr << "Adding " << id_y << " to the existing set for " << id_x << std::endl;
       // id_y is a new ID
       auto x_set = it_x->second;
-      x_set->insert(id_y->extent());
-      equivalent_sets_.insert({id_y->extent(), x_set});
+      x_set->insert(y_key);
+      equivalent_sets_.insert({y_key, x_set});
     } else if (it_y != equivalent_sets_.end()) {
-      //std::cerr << "Adding " << id_x << " to the existing set for " << id_y << std::endl;
+      if (dbg) std::cerr << "Adding " << id_x << " to the existing set for " << id_y << std::endl;
       // id_x is a new ID
       auto y_set = it_y->second;
-      y_set->insert(id_x->extent());
-      equivalent_sets_.insert({id_x->extent(), y_set});
+      y_set->insert(x_key);
+      equivalent_sets_.insert({x_key, y_set});
     } else {
-      //std::cerr << "Creating a new equiv set\n";
+      if (dbg) std::cerr << "Creating a new equiv set\n";
       // both are new
       auto id_set = std::make_shared<std::unordered_set<const Val*>>();
-      id_set->insert(id_x->extent());
-      id_set->insert(id_y->extent());
-      equivalent_sets_.insert({id_x->extent(), id_set});
-      equivalent_sets_.insert({id_y->extent(), id_set});
+      id_set->insert(x_key);
+      id_set->insert(y_key);
+      equivalent_sets_.insert({x_key, id_set});
+      equivalent_sets_.insert({y_key, id_set});
     }
   }
 
@@ -1167,6 +1176,8 @@ class MatchingIterDomainSearch: public IterVisitor {
 
   static bool isEquivalent(const Val* id_x,
                            const Val* id_y) {
+    bool dbg = false;
+    if (dbg) std::cerr << "isEquivalent? " << id_x << " and " << id_y << std::endl;
     Fusion* fusion = id_x->fusion();
     MatchingIterDomainSearch search;
     search.traverseFrom(fusion, fusion->outputs(), false);
@@ -1174,13 +1185,13 @@ class MatchingIterDomainSearch: public IterVisitor {
     auto it = search.equivalent_sets_.find(id_x);
     if (it == search.equivalent_sets_.end()) {
       // id_x not detected at all
-      //std::cerr << id_x << " not found\n";
+      if (dbg) std::cerr << id_x << " not found\n";
       return false;
     }
     auto equivalent_set = it->second;
     bool result = equivalent_set->find(id_y) != equivalent_set->end();
     if (!result) {
-      //std::cerr << id_y << " not found in the equivalent set\n";
+      if (dbg) std::cerr << id_y << " not found in the equivalent set\n";
     }
     return result;
   }
