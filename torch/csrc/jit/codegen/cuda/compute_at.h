@@ -104,6 +104,9 @@ class ComputeAt {
   TensorView* producer_;
   TensorView* consumer_;
   unsigned int consumer_position_;
+  // TODO (CD): Probably not needed to keep both of this and
+  // consumer_position_ but for now keep both of them.
+  unsigned int consumer_cd_position_;
 
   // Runs replayPasC and sets producer computeAt settings. Returns
   // producer_compute_at_axis.

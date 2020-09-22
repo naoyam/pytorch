@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
+#include <torch/csrc/jit/codegen/cuda/compute_at.h>
 
 #include <vector>
 
@@ -206,8 +207,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
     const TensorDomain* consumer,
     const ComputeDomain* consumer_cd,
     int consumer_compute_at_axis) {
-  if (consumer_compute_at_axis < 0)
-    consumer_compute_at_axis += (int)consumer_cd->nDims() + 1;
+  // producer_compute_at_axis is a position in the producer compute domain.
+  normalizeComputeAtPos(consumer_compute_at_axis, consumer_cd->nDims());
 
   std::cerr << "replayPasC: producer: " << producer
             << ", consumer: " << consumer
@@ -246,6 +247,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
     std::cerr << "consumer CA root ID: " << id << std::endl;
   }
 
+  std::cerr << "Producer mayberfactordomain: "
+            << producer->getMaybeRFactorDomain() << std::endl;
   // Map of consumer_CA_root_ids to related producer_CA_ids
   auto replay_root_map =
       consumer_cd->mapRootDomain(producer->getMaybeRFactorDomain(), consumer_CA_root_ids);
@@ -438,21 +441,23 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
     const TensorDomain* producer,
     const ComputeDomain* producer_cd,
     int producer_compute_at_axis) {
-  if (producer_compute_at_axis < 0)
-    producer_compute_at_axis += (int)producer_cd->nDims() + 1;
+  // producer_compute_at_axis is a position in the producer compute domain.
+  normalizeComputeAtPos(producer_compute_at_axis, producer_cd->nDims());
 
   TORCH_INTERNAL_ASSERT(
       producer_compute_at_axis >= 0 &&
       (unsigned int)producer_compute_at_axis <= producer_cd->nDims(),
       "Invalid axis in transform replayCasP.");
 
+  std::cerr << "CasP: producer CD position: " << producer_compute_at_axis << std::endl;
+
   const auto& producer_domain = producer_cd->axes();
 
   // producer ids we need to match in consumer
   std::vector<IterDomain*> producer_CA_ids(
       producer_domain.begin(),
-      producer_domain.begin() +
-      producer_cd->getComputeDomainPos(producer_compute_at_axis));
+      producer_domain.begin() + producer_compute_at_axis);
+
   //producer_CA_ids = TensorDomain::noReductions(producer_CA_ids);
 
   for (const auto& id: producer_CA_ids) {
@@ -669,7 +674,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
 }
 
 // replay Producer as Consumer
-std::pair<TensorView*, unsigned int> TransformReplay::replayPasC(
+std::tuple<TensorView*, unsigned int, unsigned int> TransformReplay::replayPasC(
     TensorView* producer,
     TensorView* consumer,
     int compute_at_axis) {
@@ -677,24 +682,24 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayPasC(
 
   // If this is a reduction operation, we may call transform_replay on the
   // tensor view. When this happens, just return thet target view.
-  if (producer == consumer)
-    return {producer, 0};
+  if (producer == consumer) {
+    return {producer, 0, 0};
+  }
 
-
-  std::pair<TensorDomain*, unsigned int> replay =
+  auto replay =
       replayPasC(producer->domain(), consumer->domain(), consumer->getComputeDomain(),
                  compute_at_axis);
   producer->setDomain(replay.first);
   producer->getComputeDomain()->computeAt(producer->domain(),
                                           replay.second,
                                           consumer->getComputeDomain(),
-                                          consumer->getComputeDomain()->getComputeDomainPos(compute_at_axis));
+                                          compute_at_axis);
   producer->getComputeDomain()->registerAsDependent(consumer->getComputeDomain());
   std::cerr << "producer new CD: " << *producer->getComputeDomain() << std::endl;
-  return {producer, replay.second};
+  return {producer, replay.second, producer->getComputeDomain()->getComputeAtPos()};
 }
 
-std::pair<TensorView*, unsigned int> TransformReplay::replayCasP(
+std::tuple<TensorView*, unsigned int, unsigned int> TransformReplay::replayCasP(
     TensorView* consumer,
     TensorView* producer,
     int compute_at_axis) {
@@ -705,19 +710,19 @@ std::pair<TensorView*, unsigned int> TransformReplay::replayCasP(
   // If this is a reduction operation, we may call transform_replay on the same
   // tensor view. When this happens, just return thet target view.
   if (consumer == producer)
-    return {consumer, 0};
+    return {consumer, 0, 0};
 
-  std::pair<TensorDomain*, unsigned int> replay =
+  auto replay =
       replayCasP(consumer->domain(), producer->domain(), producer->getComputeDomain(),
                  compute_at_axis);
   consumer->setDomain(replay.first);
   consumer->getComputeDomain()->computeAt(consumer->domain(),
                                           replay.second,
                                           producer->getComputeDomain(),
-                                          producer->getComputeDomain()->getComputeDomainPos(compute_at_axis));
+                                          compute_at_axis);
   consumer->getComputeDomain()->registerAsDependent(producer->getComputeDomain());
   std::cerr << "consumer new CD: " << *consumer->getComputeDomain() << std::endl;
-  return {consumer, replay.second};
+  return {consumer, replay.second, consumer->getComputeDomain()->getComputeAtPos()};
 }
 
 } // namespace fuser

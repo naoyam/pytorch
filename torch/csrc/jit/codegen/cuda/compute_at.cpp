@@ -208,17 +208,19 @@ unsigned int ComputeAt::backwardComputeAt_impl(
   auto& producer_entry = tv_data.at(producer);
 
   // Use TensorDomain interface so it doesn't set computeAt automatically
-  auto replay = TransformReplay::replayPasC(
+  const auto replay = TransformReplay::replayPasC(
       producer, consumer, (int)consumer_compute_at_axis);
 
-  producer_entry.setPassPosition(replay.second);
+  const auto td_pos = std::get<1>(replay);
+  const auto cd_pos = std::get<2>(replay);
+  producer_entry.setPassPosition(td_pos);
 
-  if (producer_entry.shouldSetComputeAt(replay.second)) {
+  if (producer_entry.shouldSetComputeAt(td_pos)) {
     producer->setComputeAt(consumer, (int)consumer_compute_at_axis);
     producer_entry.setComputeAtDomain(producer->domain());
   }
 
-  return replay.second;
+  return cd_pos;
 }
 
 // Actually applies transformation
@@ -229,20 +231,22 @@ unsigned int ComputeAt::forwardComputeAt_impl(
   auto& consumer_entry = tv_data.at(consumer);
   const auto& producer_entry = tv_data.at(producer);
 
-  auto replay = TransformReplay::replayCasP(
+  const auto replay = TransformReplay::replayCasP(
       consumer, producer, (int)producer_compute_at_axis);
 
+  const auto td_pos = std::get<1>(replay);
+
   if (producer_entry.shouldSetComputeAt(producer_compute_at_axis)) {
-    producer->setComputeAt(consumer, replay.second);
+    producer->setComputeAt(consumer, td_pos);
   }
 
-  consumer_entry.setPassPosition(replay.second);
-  if (consumer_entry.shouldSetComputeAt(replay.second) &&
+  consumer_entry.setPassPosition(td_pos);
+  if (consumer_entry.shouldSetComputeAt(td_pos) &&
       consumer != consumer_) {
     consumer_entry.setComputeAtDomain(consumer->domain());
   }
 
-  return replay.second;
+  return td_pos;
 }
 
 void ComputeAt::setCommonConsumer() {
@@ -307,7 +311,8 @@ void ComputeAt::traverseBackward() {
   for (auto tv_chain : chains) {
     TensorView* running_producer = tv_chain.back();
     TensorView* running_consumer = nullptr;
-    unsigned int running_consumer_pos = consumer_position_;
+    //unsigned int running_consumer_pos = consumer_position_;
+    unsigned int running_consumer_pos = consumer_cd_position_;
     tv_chain.pop_back();
 
     TORCH_INTERNAL_ASSERT(running_producer == consumer_);
@@ -332,7 +337,9 @@ void ComputeAt::traverseForward() {
         DependencyCheck::getAllDependencyChains(producer_, common_consumer_));
   }
 
-  unsigned int producer_pos = tv_data.at(producer_).getNewPosition();
+  //unsigned int producer_pos =
+  //tv_data.at(producer_).getNewPosition();
+  const unsigned int producer_pos = producer_->getComputeDomain()->getComputeAtPos();
 
   // propagate forward through all chains
   for (auto tv_dep_chain : chains) {
@@ -454,6 +461,9 @@ ComputeAt::ComputeAt(
   // consumer for all chains at or after the consumer specified in the computeAt
   // call.
   setCommonConsumer();
+
+  consumer_cd_position_ = consumer_->getComputeDomain()->getComputeDomainPos(
+      consumer_position_);
 }
 
 } // namespace fuser
