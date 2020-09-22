@@ -1040,8 +1040,8 @@ class BroadcastMapping: public BackwardVisitor {
         if (output_root.at(i)->isBroadcast()) {
           continue;
         }
-        //std::cerr << "Concrete ID found: "
-        //<< input_root.at(i) << " -> " << output_root.at(i) << std::endl;
+        std::cerr << "Concrete ID found: "
+                  << input_root.at(i) << " -> " << output_root.at(i) << std::endl;
         map_.insert({input_root.at(i), output_root.at(i)});
       }
     }
@@ -1052,8 +1052,37 @@ class BroadcastMapping: public BackwardVisitor {
 
   static const IterDomain* getConcreteDomain(const IterDomain* bcast_dom) {
     BroadcastMapping bcast_mapping(bcast_dom->fusion());
+    auto& m = bcast_mapping.map_;
+
+    std::vector<Val*> from_vals;
+    from_vals.push_back(const_cast<IterDomain*>(bcast_dom));
+    auto dom_exprs = ExprSort::getExprs(bcast_dom->fusion(), from_vals);
+
+    for (auto expr: dom_exprs) {
+      if (expr->getExprType() == ExprType::Split) {
+        Split* split = expr->as<Split>();
+        if (!split->in()->isBroadcast()) {
+          continue;
+        }
+        TORCH_INTERNAL_ASSERT(m.find(split->in()) != bcast_mapping.map_.end());
+        IterDomain* concrete_id = const_cast<IterDomain*>(m.find(split->in())->second);
+        auto split_ids = IterDomain::split(concrete_id, split->factor());
+        m.insert({split->outer(), split_ids.first});
+        m.insert({split->inner(), split_ids.second});
+      } else if (expr->getExprType() == ExprType::Merge) {
+        TORCH_INTERNAL_ASSERT(false, "TODO");
+      } else {
+        TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
+      }
+    }
+
     auto it = bcast_mapping.map_.find(bcast_dom);
-    TORCH_INTERNAL_ASSERT(it != bcast_mapping.map_.end());
+    std::stringstream ss;
+    ss << "Concrete domain not found for "
+       << bcast_dom;
+    TORCH_INTERNAL_ASSERT(it != bcast_mapping.map_.end(), ss.str());
+    std::cerr << "Concrete domain for " << bcast_dom
+              << ": " << it->second << std::endl;
     return it->second;
   }
 };
