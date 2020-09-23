@@ -6839,8 +6839,23 @@ void testGPU_FusionComputeAtBCastReduction() {
 }
 
 void testGPU_FusionComputeDomain() {
-  if (std::getenv("all") || std::getenv("case1")) {
-    std::cerr << "\nCase 1\n" << std::endl;
+  bool is_all = true;
+  int case_num_env = -1;
+  if (std::getenv("case")) {
+    is_all = false;
+    case_num_env = std::stoi(std::getenv("case"));
+    std::cerr << "Case " << case_num_env << std::endl;
+  }
+
+  auto check_case = [&](int x) {
+    bool ret = is_all || (case_num_env == x);
+    if (ret) {
+      std::cerr << "\nCase " << x << std::endl << std::endl;
+    }
+    return ret;
+  };
+
+  if (check_case(1)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -6871,8 +6886,8 @@ void testGPU_FusionComputeDomain() {
     auto aten_output = t0 + 1.0 + 2.0;
     TORCH_CHECK(aten_output.allclose(t2));
   }
-  if (std::getenv("all") || std::getenv("case2")) {
-    std::cerr << "\nCase 2\n" << std::endl;
+
+  if (check_case(2)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -6916,8 +6931,8 @@ void testGPU_FusionComputeDomain() {
     auto aten_output = t0 + 1.0 + 2.0 + 3.0;
     TORCH_CHECK(aten_output.allclose(t3));
   }
-  if (std::getenv("all") || std::getenv("case3")) {
-    std::cerr << "\nCase 3\n" << std::endl;
+
+  if (check_case(3)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -6952,8 +6967,8 @@ void testGPU_FusionComputeDomain() {
     auto aten_t3 = aten_t1 + aten_t2;
     TORCH_CHECK(aten_t3.allclose(t3));
   }
-  if (std::getenv("all") || std::getenv("case4")) {
-    std::cerr << "\nCase 4\n" << std::endl;
+
+  if (check_case(4)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -6992,8 +7007,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t4.allclose(t4));
   }
 
-  if (std::getenv("all") || std::getenv("case5")) {
-    std::cerr << "\nCase 5\n" << std::endl;
+  if (check_case(5)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7032,8 +7046,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t4.allclose(t4));
   }
   // no common consumer
-  if (std::getenv("all") || std::getenv("case6")) {
-    std::cerr << "\nCase 6\n" << std::endl;
+  if (check_case(6)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7074,8 +7087,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t5.allclose(t5));
   }
   // reduction
-  if (std::getenv("all") || std::getenv("case7")) {
-    std::cerr << "\nCase 7\n" << std::endl;
+  if (check_case(7)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7111,8 +7123,7 @@ void testGPU_FusionComputeDomain() {
     auto aten_t3 = aten_t2 + 1.0;
     TORCH_CHECK(aten_t3.allclose(t3));
   }
-  if (std::getenv("all") || std::getenv("case8")) {
-    std::cerr << "\nCase 8\n" << std::endl;
+  if (check_case(8)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7159,8 +7170,7 @@ void testGPU_FusionComputeDomain() {
 #endif
   }
 
-  if (std::getenv("all") || std::getenv("case9")) {
-    std::cerr << "\nCase 9\n" << std::endl;
+  if (check_case(9)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7200,8 +7210,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2));
   }
 
-  if (std::getenv("all") || std::getenv("case10")) {
-    std::cerr << "\nCase 10\n" << std::endl;
+  if (check_case(10)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7212,15 +7221,21 @@ void testGPU_FusionComputeDomain() {
     auto tv2 = add(tv1, new Float(1));
     fusion.addOutput(tv2);
 
+    fusion.printMath();
+
     tv2->split(0, 4);
+    tv2->split(2, 8);
+
+    tv1->split(1, 8);
+
     tv1->computeAt(tv2, 1);
 
     fusion.printMath();
     fusion.printKernel();
 
     tv2->axis(0)->parallelize(ParallelType::BIDy);
-    tv1->axis(-1)->parallelize(ParallelType::BIDx);
-    tv2->axis(-1)->parallelize(ParallelType::BIDx);
+    tv1->axis(-2)->parallelize(ParallelType::BIDx);
+    tv2->axis(-2)->parallelize(ParallelType::BIDx);
 
     fusion.printMath();
     fusion.printKernel();
@@ -7241,8 +7256,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2));
   }
 
-  if (std::getenv("all") || std::getenv("case11")) {
-    std::cerr << "\nCase 11\n" << std::endl;
+  if (check_case(11)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7286,8 +7300,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2));
   }
 
-  if (std::getenv("all") || std::getenv("case12")) {
-    std::cerr << "\nCase 12\n" << std::endl;
+  if (check_case(12)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7324,8 +7337,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2));
   }
 
-  if (std::getenv("all") || std::getenv("case13")) {
-    std::cerr << "\nCase 13\n" << std::endl;
+  if (check_case(13)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7367,9 +7379,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2));
   }
 
-
-  if (std::getenv("all") || std::getenv("case14")) {
-    std::cerr << "\nCase 14\n" << std::endl;
+  if (check_case(14)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7416,8 +7426,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2));
   }
 
-  if (std::getenv("all") || std::getenv("case15")) {
-    std::cerr << "\nCase 15\n" << std::endl;
+  if (check_case(15)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7466,8 +7475,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t4.allclose(t4));
   }
 
-  if (std::getenv("all") || std::getenv("case16")) {
-    std::cerr << "\nCase 16\n" << std::endl;
+  if (check_case(16)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7507,8 +7515,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2));
   }
 
-  if (std::getenv("all") || std::getenv("case17")) {
-    std::cerr << "\nCase 17\n" << std::endl;
+  if (check_case(17)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7548,8 +7555,7 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t3.allclose(t3));
   }
 
-  if (std::getenv("all") || std::getenv("case18")) {
-    std::cerr << "\nCase 18\n" << std::endl;
+  if (check_case(18)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7581,7 +7587,7 @@ void testGPU_FusionComputeDomain() {
     fe.compileFusion(&fusion);
 
     int numel_x = 101;
-    int numel_y = 99;
+    int numel_y = 100;
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor t0 = at::rand({numel_x, numel_y}, options);
     at::Tensor t2 = at::empty({numel_x}, options);
@@ -7592,6 +7598,93 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(aten_t2.allclose(t2),
                 "Error of: ", aten_t2.sub(t2).abs().max());
   }
+
+  if (check_case(19)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->merge(0);
+    tv2->split(0, 4);
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(-1)->parallelize(ParallelType::Unroll);
+    tv1->axis(-1)->parallelize(ParallelType::Unroll);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 80;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(20)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->merge(0);
+    tv2->split(0, 4);
+
+    tv1->computeAt(tv2, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(-1)->parallelize(ParallelType::Unroll);
+    tv1->axis(-1)->parallelize(ParallelType::Unroll);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 80;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
 }
 
 void testGPU_FusionBCastMerge() {
