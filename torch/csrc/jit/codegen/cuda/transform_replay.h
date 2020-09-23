@@ -123,7 +123,7 @@ class ComputeDomain;
 class TORCH_CUDA_API TransformReplay {
  public:
   // Replay producer as consumer, returns {producer, producer_compute_at_axis}.
-  static std::pair<TensorDomain*, unsigned int> replayPasC(
+  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> replayPasC(
       const TensorDomain* producer,
       const TensorDomain* consumer,
       const ComputeDomain* consumer_cd,
@@ -137,7 +137,7 @@ class TORCH_CUDA_API TransformReplay {
       int consumer_compute_at_axis);
 
   // Replay producer as consumer, returns {consumer, consumer_compute_at_axis}.
-  static std::pair<TensorDomain*, unsigned int> replayCasP(
+  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> replayCasP(
       const TensorDomain* consumer,
       const TensorDomain* producer,
       const ComputeDomain* producer_cd,

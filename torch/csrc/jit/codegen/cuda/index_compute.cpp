@@ -730,9 +730,8 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
     const std::vector<kir::ForLoop*>& loops) {
   // Replay producer to look like consumer so we can index on producer since our
   // loop nests look like consumer
-  auto producerAsC = TransformReplay::replayPasC(
-      producer_tv->domain(), consumer_tv->domain(), consumer_tv->getComputeDomain(), -1)
-      .first;
+  auto producerAsC = std::get<0>(TransformReplay::replayPasC(
+      producer_tv->domain(), consumer_tv->domain(), consumer_tv->getComputeDomain(), -1));
 
   // Make the actual producer_tv look like consumer while we do the indexing
   // math in this function
@@ -890,9 +889,8 @@ kir::TensorIndex* Index::getProducerIndex_impl(
 
   // producer_tv->domain() is not replayed as the loop strucutre we were
   // provided, so replay it to match consumer_tv which is.
-  auto producerAsC = TransformReplay::replayPasC(
-      producer_tv->domain(), consumer_tv->domain(), consumer_tv->getComputeDomain(), -1)
-                         .first;
+  auto producerAsC = std::get<0>(TransformReplay::replayPasC(
+      producer_tv->domain(), consumer_tv->domain(), consumer_tv->getComputeDomain(), -1));
 
   // Set producer_tv with the domain replayed as consumer to grab the right
   // indices. The guard will reset the domain when this scope ends.
@@ -1002,8 +1000,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
 
   auto replay = TransformReplay::replayPasC(producer_tv->domain(), consumer_tv->domain(),
                                             consumer_cd, -1);
-  TensorDomain* producer_td = replay.first;
-  auto producer_pos = replay.second;
+  TensorDomain* producer_td = std::get<0>(replay);
+  auto producer_pos = std::get<1>(replay);
   std::cerr << "Replayed producer TD: " << producer_td
             << ", ca pos: " << producer_pos
             << std::endl;
@@ -1015,7 +1013,9 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
                     return id->isReduction();
                   }));
 
-  ComputeDomain producer_cd(producer_td, producer_pos, consumer_cd, -1);
+  ComputeDomain producer_cd;
+  producer_cd.computeAt(producer_td, producer_pos, consumer_cd, -1,
+                        std::get<2>(replay));
 
   std::cerr << "producer_td: " << producer_td << std::endl;
   std::cerr << "producer_cd: " << producer_cd << std::endl;
@@ -1048,6 +1048,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     }
     if (!own_id) {
       // No need to track CA IDs
+      std::cerr << "Ignoring CA ID\n";
       loop_idx = new kir::Int(0);
       loop_extent = new kir::Int(1);
     }
@@ -1060,6 +1061,11 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_idx));
     TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_extent));
     idx_extent_map.insert({producer_dom, {loop_idx, loop_extent, consumer_cd_axis, own_id}});
+  }
+
+  std::cerr << "idx_extent_map\n";
+  for (auto k: idx_extent_map) {
+    std::cerr << k.first << " -> {" << std::get<0>(k.second) << "}\n";
   }
 
   auto domain_exprs = ExprSort::getExprs(producer_tv->fusion(), domain);

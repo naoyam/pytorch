@@ -1237,17 +1237,22 @@ bool sameAs(Val* v1, Val* v2) {
   // assume it originates from a broadcast dimension and matches with
   // any other given dimnsion. This is cheating and must be fixed.
   if (v1->isOneInt() || v2->isOneInt()) {
+    //TORCH_INTERNAL_ASSERT(false, "should never happen");
     return true;
   }
 
   if (v1->getOrigin() && v2->getOrigin()) {
+    //TORCH_INTERNAL_ASSERT(false, "should never happen");
     return sameAs(v1->getOrigin(), v2->getOrigin());
   } else if (v1->getOrigin()) {
+    //TORCH_INTERNAL_ASSERT(false, "should never happen",
+    //v1, ", ", v2);
     auto v = omitMul1(v1->getOrigin());
     if (v) {
       return sameAs(v, v2);
     }
   } else if (v2->getOrigin()) {
+    //TORCH_INTERNAL_ASSERT(false, "should never happen");
     auto v = omitMul1(v2->getOrigin());
     if (v) {
       return sameAs(v1, v);
@@ -1297,13 +1302,6 @@ ComputeDomain::ComputeDomain(const TensorDomain* td):
           td->domain().end()),
     td_map_(td->nDims()) {
   std::iota(td_map_.begin(), td_map_.end(), 0);
-}
-
-ComputeDomain::ComputeDomain(const TensorDomain* td,
-                             int this_pos,
-                             const ComputeDomain* target,
-                             int target_pos) {
-  computeAt(td, this_pos, target, target_pos);
 }
 
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
@@ -1364,7 +1362,8 @@ void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
 void ComputeDomain::computeAt(const TensorDomain* td,
                               int this_pos,
                               const ComputeDomain* target,
-                              int target_pos) {
+                              int target_pos,
+                              const std::vector<size_t>& td2cd_map) {
   std::cerr << "computeAt: " << *target
             << " at " << target_pos
             << ", td: " << td << " at " << this_pos << std::endl;
@@ -1382,10 +1381,10 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   TORCH_INTERNAL_ASSERT((size_t)this_pos <= td->nDims());
   TORCH_INTERNAL_ASSERT((size_t)target_pos <= target->nDims());
 
+#if 0
   std::vector<IterDomain*> target_axes{target->axes().begin(),
                                        target->axes().begin() + target_pos};
   auto target_axes_it = target_axes.begin();
-
   for (int i = 0; i < this_pos; ++i) {
     IterDomain* this_axis = td_.at(i);
     target_axes_it = std::find_if(
@@ -1404,6 +1403,11 @@ void ComputeDomain::computeAt(const TensorDomain* td,
     // Search the rest of td in the remaining target axes
     ++target_axes_it;
   }
+#else
+  TORCH_INTERNAL_ASSERT(td2cd_map.size() == this_pos);
+  std::copy(td2cd_map.begin(), td2cd_map.end(),
+            td_map_.begin());
+#endif
 
   //auto num_shared_axes = std::distance(target_axes.begin(),
   //target_axes_it);

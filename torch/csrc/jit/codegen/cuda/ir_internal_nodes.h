@@ -547,11 +547,8 @@ class TORCH_CUDA_API TensorDomain : public Val {
 
 class TORCH_CUDA_API ComputeDomain {
  public:
+  explicit ComputeDomain() = default;
   explicit ComputeDomain(const TensorDomain* td);
-  explicit ComputeDomain(const TensorDomain* td,
-                         int this_pos,
-                         const ComputeDomain* target,
-                         int target_pos);
 
   size_t nDims() const {
     return axes().size();
@@ -572,8 +569,8 @@ class TORCH_CUDA_API ComputeDomain {
   void computeAt(const TensorDomain* td,
                  int this_pos,
                  const ComputeDomain* target,
-                 int target_pos);
-
+                 int target_pos,
+                 const std::vector<size_t>& td2cd_map);
 
   std::unordered_set<IterDomain*> getRootDomain() const;
 
