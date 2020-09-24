@@ -20,6 +20,7 @@ void ReplayTransformations::handle(Expr* e) {
 
 // We're going to replay this split operation on the corresponding ID
 void ReplayTransformations::handle(Split* s) {
+  std::cerr << "Replaying split: " << s << std::endl;
   // Grab our input to the split node
   auto id_in = s->in();
 
@@ -46,6 +47,8 @@ void ReplayTransformations::handle(Split* s) {
   // Remove mapped from the leaf IDs
   leaf_ids_.erase(mapped);
 
+  std::cerr << "split done: " << outs.first << ", " << outs.second << std::endl;
+
   // Add outputs to leaf IDs
   leaf_ids_[outs.first] = counter++;
   leaf_ids_[outs.second] = counter++;
@@ -57,6 +60,7 @@ void ReplayTransformations::handle(Split* s) {
 
 // We're going to replay this merge operation on the corresponding IDs
 void ReplayTransformations::handle(Merge* m) {
+  std::cerr << "Replaying merge: " << m << std::endl;
   // Grab the inputs to the merge node
   auto id_outer = m->outer();
   auto id_inner = m->inner();
@@ -196,7 +200,8 @@ void ReplayTransformations::runReplay() {
         it_leaf != leaf_ids_.end(),
         "Transform Traversal failed, expected a replayed dim for ",
         out,
-        " but one was not created.");
+        " but one was not created. ",
+        id_replayed, ", ", it_replayed->first);
   }
 
   // Populate leaf_vec_ in a deterministic manner. This is deterministic

@@ -187,7 +187,8 @@ std::vector<std::pair<IterDomain*, size_t>> replayMapFind(
     auto it = std::find_if(map.begin(), map.end(),
                            [id](const auto& map_kv) {
                              IterDomain* id_in_map = map_kv.first;
-                             return id == id_in_map;
+                             //return id == id_in_map;
+                             return ComputeDomain::sameAxes(id, id_in_map);
                            });
     if (it != map.end()) {
       auto mapped_id = it->second;
@@ -405,6 +406,14 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   }
 #else
   for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_domain)) {
+    // If the leaf id from ReplayTransformation is used to move
+    // forward with BestEffortReplay, it is not a final ID. It is
+    // initialy set as a leaf for BestEffortReplay, and so if it does
+    // not remain there, it means the ID is used to replay.
+    if (producer_replayed_leaves.getUnorderedLeafIDs().find(replayed_id.first) ==
+        producer_replayed_leaves.getUnorderedLeafIDs().end()) {
+      continue;
+    }
     if (used_IDs.find(replayed_id.first) == used_IDs.end()) {
       std::cerr << "(2): " << replayed_id << std::endl;
       new_IDs.push_back(replayed_id.first);
@@ -647,6 +656,14 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   }
 #else
   for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_cd->axes())) {
+    // If the leaf id from ReplayTransformation is used to move
+    // forward with BestEffortReplay, it is not a final ID. It is
+    // initialy set as a leaf for BestEffortReplay, and so if it does
+    // not remain there, it means the ID is used to replay.
+    if (consumer_replayed_leaves.getUnorderedLeafIDs().find(replayed_id.first) ==
+        consumer_replayed_leaves.getUnorderedLeafIDs().end()) {
+      continue;
+    }
     if (used_IDs.find(replayed_id.first) == used_IDs.end()) {
       new_IDs.push_back(replayed_id.first);
       used_IDs.emplace(replayed_id.first);
