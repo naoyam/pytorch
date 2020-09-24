@@ -220,8 +220,11 @@ BestEffortReplay::BestEffortReplay(
     std::unordered_map<IterDomain*, IterDomain*> replay_map,
     bool forward_bcast_mismatch)
     : id_map_(std::move(replay_map)) {
-  for (auto entry : id_map_)
+  for (auto entry : id_map_) {
     leaf_ids_[entry.second] = counter++;
+    std::cerr << "Initializing leaf: " << entry.second
+              << " -> " << leaf_ids_[entry.second] << std::endl;
+  }
 
   // Grab expr history of iter domains in target_domain
   std::vector<Expr*> t_exprs = ExprSort::getExprs(
@@ -389,6 +392,9 @@ BestEffortReplay::BestEffortReplay(
           r_out->getValType() == ValType::IterDomain) {
         id_map_[t_out->as<IterDomain>()] = r_out->as<IterDomain>();
         leaf_ids_[r_out->as<IterDomain>()] = counter++;
+        std::cerr << "Adding leaf: " << r_out->as<IterDomain>()
+                  << ", weight: " << leaf_ids_[r_out->as<IterDomain>()]
+                  << std::endl;
       }
     }
   }
