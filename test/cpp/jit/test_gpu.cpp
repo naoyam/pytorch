@@ -6737,8 +6737,9 @@ void testGPU_FusionComputeAtMultiBCast() {
   TensorView* tv4 = add(tv2, tv3);
   fusion.addOutput(tv4);
 
-  // This is not supported and should throw an exception.
-  ASSERT_ANY_THROW(tv1->computeAt(tv3, -1));
+  tv1->computeAt(tv3, -1);
+
+  // TODO: compile, run and validate the fusion
 }
 
 void testGPU_FusionComputeAtMultiReduction() {
