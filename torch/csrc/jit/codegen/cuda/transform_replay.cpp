@@ -491,6 +491,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
     }
   }
 #else
+  // TODO (CD) rfactor
   auto input_ids = IterVisitor::getInputsTo(
       std::vector<Val*>(producer_CA_ids.begin(), producer_CA_ids.end()));
   std::unordered_set<IterDomain*> producer_CA_root_ids{
@@ -626,12 +627,11 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
     new_IDs.push_back(replayed_id.first);
     used_IDs.emplace(replayed_id.first);
     td2cd_map.push_back(replayed_id.second);
+    std::cerr << "(1): " << replayed_id.first << std::endl;
   }
 #endif
 
   auto num_shared_axes = new_IDs.size();
-
-  std::cerr << "Trying (2)\n";
 
   // Add axes in (2)
 #if 0
@@ -650,6 +650,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
     if (used_IDs.find(replayed_id.first) == used_IDs.end()) {
       new_IDs.push_back(replayed_id.first);
       used_IDs.emplace(replayed_id.first);
+      std::cerr << "(2): " << replayed_id.first << std::endl;
     }
   }
 #endif
@@ -661,14 +662,18 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
       if (used_IDs.find(id) == used_IDs.end()) {
         new_IDs.push_back(id);
         used_IDs.emplace(id);
+        std::cerr << "(3): " << id << std::endl;
       }
     }
   }
 
   // Add axes in (4)
-  for (auto id : consumer_replayed_leaves.getLeafIDs())
-    if (used_IDs.find(id) == used_IDs.end())
+  for (auto id : consumer_replayed_leaves.getLeafIDs()) {
+    if (used_IDs.find(id) == used_IDs.end()) {
       new_IDs.push_back(id);
+      std::cerr << "(4): " << id << std::endl;
+    }
+  }
 
   TensorDomain* replayed = new TensorDomain(
       consumer->getRootDomain(),
