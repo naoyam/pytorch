@@ -1675,7 +1675,6 @@ void testGPU_FusionAdvancedComputeAt() {
     tv3->split(-1, 4);
 
     tv2->computeAt(tv3, 1);
-    tv2->split(-1, 4); // Kernel will break without this split
     tv3->axis(0)->parallelize(ParallelType::BIDx);
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
@@ -1691,6 +1690,43 @@ void testGPU_FusionAdvancedComputeAt() {
 
     TORCH_CHECK(at::allclose(outputs[0], t3));
   }
+}
+
+void testGPU_FusionAdvancedComputeAt6() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+  TensorView* tv1 = makeDummyTensor(2);
+  fusion.addInput(tv1);
+  TensorView* tv2 = add(tv0, new Float(2.0));
+  TensorView* tv3 = mul(tv1, tv2);
+  fusion.addOutput(tv3);
+
+  tv2->merge(0);
+  tv2->split(-1, 8);
+  tv2->split(-1, 4);
+  tv3->merge(0);
+  tv3->split(-1, 8);
+
+  tv2->computeAt(tv3, 1);
+
+  tv3->axis(0)->parallelize(ParallelType::BIDx);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({63, 65}, options);
+  at::Tensor t1 = at::rand_like(t0, options);
+
+  auto t2 = t0.add(2.0);
+  auto t3 = t1.mul(t2);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({t0, t1});
+
+  TORCH_CHECK(at::allclose(outputs[0], t3));
 }
 
 void testGPU_FusionComputeAtMultiConsumers() {
@@ -5337,7 +5373,7 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
           auto aten_output = input.sum({axis});
 
           TORCH_CHECK(
-              aten_output.allclose(outputs[0], 1e-03, 1e-03),
+              aten_output.allclose(outputs[0], 1e-02, 1e-03),
               "Error of: ",
               aten_output.sub(outputs[0]).abs().max());
         }

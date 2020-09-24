@@ -153,6 +153,7 @@ namespace jit {
   _(GPU_FusionCompoundOps)                          \
   _(GPU_FusionCastOps)                              \
   _(GPU_FusionAdvancedComputeAt)                    \
+  _(GPU_FusionAdvancedComputeAt6)                   \
   _(GPU_FusionComputeAtMultiConsumers)              \
   _(GPU_FusionComputeAtCommonConsumer1)             \
   _(GPU_FusionComputeAtCommonConsumer2)             \
