@@ -1306,7 +1306,7 @@ ComputeDomain::ComputeDomain(const TensorDomain* td):
 
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
     const std::vector<IterDomain*>& root_domain,
-    const std::unordered_set<IterDomain*>& compute_root_ids) const {
+    const std::unordered_set<IterDomain*>& compute_root_ids) {
   auto root_ids = compute_root_ids;
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
   for (const auto& id: root_domain) {
@@ -1555,7 +1555,7 @@ std::ostream& ComputeDomain::print(std::ostream& os) const {
       ++map_it;
     }
   }
-  os << ", " << td_map_;
+  //os << ", " << td_map_;
   os << " )";
   return os;
 }

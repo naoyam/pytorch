@@ -575,9 +575,9 @@ class TORCH_CUDA_API ComputeDomain {
   std::unordered_set<IterDomain*> getRootDomain() const;
 
   // Return a map from IterDomains in ComputeDomain to IterDomains in a given domain
-  std::unordered_map<IterDomain*, IterDomain*> mapRootDomain(
+  static std::unordered_map<IterDomain*, IterDomain*> mapRootDomain(
       const std::vector<IterDomain*>& root_domain,
-      const std::unordered_set<IterDomain*>& compute_root_ids) const;
+      const std::unordered_set<IterDomain*>& compute_root_ids);
 
   void split(const TensorDomain* new_td, int axis_idx);
 
