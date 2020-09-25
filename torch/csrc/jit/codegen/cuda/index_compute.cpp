@@ -1003,24 +1003,14 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     std::cerr << "idx: " << i << std::endl;
     IterDomain* dom = consumer_tv->axis(i);
     std::cerr << "dom: " << dom << std::endl;
-#if 0
-    if (dom->isReduction()) {
-      TORCH_INTERNAL_ASSERT(false, "reduction: ", producer_dom);
-      std::cerr << "Ignoring reduciton: " << producer_dom << std::endl;
-      continue;
-    }
-#endif
     auto cd_axis_idx = consumer_cd->getComputeDomainAxisIndex(i);
-    //IterDomain* consumer_cd_axis = consumer_cd->axis(cd_axis_idx);
     TORCH_INTERNAL_ASSERT(cd_axis_idx < loops.size());
     Val* loop_idx = loops.at(cd_axis_idx)->index();
-    //Val* loop_extent = kir::lowerValue(consumer_cd_axis->extent());
     std::cerr << "Initial entry: "
               << dom
               << ", " << loop_idx
               << std::endl;
     TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_idx));
-    //TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_extent));
     consumer_idx_map.insert({dom, loop_idx});
   }
 
@@ -1051,15 +1041,9 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       auto inner_map = consumer_idx_map.find(inner);
       TORCH_INTERNAL_ASSERT(inner_map != consumer_idx_map.end());
       Val* outer_idx = outer_map->second;
-      //Val* outer_extent = std::get<1>(outer_map->second);
-      //IterDomain* inner_consumer_id = std::get<1>(inner_map->second);
       Val* inner_idx = inner_map->second;
-      //Val* inner_extent = std::get<1>(inner_map->second);
       Val* inner_extent = kir::lowerValue(inner->extent());
       Val* in_idx = addx(mulx(outer_idx, inner_extent), inner_idx);
-      //Expr* consumer_expr = inner_consumer_id->getOrigin();
-      //TORCH_INTERNAL_ASSERT(consumer_expr->getExprType() == ExprType::Split);
-      //IterDomain* consumer_in_id = consumer_expr->as<Split>()->in();
       consumer_idx_map.insert({split->in(), {in_idx}});
       consumer_idx_map.erase(outer);
       consumer_idx_map.erase(inner);
@@ -1068,13 +1052,6 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       auto out_map = consumer_idx_map.find(merge->out());
       TORCH_INTERNAL_ASSERT(out_map != consumer_idx_map.end());
       Val* out_idx = out_map->second;
-      //auto out_extent = std::get<1>(out_map->second);
-      //IterDomain* out_consumer_id = std::get<1>(out_map->second);
-      //Expr* consumer_expr = out_consumer_id->getOrigin();
-      //TORCH_INTERNAL_ASSERT(consumer_expr->getExprType() == ExprType::Merge);
-      //IterDomain* consumer_inner_id = consumer_expr->as<Merge>()->inner();
-      //Val* inner_extent =
-      //kir::lowerValue(consumer_inner_id->extent());
       Val* inner_extent = kir::lowerValue(merge->inner()->extent());
       Val* inner_idx = kir::modExpr(out_idx, inner_extent);
       Val* outer_idx = kir::divExpr(out_idx, inner_extent);
@@ -1131,8 +1108,6 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   }
 
   // Transform to the original producer domain
-  std::vector<Val*> strided_inds;
-
   std::vector<Val*> producer_domain;
   std::transform(producer_tv->domain()->domain().begin(),
                  producer_tv->domain()->domain().end(),
@@ -1174,6 +1149,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
     }
   }
+
+  std::vector<Val*> strided_inds;
   for (size_t i = producer_tv->getThisComputeAtAxis(); i < producer_tv->nDims(); ++i) {
     IterDomain* prod_id = producer_tv->axis(i);
     if (prod_id->isReduction()) {
