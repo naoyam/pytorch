@@ -1132,80 +1132,79 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
 
   // Transform to the original producer domain
   std::vector<Val*> strided_inds;
-  {
-    std::vector<Val*> producer_domain;
-    std::transform(producer_tv->domain()->domain().begin(),
-                   producer_tv->domain()->domain().end(),
-                   std::back_inserter(producer_domain),
-                   [](IterDomain* dom) {
-                     return dom->as<Val>();
-                   });
-    // TODO (CD): This goes back all the way to the root
-    // domain. Should stop at rfactor root?
-    auto producer_exprs = ExprSort::getExprs(producer_tv->fusion(),
-                                             producer_domain);
-    for (auto expr: producer_exprs) {
-      std::cerr << "Producer expr: " << expr;
-      if (expr->getExprType() == ExprType::Split) {
-        Split* split = expr->as<Split>();
-        IterDomain* in = split->in();
-        if (producer_idx_map.find(in) == producer_idx_map.end()) {
-          TORCH_INTERNAL_ASSERT(false);
-          continue;
-        }
-        Val* in_idx = producer_idx_map.find(in)->second;
-        Val* inner_idx = kir::modExpr(in_idx, kir::lowerValue(split->factor()));
-        Val* outer_idx = kir::divExpr(in_idx, kir::lowerValue(split->factor()));
-        producer_idx_map.insert({split->outer(), outer_idx});
-        producer_idx_map.insert({split->inner(), inner_idx});
-      } else if (expr->getExprType() == ExprType::Merge) {
-        Merge* merge = expr->as<Merge>();
-        if (producer_idx_map.find(merge->inner()) == producer_idx_map.end() ||
-            producer_idx_map.find(merge->outer()) == producer_idx_map.end()) {
-          TORCH_INTERNAL_ASSERT(false);
-          continue;
-        }
-        Val* inner_idx = producer_idx_map.find(merge->inner())->second;
-        Val* outer_idx = producer_idx_map.find(merge->outer())->second;
-        Val* inner_dim = kir::lowerValue(merge->inner()->extent());
-        Val* out_idx = addx(mulx(outer_idx, inner_dim), inner_idx);
-        producer_idx_map.insert({merge->out(), out_idx});
-      } else {
-        TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
+
+  std::vector<Val*> producer_domain;
+  std::transform(producer_tv->domain()->domain().begin(),
+                 producer_tv->domain()->domain().end(),
+                 std::back_inserter(producer_domain),
+                 [](IterDomain* dom) {
+                   return dom->as<Val>();
+                 });
+  // TODO (CD): This goes back all the way to the root
+  // domain. Should stop at rfactor root?
+  auto producer_exprs = ExprSort::getExprs(producer_tv->fusion(),
+                                           producer_domain);
+  for (auto expr: producer_exprs) {
+    std::cerr << "Producer expr: " << expr;
+    if (expr->getExprType() == ExprType::Split) {
+      Split* split = expr->as<Split>();
+      IterDomain* in = split->in();
+      if (producer_idx_map.find(in) == producer_idx_map.end()) {
+        TORCH_INTERNAL_ASSERT(false);
+        continue;
       }
+      Val* in_idx = producer_idx_map.find(in)->second;
+      Val* inner_idx = kir::modExpr(in_idx, kir::lowerValue(split->factor()));
+      Val* outer_idx = kir::divExpr(in_idx, kir::lowerValue(split->factor()));
+      producer_idx_map.insert({split->outer(), outer_idx});
+      producer_idx_map.insert({split->inner(), inner_idx});
+    } else if (expr->getExprType() == ExprType::Merge) {
+      Merge* merge = expr->as<Merge>();
+      if (producer_idx_map.find(merge->inner()) == producer_idx_map.end() ||
+          producer_idx_map.find(merge->outer()) == producer_idx_map.end()) {
+        TORCH_INTERNAL_ASSERT(false);
+        continue;
+      }
+      Val* inner_idx = producer_idx_map.find(merge->inner())->second;
+      Val* outer_idx = producer_idx_map.find(merge->outer())->second;
+      Val* inner_dim = kir::lowerValue(merge->inner()->extent());
+      Val* out_idx = addx(mulx(outer_idx, inner_dim), inner_idx);
+      producer_idx_map.insert({merge->out(), out_idx});
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
     }
-    for (size_t i = producer_tv->getThisComputeAtAxis(); i < producer_tv->nDims(); ++i) {
-      IterDomain* prod_id = producer_tv->axis(i);
-      if (prod_id->isReduction()) {
-        // this should not appear at the consumer
-        continue;
-      }
-      if (producer_idx_map.find(prod_id) == producer_idx_map.end()) {
-        // If the index is determined to be 0, no mapping entry is
-        // created.
-        TORCH_INTERNAL_ASSERT(false,
-                              "Mapping not detected for ", prod_id);
-        continue;
-      }
-      if (prod_id->isThread()) {
-        continue;
-      }
-      Val* idx = producer_idx_map.find(prod_id)->second;
-      std::cerr << "Prod idx: " << idx;
-      if (idx->getOrigin()) {
-        std::cerr << " (" << idx->getOrigin() << ")";
-      }
-      std::cerr << std::endl;
-      Val* extent = nullptr;
-      for (size_t j = i + 1; j < producer_tv->nDims(); ++j) {
-        IterDomain* id = producer_tv->axis(j);
-        if (id->isThread() || id->isReduction()) {
-          continue;
-        }
-        extent = mulx(extent, kir::lowerValue(id->extent()));
-      }
-      strided_inds.push_back(mulx(idx, extent));
+  }
+  for (size_t i = producer_tv->getThisComputeAtAxis(); i < producer_tv->nDims(); ++i) {
+    IterDomain* prod_id = producer_tv->axis(i);
+    if (prod_id->isReduction()) {
+      // this should not appear at the consumer
+      continue;
     }
+    if (producer_idx_map.find(prod_id) == producer_idx_map.end()) {
+      // If the index is determined to be 0, no mapping entry is
+      // created.
+      TORCH_INTERNAL_ASSERT(false,
+                            "Mapping not detected for ", prod_id);
+      continue;
+    }
+    if (prod_id->isThread()) {
+      continue;
+    }
+    Val* idx = producer_idx_map.find(prod_id)->second;
+    std::cerr << "Prod idx: " << idx;
+    if (idx->getOrigin()) {
+      std::cerr << " (" << idx->getOrigin() << ")";
+    }
+    std::cerr << std::endl;
+    Val* extent = nullptr;
+    for (size_t j = i + 1; j < producer_tv->nDims(); ++j) {
+      IterDomain* id = producer_tv->axis(j);
+      if (id->isThread() || id->isReduction()) {
+        continue;
+      }
+      extent = mulx(extent, kir::lowerValue(id->extent()));
+    }
+    strided_inds.push_back(mulx(idx, extent));
   }
 
   std::cerr << "getConsumerIndex_impl2: Strided indices: " << strided_inds << std::endl;
