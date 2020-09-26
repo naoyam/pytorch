@@ -737,6 +737,8 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   // math in this function
   ir_utils::TVDomainGuard domain_guard(producer_tv, producerAsC);
 
+  std::cerr << "getGlobalProducerIndex: producer: " << producer_tv << std::endl;
+
   // grab all tensor views from producer_tv <- computeAtRoot
   std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
   tv_stack.push_back(producer_tv);
@@ -784,7 +786,11 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
         " dim: ",
         i,
         " id: ",
-        kir_root_dom_i);
+        kir_root_dom_i,
+        " IR root id: ",
+        root_dom[i],
+        " producer: " ,
+        producer_tv);
 
     auto root_ind = index_map.at(kir_root_dom_i);
     TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(root_ind));
@@ -1038,7 +1044,8 @@ std::unordered_set<Val*> getRootCAIDs(TensorView* tv) {
 kir::TensorIndex* Index::getProducerIndex_impl2(
     TensorView* producer_tv,
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops,
+    bool global) {
 
   std::cerr << "getProducerIndex_impl2: "
             << "producer: " << producer_tv
@@ -1061,10 +1068,12 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     auto cd_axis_idx = consumer_cd->getComputeDomainAxisIndex(i);
     TORCH_INTERNAL_ASSERT(cd_axis_idx < loops.size());
     Val* loop_idx = loops.at(cd_axis_idx)->index();
+    if (dom->isBroadcast()) {
+      loop_idx = new kir::Int(0);
+    }
     std::cerr << "Initial entry: "
               << dom
               << ", " << loop_idx
-              << ", " << dom->extent()
               << std::endl;
     TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_idx));
     consumer_map.insert({dom, loop_idx});
@@ -1177,6 +1186,31 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     producer_map.insert({producer_root_id, producer_info});
   }
 
+  if (global) {
+    const auto& producer_root = producer_tv->getRootDomain();
+    std::vector<Val*> strided_inds;
+    for (size_t i = 0; i < producer_root.size(); ++i) {
+      IterDomain* id = producer_root[i];
+      const IterDomainInfo& info = producer_map.at(id);
+      std::cerr << "Global Producer root: " << id << std::endl;
+      if (id->isReduction()) {
+        std::cerr << "global root is reduction; ignored\n";
+        continue;
+      }
+      if (id->isBroadcast()) {
+        std::cerr << "global root is broadcast; ignored\n";
+        continue;
+      }
+      Val* idx = info.idx();
+      std::stringstream ss;
+      ss << "T" << producer_tv->name() << ".stride[" << i << "]";
+      strided_inds.push_back(
+          kir::mulExpr(idx, new kir::NamedScalar(ss.str(), DataType::Int)));
+    }
+    std::cerr << "Global getProducerIndex_impl2: Strided indices: " << strided_inds << std::endl;
+    return new kir::TensorIndex(producer_tv, strided_inds);
+  }
+
   // Transform to the original producer domain
   std::vector<Val*> producer_domain;
   std::transform(producer_tv->domain()->domain().begin(),
@@ -1210,11 +1244,10 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
                            {inner_idx, kir::lowerValue(split->factor())}});
     } else if (expr->getExprType() == ExprType::Merge) {
       Merge* merge = expr->as<Merge>();
-      if (producer_map.find(merge->inner()) == producer_map.end() ||
-          producer_map.find(merge->outer()) == producer_map.end()) {
-        TORCH_INTERNAL_ASSERT(false);
-        continue;
-      }
+      TORCH_INTERNAL_ASSERT(producer_map.find(merge->inner()) != producer_map.end(),
+                            "Merge inner not found: ", merge->inner());
+      TORCH_INTERNAL_ASSERT(producer_map.find(merge->outer()) != producer_map.end(),
+                            "Merge outer not found: ", merge->outer());
       const auto& inner = producer_map.find(merge->inner())->second;
       const auto& outer = producer_map.find(merge->outer())->second;
       Val* out_idx = addx(mulx(outer.idx(), inner.extent()), inner.idx());
@@ -1259,7 +1292,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     strided_inds.push_back(mulx(idx, extent));
   }
 
-  std::cerr << "getConsumerIndex_impl2: Strided indices: " << strided_inds << std::endl;
+  std::cerr << "getProducerIndex_impl2: Strided indices: " << strided_inds << std::endl;
 
   return new kir::TensorIndex(producer_tv, strided_inds);
 }
@@ -1496,13 +1529,17 @@ kir::TensorIndex* Index::getProducerIndex(
   }
 
   if (producer->getMemoryType() == MemoryType::Global) {
-    return getGlobalProducerIndex(producer, consumer, loops);
+    if (true || std::getenv("PINDEX1")) {
+      return getGlobalProducerIndex(producer, consumer, loops);
+    } else {
+      return getProducerIndex_impl2(producer, consumer, loops, true);
+    }
   }
 
   if (std::getenv("PINDEX1")) {
     return getProducerIndex_impl(producer, consumer, loops);
   } else {
-    return getProducerIndex_impl2(producer, consumer, loops);
+    return getProducerIndex_impl2(producer, consumer, loops, false);
   }
 }
 
