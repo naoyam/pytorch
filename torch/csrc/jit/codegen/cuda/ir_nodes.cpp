@@ -467,16 +467,24 @@ TensorDomain::TensorDomain(
       root_domain_(std::move(_domain)),
       contiguity_(
           _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
-                              : std::move(_contiguity)) {
+          : std::move(_contiguity)),
+      placeholder_(root_domain_.size(), false) {
   TORCH_CHECK(
       contiguity_.size() == root_domain_.size(),
       "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
       contiguity_.size(),
       " but needed one of size ",
       root_domain_.size());
+  TORCH_CHECK(
+      placeholder_.size() == root_domain_.size(),
+      "Invalid placeholder information provided, incorrect size. Recieved vector of size ",
+      placeholder_.size(),
+      " but needed one of size ",
+      root_domain_.size());
 
   domain_ = root_domain_;
   resetDomains();
+  updatePlaceholderMap();
 }
 
 TensorDomain::TensorDomain(
@@ -488,11 +496,18 @@ TensorDomain::TensorDomain(
       domain_(std::move(_domain)),
       contiguity_(
           _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
-                              : std::move(_contiguity)) {
+          : std::move(_contiguity)),
+      placeholder_(root_domain_.size(), false) {
   TORCH_CHECK(
       contiguity_.size() == root_domain_.size(),
       "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
       contiguity_.size(),
+      " but needed one of size ",
+      root_domain_.size());
+  TORCH_CHECK(
+      placeholder_.size() == root_domain_.size(),
+      "Invalid placeholder information provided, incorrect size. Recieved vector of size ",
+      placeholder_.size(),
       " but needed one of size ",
       root_domain_.size());
 
@@ -514,24 +529,35 @@ TensorDomain::TensorDomain(
   resetDomains();
 
   name_ = fusion_->registerVal(this);
+  updatePlaceholderMap();
 }
 
 TensorDomain::TensorDomain(
     std::vector<IterDomain*> _root_domain,
     std::vector<IterDomain*> _rfactor_domain,
     std::vector<IterDomain*> _domain,
-    std::vector<bool> _contiguity)
+    std::vector<bool> _contiguity,
+    std::vector<bool> _placeholder)
     : Val(ValType::TensorDomain, DataType::Null, false),
       root_domain_(std::move(_root_domain)),
       domain_(std::move(_domain)),
       rfactor_domain_(std::move(_rfactor_domain)),
       contiguity_(
           _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
-                              : std::move(_contiguity)) {
+          : std::move(_contiguity)),
+      placeholder_(
+          _placeholder.empty() ? std::vector<bool>(root_domain_.size(), false)
+          : std::move(_placeholder)) {
   TORCH_CHECK(
       contiguity_.size() == root_domain_.size(),
       "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
       contiguity_.size(),
+      " but needed one of size ",
+      root_domain_.size());
+  TORCH_CHECK(
+      placeholder_.size() == root_domain_.size(),
+      "Invalid placeholder information provided, incorrect size. Recieved vector of size ",
+      placeholder_.size(),
       " but needed one of size ",
       root_domain_.size());
 
@@ -562,6 +588,7 @@ TensorDomain::TensorDomain(
 
   resetDomains();
   name_ = fusion_->registerVal(this);
+  updatePlaceholderMap();
 }
 
 TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
@@ -571,7 +598,10 @@ TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
       no_bcast_domain_(ir_cloner->clone(src->no_bcast_domain_)),
       no_reduction_domain_(ir_cloner->clone(src->no_reduction_domain_)),
       rfactor_domain_(ir_cloner->clone(src->rfactor_domain_)),
-      contiguity_(src->contiguity()) {}
+      contiguity_(src->contiguity()),
+      placeholder_(src->placeholder()) {
+  updatePlaceholderMap();
+}
 
 bool TensorDomain::operator==(const TensorDomain& other) const {
   // Checks equality of each class field. Should not be necessary to
@@ -1019,6 +1049,24 @@ std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(
       TransformRFactor::runReplay2(this, axes)};
 }
 
+ir_utils::FilterView<std::vector<IterDomain*>::const_iterator> TensorDomain::noPlaceholder() const {
+  const auto& root = getRootDomain();
+  auto view = ir_utils::filterView(root, [this](const IterDomain* id) {
+    const auto& placeholder_map = this->placeholder_map();
+    TORCH_INTERNAL_ASSERT(placeholder_map.find(id) != placeholder_map.end());
+    return !placeholder_map.at(id);
+  });
+  return view;
+}
+
+void TensorDomain::updatePlaceholderMap() {
+  TORCH_INTERNAL_ASSERT(root_domain_.size() == placeholder_.size());
+  placeholder_map_.clear();
+  for (size_t i = 0; i < root_domain_.size(); ++i) {
+    placeholder_map_.insert({root_domain_.at(i), placeholder_.at(i)});
+  }
+}
+
 namespace {
 class BroadcastMapping: public BackwardVisitor {
  public:
@@ -1033,22 +1081,79 @@ class BroadcastMapping: public BackwardVisitor {
     for (const auto input: bop->inputs()) {
       if (input->getValType().value() != ValType::TensorView) continue;
       const TensorView* input_tv = input->as<TensorView>();
-      const auto& input_root = input_tv->getRootDomain();
-      const auto& output_root = bop->output(0)->as<TensorView>()->getRootDomain();
-      for (size_t i = 0; i < input_root.size(); ++i) {
-        if (!input_root.at(i)->isBroadcast()) continue;
-        if (output_root.at(i)->isBroadcast()) {
-          continue;
+      const TensorView* output_tv = bop->output(0)->as<TensorView>();
+      auto input_view = input_tv->domain()->noPlaceholder();
+      auto output_view = output_tv->domain()->noPlaceholder();
+      auto input_it = input_view.begin();
+      auto output_it = output_view.begin();
+      while (input_it != input_view.end() && output_it != output_view.end()) {
+        IterDomain* concrete_id = nullptr;
+        IterDomain* bcast_id = nullptr;
+        if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+          concrete_id = *input_it;
+          bcast_id = *output_it;
+        } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+          concrete_id = *output_it;
+          bcast_id = *input_it;
         }
-        std::cerr << "Concrete ID found: "
-                  << input_root.at(i) << " -> " << output_root.at(i) << std::endl;
-        map_.insert({input_root.at(i), output_root.at(i)});
+        if (concrete_id != nullptr && bcast_id != nullptr) {
+          std::cerr << "Concrete ID found: "
+                    << concrete_id << " -> " << bcast_id << std::endl;
+          map_.insert({bcast_id, concrete_id});
+        }
+        ++input_it;
+        ++output_it;
       }
     }
   }
 
+#if 0
+  void handle(UnaryOp* uop) override {
+    if (!ir_utils::isTVOp(uop)) return;
+    const auto input = uop->input(0);
+    if (input->getValType().value() != ValType::TensorView) return;
+    const TensorView* input_tv = input->as<TensorView>();
+    const auto& input_root = input_tv->getRootDomain();
+    const auto& output_root = uop->output(0)->as<TensorView>()->getRootDomain();
+    for (size_t i = 0; i < input_root.size(); ++i) {
+      if (!input_root.at(i)->isBroadcast()) continue;
+      std::cerr << "Concrete ID found: "
+                << input_root.at(i) << " -> " << output_root.at(i) << std::endl;
+      map_.insert({input_root.at(i), output_root.at(i)});
+    }
+  }
+
+  void handle(BroadcastOp* op) override {
+    if (!ir_utils::isTVOp(op)) return;
+    const auto input = op->input(0);
+    if (input->getValType().value() != ValType::TensorView) return;
+    const TensorView* input_tv = input->as<TensorView>();
+    const auto& input_root = input_tv->getRootDomain();
+    const auto& output_root = op->output(0)->as<TensorView>()->getRootDomain();
+    for (size_t i = 0; i < input_root.size(); ++i) {
+      if (!input_root.at(i)->isBroadcast()) continue;
+#if 0
+      if (output_root.at(i)->isBroadcast()) {
+        continue;
+      }
+#endif
+      std::cerr << "Concrete ID found: "
+                << input_root.at(i) << " -> " << output_root.at(i) << std::endl;
+      map_.insert({input_root.at(i), output_root.at(i)});
+    }
+  }
+#endif
+
   // Mapping from a broadcast domain to its concrete domain
   std::unordered_map<const IterDomain*, const IterDomain*> map_;
+
+  const IterDomain* lookup(const IterDomain *id) const {
+    while (id->isBroadcast()) {
+      TORCH_INTERNAL_ASSERT(map_.find(id) != map_.end());
+      id = map_.find(id)->second;
+    }
+    return id;
+  }
 
   static const IterDomain* getConcreteDomain(const IterDomain* bcast_dom) {
     BroadcastMapping bcast_mapping(bcast_dom->fusion());
@@ -1064,8 +1169,7 @@ class BroadcastMapping: public BackwardVisitor {
         if (!split->in()->isBroadcast()) {
           continue;
         }
-        TORCH_INTERNAL_ASSERT(m.find(split->in()) != bcast_mapping.map_.end());
-        IterDomain* concrete_id = const_cast<IterDomain*>(m.find(split->in())->second);
+        IterDomain* concrete_id = const_cast<IterDomain*>(bcast_mapping.lookup(split->in()));
         auto split_ids = IterDomain::split(concrete_id, split->factor());
         m.insert({split->outer(), split_ids.first});
         m.insert({split->inner(), split_ids.second});
@@ -1112,12 +1216,17 @@ class MatchingIterDomainSearch: public IterVisitor {
     TORCH_INTERNAL_ASSERT(tv_x != nullptr);
     TORCH_INTERNAL_ASSERT(tv_y != nullptr);
     if (tv_x == tv_y) return;
-    const auto& root_x = tv_x->getRootDomain();
-    const auto& root_y = tv_y->getRootDomain();
-    TORCH_INTERNAL_ASSERT(root_x.size() == root_y.size());
-    for (size_t i = 0; i < root_x.size(); ++i) {
-      addToEquivalentSets(root_x[i], root_y[i]);
+    auto root_x = tv_x->domain()->noPlaceholder();
+    auto root_y = tv_y->domain()->noPlaceholder();
+    auto x_it = root_x.begin();
+    auto y_it = root_y.begin();
+    while (x_it != root_x.end() && y_it != root_y.end()) {
+      addToEquivalentSets(*x_it, *y_it);
+      ++x_it;
+      ++y_it;
     }
+    TORCH_INTERNAL_ASSERT(x_it == root_x.end() &&
+                          y_it == root_y.end());
   }
 
   void addToEquivalentSets(const IterDomain *id_x,

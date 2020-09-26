@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 
 /*
  * Nodes in here should generally not be used by users. They should be behind
@@ -380,7 +381,8 @@ class TORCH_CUDA_API TensorDomain : public Val {
       std::vector<IterDomain*> _root_domain,
       std::vector<IterDomain*> _rfactor_domain,
       std::vector<IterDomain*> _domain,
-      std::vector<bool> _contiguity = std::vector<bool>());
+      std::vector<bool> _contiguity = std::vector<bool>(),
+      std::vector<bool> _placeholder = std::vector<bool>());
 
   TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
 
@@ -406,6 +408,16 @@ class TORCH_CUDA_API TensorDomain : public Val {
   const std::vector<bool>& contiguity() const {
     return contiguity_;
   }
+
+  const std::vector<bool>& placeholder() const {
+    return placeholder_;
+  }
+
+  const std::unordered_map<const IterDomain*, bool>& placeholder_map() const {
+    return placeholder_map_;
+  }
+
+  ir_utils::FilterView<std::vector<IterDomain*>::const_iterator> noPlaceholder() const;
 
   std::string getContiguityString() const {
     std::stringstream ss;
@@ -537,12 +549,17 @@ class TORCH_CUDA_API TensorDomain : public Val {
   std::pair<TensorDomain*, TensorDomain*> rFactor(const std::vector<int>& axes);
 
  private:
+  void updatePlaceholderMap();
+
+ private:
   const std::vector<IterDomain*> root_domain_;
   std::vector<IterDomain*> domain_;
   std::vector<IterDomain*> no_bcast_domain_;
   std::vector<IterDomain*> no_reduction_domain_;
   const std::vector<IterDomain*> rfactor_domain_;
   const std::vector<bool> contiguity_;
+  const std::vector<bool> placeholder_;
+  std::unordered_map<const IterDomain*, bool> placeholder_map_;
 };
 
 class TORCH_CUDA_API ComputeDomain {
@@ -585,6 +602,18 @@ class TORCH_CUDA_API ComputeDomain {
 
   size_t getComputeAtPos() const {
     return pos_;
+  }
+
+  size_t getTensorDomainPos(size_t cd_pos) const {
+    while (cd_pos > 0) {
+      auto cd_axis = cd_pos - 1;
+      if (isComputeDomainAxisUsed(cd_axis)) {
+        auto td_axis = getTensorDomainAxisIndex(cd_axis);
+        return td_axis + 1;
+      }
+      --cd_pos;
+    }
+    return 0;
   }
 
   // Returns the ComputeDomain position that corresponds to the
