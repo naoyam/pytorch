@@ -70,12 +70,40 @@ void ReplayTransformations::handle(Merge* m) {
   auto it_outer = id_map_.find(id_outer);
   auto it_inner = id_map_.find(id_inner);
 
-  const bool outer_found = it_outer != id_map_.end();
+  bool outer_found = it_outer != id_map_.end();
   //const bool outer_bcast = id_outer->isBroadcast();
   const bool outer_bcast = true;
-  const bool inner_found = it_inner != id_map_.end();
+  bool inner_found = it_inner != id_map_.end();
   //const bool inner_bcast = id_inner->isBroadcast();
   const bool inner_bcast = true;
+
+#if 0
+  // TODO (CD): Add a broadcast dimension
+  if (!outer_found) {
+    TORCH_INTERNAL_ASSERT(!kir::isLoweredVal(id_outer));
+    IterDomain* bd = new IterDomain(
+        new Int(0),
+        new Int(1),
+        ParallelType::Serial,
+        IterType::BroadcastWithoutStride);
+    id_map_.insert({id_outer, bd});
+    it_outer = id_map_.find(id_outer);
+    outer_found = it_outer != id_map_.end();
+    leaf_ids_[bd] = counter++;
+  }
+  if (!inner_found) {
+    TORCH_INTERNAL_ASSERT(!kir::isLoweredVal(id_inner));
+    IterDomain* bd = new IterDomain(
+        new Int(0),
+        new Int(1),
+        ParallelType::Serial,
+        IterType::BroadcastWithoutStride);
+    id_map_.insert({id_inner, bd});
+    it_inner = id_map_.find(id_inner);
+    inner_found = it_inner != id_map_.end();
+    leaf_ids_[bd] = counter++;
+  }
+#endif
 
   // If either are not found
   if (!outer_found || !inner_found) {
