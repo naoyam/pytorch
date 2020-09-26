@@ -1000,7 +1000,15 @@ class IterDomainInfo {
     TORCH_INTERNAL_ASSERT(kir::isLoweredVal(extent_));
   }
   std::ostream& print(std::ostream& os) const {
-    os << "{idx: " << idx_ << ", extent: " << extent_ << "}";
+    os << "{idx: " << idx_;
+    if (idx_->getOrigin()) {
+      os << " (" << idx_->getOrigin() << ")";
+    }
+    os << ", extent: " << extent_;
+    if (extent_->getOrigin()) {
+      os << " (" << extent_->getOrigin() << ")";
+    }
+    os << "}";
     return os;
   }
   Val* idx() const {
@@ -1036,6 +1044,12 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
             << "producer: " << producer_tv
             << ", consumer: " << consumer_tv
             << std::endl;
+
+  // If the producer is computed at -1, no indexing is involved. This
+  // is optional; it just skips the rest of the analysis.
+  if (producer_tv->getThisComputeAtAxis() == producer_tv->nDims()) {
+    return new kir::TensorIndex(producer_tv, {});
+  }
 
   const ComputeDomain* consumer_cd = consumer_tv->getComputeDomain();
 
@@ -1111,8 +1125,13 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
 
   std::cerr << "Root consumer_map\n";
   for (auto k: consumer_map) {
-    std::cerr << k.first << " -> {" << k.second << "}\n";
+    std::cerr << k.first << " -> {" << k.second;
+    if (k.second->getOrigin()) {
+      std::cerr << " (" << k.second->getOrigin() << ")";
+    }
+    std::cerr << "}\n";
   }
+  std::cerr << "Consumer root: " << consumer_tv->getRootDomain() << std::endl;
 
   std::unordered_map<IterDomain*, IterDomainInfo> producer_map;
   const auto root_mapping = TensorDomain::mapRootPandC(producer_tv->domain(),
