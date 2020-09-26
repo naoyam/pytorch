@@ -199,6 +199,101 @@ std::vector<std::pair<IterDomain*, size_t>> replayMapFind(
   }
   return cd_map;
 }
+
+auto getRootCAIDs(const std::vector<IterDomain*>& domain,
+                  size_t ca_pos) {
+  std::vector<IterDomain*> ca_ids(
+      domain.begin(),
+      domain.begin() + ca_pos);
+  auto root_vals = IterVisitor::getInputsTo(
+      std::vector<Val*>(ca_ids.begin(), ca_ids.end()));
+  std::unordered_set<IterDomain*> root_ca_ids{
+    ir_utils::filterByType<IterDomain>(root_vals).begin(),
+    ir_utils::filterByType<IterDomain>(root_vals).end()};
+  return root_ca_ids;
+}
+
+// ca_pos: compute-at position in the reference TensorDomain
+bool insertMissingDomains(std::vector<IterDomain*>& target_root,
+                          std::vector<bool>& target_contig,
+                          std::vector<bool>& ca_placeholder,
+                          const std::vector<IterDomain*>& reference_root,
+                          const std::unordered_set<IterDomain*>& reference_root_ca_ids,
+                          bool reference_is_consumer) {
+  std::stringstream ss;
+  ss << "{";
+  for (const auto id: reference_root_ca_ids) {
+    ss << id << " ";
+  }
+  ss << "}";
+  std::cerr << "insertMissingDomains: "
+            << "target: " << target_root
+            << ", reference: " << reference_root
+            << ", reference_root_ca_ids: " << ss.str()
+            << ", reference_is_consumer: " << reference_is_consumer
+            << std::endl;
+
+  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == 0);
+
+  bool insertion_done = false;
+  size_t target_offset = 0;
+  size_t ref_offset = 0;
+  // This is very similar to TensorDomain::mapRootDomains. Refactoring possible?
+  while (target_offset < target_root.size() || ref_offset < reference_root.size()) {
+    IterDomain* target_id = target_offset < target_root.size() ?
+                                            target_root.at(target_offset) : nullptr;
+    IterDomain* ref_id = ref_offset < reference_root.size() ?
+                                      reference_root.at(ref_offset) : nullptr;
+    TORCH_INTERNAL_ASSERT(!(target_id == nullptr && ref_id == nullptr));
+
+    const bool target_is_reduction = target_id != nullptr && target_id->isReduction();
+    const bool reference_is_reduction =
+        ref_id != nullptr && ref_id->isReduction();
+    const bool reference_is_broadcast =
+        ref_id != nullptr && ref_id->isBroadcast();
+
+    if (target_id == ref_id) {
+      ++target_offset;
+      ++ref_offset;
+      ca_placeholder.push_back(false);
+    } else if (reference_is_consumer && target_is_reduction) {
+      ++target_offset;
+      ca_placeholder.push_back(false);
+    } else if (!reference_is_consumer && reference_is_reduction) {
+      ++ref_offset;
+    } else if (reference_is_broadcast) {
+      // target_id does not match ref_id, and reference_id is a
+      // broadcast. If it's in the CA domain set, insert a dummy
+      // IterDomain to the target domain. For now, just insert the
+      // ref_id. This avoids inserting again even if this function is
+      // called again.
+      // Note that target_id may be a broadcast as well. We assume
+      // that target_id ad ref_id don't match when their pointer
+      // values are different. Since the pointer values are already
+      // checked, at this point target_id and ref_id are considered
+      // different even if they are broadcast.
+      if (reference_root_ca_ids.find(ref_id) != reference_root_ca_ids.end()) {
+        std::cerr << "Inserting " << ref_id << " at position " << target_offset << std::endl;
+        target_root.insert(target_root.begin() + target_offset, ref_id);
+        target_contig.insert(target_contig.begin() + target_offset, true);
+        ++target_offset;
+        ca_placeholder.push_back(true);
+        insertion_done = true;
+      }
+      ++ref_offset;
+    } else {
+      TORCH_INTERNAL_ASSERT(target_id != nullptr && ref_id != nullptr);
+      ++target_offset;
+      ++ref_offset;
+      ca_placeholder.push_back(false);
+    }
+  }
+
+  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
+
+  std::cerr << "insertMissingDomains done: " << target_root << std::endl;
+  return insertion_done;
+}
 } // namespace
 
 // Producer could have rfactor axes which consumer may want replayed. We can
@@ -213,11 +308,13 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
     int consumer_compute_at_axis) {
   // producer_compute_at_axis is a position in the producer compute domain.
   normalizeComputeAtPos(consumer_compute_at_axis, consumer_cd->nDims());
+  const auto consumer_td_pos = consumer_cd->getTensorDomainPos(consumer_compute_at_axis);
 
   std::cerr << "replayPasC: producer: " << producer
             << ", consumer: " << consumer
             << ", consumer_cd: " << *consumer_cd
-            << ", consumer_compute_at_axis: " << consumer_compute_at_axis
+            << ", CD pos: " << consumer_compute_at_axis
+            << ", TD pos: " << consumer_td_pos
             << std::endl;
 
   TORCH_INTERNAL_ASSERT(
@@ -251,11 +348,19 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
     std::cerr << "consumer CA root ID: " << id << std::endl;
   }
 
-  std::cerr << "Producer mayberfactordomain: "
-            << producer->getMaybeRFactorDomain() << std::endl;
+  std::vector<IterDomain*> producer_root = producer->getMaybeRFactorDomain();
+  std::cerr << "Producer root: " << producer_root << std::endl;
+  auto producer_contig = producer->contiguity();
+  std::vector<bool> ca_placeholder;
+
+  insertMissingDomains(producer_root, producer_contig, ca_placeholder,
+                       consumer->getRootDomain(),
+                       getRootCAIDs(consumer->domain(), consumer_td_pos),
+                       true);
+
   // Map of consumer_CA_root_ids to related producer_CA_ids
   auto replay_root_map =
-      consumer_cd->mapRootDomain(producer->getMaybeRFactorDomain(), consumer_CA_root_ids);
+      consumer_cd->mapRootDomain(producer_root, consumer_CA_root_ids);
 
   // Track which root axes in producer we will send to replay
   std::unordered_set<IterDomain*> producer_roots4replay;
@@ -324,8 +429,6 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   id_map producer_self_replay_map;
   for (auto entry : leaf_ids)
     producer_self_replay_map[entry.first] = entry.first;
-
-  auto producer_root = producer->getMaybeRFactorDomain();
 
   // Any root domain that was not used to generate computeIDs we can also put in
   // the map to forward their transformations.
@@ -441,11 +544,16 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
       new_IDs.push_back(id);
     }
 
+  std::cerr << "New IDs: " << new_IDs << std::endl;
+
   TensorDomain* replayed = new TensorDomain(
-      producer->getRootDomain(),
+      //producer->getRootDomain(),
+      producer_root,
       producer->getRFactorDomain(),
       new_IDs,
-      producer->contiguity());
+      //producer->contiguity());
+      producer_contig,
+      ca_placeholder);
   std::cerr << "replayPasC done" << replayed << std::endl;
   return {replayed, producer_compute_at_axis, td2cd_map};
 }
