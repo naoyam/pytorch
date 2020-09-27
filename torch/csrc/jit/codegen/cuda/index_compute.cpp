@@ -1529,7 +1529,7 @@ kir::TensorIndex* Index::getProducerIndex(
   }
 
   if (producer->getMemoryType() == MemoryType::Global) {
-    if (true || std::getenv("PINDEX1")) {
+    if (std::getenv("GPINDEX1")) {
       return getGlobalProducerIndex(producer, consumer, loops);
     } else {
       return getProducerIndex_impl2(producer, consumer, loops, true);
