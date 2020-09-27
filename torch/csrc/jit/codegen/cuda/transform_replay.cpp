@@ -180,6 +180,9 @@ template <typename IterDomainContainer>
 std::vector<std::pair<IterDomain*, size_t>> replayMapFind(
     std::unordered_map<IterDomain*, IterDomain*> map,
     const IterDomainContainer& ids) {
+  //for (auto id: ids) {
+    //std::cerr << "replayMapFind:: id: " << id << std::endl;
+  //}
   std::vector<std::pair<IterDomain*, size_t>> cd_map;
   for (size_t i = 0; i < ids.size(); ++i) {
     const IterDomain* id = ids.at(i);
@@ -193,7 +196,6 @@ std::vector<std::pair<IterDomain*, size_t>> replayMapFind(
     if (it != map.end()) {
       auto mapped_id = it->second;
       map.erase(it);
-      //mapped_ids.push_back(mapped_id);
       cd_map.push_back({mapped_id, i});
     }
   }

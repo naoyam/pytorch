@@ -3,6 +3,8 @@
 
 #include <c10/util/Exception.h>
 
+#define DEBUG(...) TORCH_WARN(__VA_ARGS__)
+
 namespace torch {
 namespace jit {
 namespace fuser {

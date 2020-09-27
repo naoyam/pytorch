@@ -1345,9 +1345,10 @@ bool sameAs(Val* v1, Val* v2) {
   // TODO (CD): This is a temporary unsafe workaround. If a value is 1,
   // assume it originates from a broadcast dimension and matches with
   // any other given dimnsion. This is cheating and must be fixed.
+  // TODO (CD) Update: disabled. Is this still necessary?
   if (v1->isOneInt() || v2->isOneInt()) {
     //TORCH_INTERNAL_ASSERT(false, "should never happen");
-    return true;
+    //return true;
   }
 
   if (v1->getOrigin() && v2->getOrigin()) {
@@ -1434,9 +1435,7 @@ std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
 }
 
 void ComputeDomain::split(const TensorDomain* new_td, int axis_idx) {
-  std::cerr << "Splitting: " << *this
-            << " at " << axis_idx
-            << std::endl;
+  DEBUG("splitting: ", *this, " at ", axis_idx);
   auto cd_axis_idx = getComputeDomainAxisIndex(axis_idx);
   TORCH_INTERNAL_ASSERT(cd_axis_idx >= getComputeAtPos());
   td_ = new_td->domain();
@@ -1444,8 +1443,7 @@ void ComputeDomain::split(const TensorDomain* new_td, int axis_idx) {
   auto new_id_right = td_.at(axis_idx+1);
   setAxis(cd_axis_idx, new_id_left);
   insertAxis(cd_axis_idx + 1, new_id_right, axis_idx + 1);
-  std::cerr << "Split completed: " << *this
-            << std::endl;
+  DEBUG("Split completed: ", *this);
 }
 
 void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
