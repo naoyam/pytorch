@@ -3706,10 +3706,27 @@ void testGPU_FusionComplexBCast() {
 }
 
 void testGPU_FusionAdvancedIndexing() {
+  bool is_all = true;
+  int case_num_env = -1;
+  if (std::getenv("case")) {
+    is_all = false;
+    case_num_env = std::stoi(std::getenv("case"));
+    std::cerr << "Case " << case_num_env << std::endl;
+  }
+
+  auto check_case = [&](int x) {
+    bool ret = is_all || (case_num_env == x);
+    if (ret) {
+      std::cerr << "\nCase " << x << std::endl << std::endl;
+    }
+    return ret;
+  };
+
+
   // Merging left to right is still broken in some instances. Indexing can't
   // complete because we assume we can simply traverse consumer->producer in the
   // index/extent map, but this case breaks this assumption.
-  if (1) {
+  if (check_case(1)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3727,9 +3744,6 @@ void testGPU_FusionAdvancedIndexing() {
 
     fusion.addOutput(tv4);
 
-    fusion.printMath();
-    fusion.printKernel();
-
     tv4->merge(0);
     tv4->merge(0);
     tv4->merge(0);
@@ -3738,10 +3752,6 @@ void testGPU_FusionAdvancedIndexing() {
     tv4->split(0, 4);
 
     tv2->computeAt(tv4, 1);
-
-    fusion.printMath();
-    fusion.printKernel();
-    //return;
 
     tv4->axis(0)->parallelize(ParallelType::BIDx);
     tv4->axis(1)->parallelize(ParallelType::Unroll);
@@ -3766,11 +3776,9 @@ void testGPU_FusionAdvancedIndexing() {
 
     TORCH_CHECK(t4.allclose(outputs[0]));
   }
-
-  return;
 
   // Merging right to left actually does work.
-  if (0) {
+  if (check_case(2)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3797,10 +3805,6 @@ void testGPU_FusionAdvancedIndexing() {
 
     tv2->computeAt(tv4, 1);
 
-    fusion.printMath();
-    fusion.printKernel();
-    return;
-
     tv4->axis(0)->parallelize(ParallelType::BIDx);
     tv4->axis(1)->parallelize(ParallelType::Unroll);
     tv4->axis(2)->parallelize(ParallelType::TIDx);
@@ -3824,8 +3828,9 @@ void testGPU_FusionAdvancedIndexing() {
 
     TORCH_CHECK(t4.allclose(outputs[0]));
   }
+
   // Same issue as the first one in this section
-  {
+  if (check_case(3)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3846,10 +3851,6 @@ void testGPU_FusionAdvancedIndexing() {
 
     fuser::cuda::scheduleFusion(&fusion, {t0, t1});
 
-    fusion.printMath();
-    fusion.printKernel();
-    return;
-
     torch::jit::fuser::cuda::FusionExecutor fe;
     fe.compileFusion(&fusion);
     auto outputs = fe.runFusion({t0, t1});
@@ -3860,7 +3861,7 @@ void testGPU_FusionAdvancedIndexing() {
     TORCH_CHECK(t3.allclose(outputs[0]));
   }
 
-  {
+  if (check_case(4)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -7865,6 +7866,93 @@ void testGPU_FusionComputeDomain() {
     TORCH_CHECK(t3.allclose(outputs[0]),
                 "Error of: ", t3.sub(outputs[0]).abs().max());
   }
+
+  if (check_case(24)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int ndim = 3;
+    if (std::getenv("NDIM")) {
+      ndim = std::stoi(std::getenv("NDIM"));
+    }
+
+    std::cerr << "NDIM: " << ndim << std::endl;
+
+    int w = 3, x = 4, y = 7, z = 19;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    auto tv0 = makeDummyTensor(ndim);
+    auto tv1 = makeDummyTensor(ndim + 1);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    auto tv2 = add(tv0, new Float(1.0));
+
+    TensorView* tv3 = nullptr;
+    at::Tensor t0, t1;
+    if (ndim == 3) {
+      tv3 = broadcast(tv2, {true, false, false, false});
+      t0 = at::randn({x, y, z}, options);
+      t1 = at::randn({w, x, y, z}, options);
+    } else if (ndim == 2) {
+      tv3 = broadcast(tv2, {true, false, false});
+      t0 = at::randn({x, y}, options);
+      t1 = at::randn({w, x, y}, options);
+    } else if (ndim == 1) {
+      tv3 = broadcast(tv2, {true, false});
+      t0 = at::randn({z}, options);
+      t1 = at::randn({w, z}, options);
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unsupported NDIM");
+    }
+
+    auto tv4 = add(tv3, tv1);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    auto last_tensor = tv4;
+    last_tensor->merge(0);
+    if (ndim >= 2) {
+      last_tensor->merge(0);
+    }
+    if (ndim >= 3) {
+      last_tensor->merge(0);
+    }
+    last_tensor->split(0, 16);
+    last_tensor->split(0, 4);
+
+    tv2->computeAt(last_tensor, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+#if 1
+    last_tensor->axis(0)->parallelize(ParallelType::BIDx);
+
+    last_tensor->axis(1)->parallelize(ParallelType::Unroll);
+    tv2->axis(1)->parallelize(ParallelType::Unroll);
+    tv3->axis(1)->parallelize(ParallelType::Unroll);
+
+    last_tensor->axis(2)->parallelize(ParallelType::TIDx);
+    tv2->axis(2)->parallelize(ParallelType::TIDx);
+    tv3->axis(2)->parallelize(ParallelType::TIDx);
+#endif
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t1});
+
+    auto t3 = t0 + 1;
+    auto t4 = t3.add(t1);
+
+    TORCH_CHECK(t4.allclose(outputs[0]),
+                "Error of: ", t4.sub(outputs[0]).abs().max());
+  }
+
 }
 
 void testGPU_FusionBCastMerge() {
