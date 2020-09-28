@@ -1039,6 +1039,62 @@ std::unordered_set<Val*> getRootCAIDs(TensorView* tv) {
   return root_vals;
 }
 
+std::unordered_set<IterDomain*> getMaybeRFactorCAIDs(TensorView* tv) {
+  std::vector<IterDomain*> root = tv->getMaybeRFactorDomain();
+  std::vector<Val*> ca_ids{tv->domain()->domain().begin(),
+                           tv->domain()->domain().begin() + tv->getThisComputeAtAxis()};
+  std::unordered_set<Val*> all_CA_id_deps = DependencyCheck::getAllValsBetween(
+      {root.begin(), root.end()},
+      {ca_ids.begin(), ca_ids.end()});
+  std::unordered_set<IterDomain*> root_ca_ids;
+  for (IterDomain* id : root) {
+    if (all_CA_id_deps.find(id) != all_CA_id_deps.end()) {
+      root_ca_ids.emplace(id);
+    }
+  }
+  return root_ca_ids;
+}
+
+std::vector<Expr*> getExprsFromRFactorRoot(TensorView* tv,
+                                           const std::vector<Val*>& from) {
+  // There should be more efficient way to do this.
+  std::vector<Expr*> all_exprs = ExprSort::getExprs(tv->fusion(), from);
+
+  std::vector<IterDomain*> rfactor_root = tv->getMaybeRFactorDomain();
+  std::unordered_set<Val*> all_deps = DependencyCheck::getAllValsBetween(
+      {rfactor_root.begin(), rfactor_root.end()}, from);
+  {
+    // Just sanity check
+    for (auto id: rfactor_root) {
+      TORCH_INTERNAL_ASSERT(all_deps.find(id) != all_deps.end());
+    }
+    for (auto id: from) {
+      TORCH_INTERNAL_ASSERT(all_deps.find(id) != all_deps.end());
+    }
+  }
+
+  std::vector<Expr*> exprs_from_rfactor_root;
+  for (auto expr: all_exprs) {
+    if (!std::all_of(expr->inputs().begin(), expr->inputs().end(),
+                     [&all_deps](Val* val) {
+                       return all_deps.find(val) != all_deps.end();
+                     })) {
+      // some input not found
+      continue;
+    }
+    if (!std::all_of(expr->outputs().begin(), expr->outputs().end(),
+                     [&all_deps](Val* val) {
+                       return all_deps.find(val) != all_deps.end();
+                     })) {
+      // some output not found
+      continue;
+    }
+    exprs_from_rfactor_root.push_back(expr);
+  }
+
+  return exprs_from_rfactor_root;
+}
+
 } // namespace
 
 kir::TensorIndex* Index::getProducerIndex_impl2(
@@ -1051,6 +1107,10 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
             << "producer: " << producer_tv
             << ", consumer: " << consumer_tv
             << std::endl;
+
+  std::cerr << "producer root: " << producer_tv->getRootDomain() << std::endl;
+  std::cerr << "producer maybe rfactor: " << producer_tv->getMaybeRFactorDomain() << std::endl;
+  std::cerr << "consumer root: " << consumer_tv->getRootDomain() << std::endl;
 
   // If the producer is computed at -1, no indexing is involved. This
   // is optional; it just skips the rest of the analysis.
@@ -1145,11 +1205,12 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   std::unordered_map<IterDomain*, IterDomainInfo> producer_map;
   const auto root_mapping = TensorDomain::mapRootPandC(producer_tv->domain(),
                                                        consumer_tv->domain());
-  auto root_ca_ids = getRootCAIDs(producer_tv);
+  //auto root_ca_ids = getRootCAIDs(producer_tv);
+  auto root_ca_ids = getMaybeRFactorCAIDs(producer_tv);
 
   // Propagate consumer root to producer toot
   // TOOD (CD): Should this be getMaybeRFactorDomain()?
-  for (auto producer_root_id: producer_tv->getRootDomain()) {
+  for (auto producer_root_id: producer_tv->getMaybeRFactorDomain()) {
     std::cerr << "Producer root: " << producer_root_id << std::endl;
     auto consumer_root_id = std::find_if(root_mapping.begin(), root_mapping.end(),
                                          [producer_root_id](const auto& pair) {
@@ -1187,6 +1248,9 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   }
 
   if (global) {
+    // ".stride" is used here. Is it defined for an Rfactor tensor?
+    // Assume not, so fail if this is an rfactor tensor.
+    TORCH_INTERNAL_ASSERT(!producer_tv->hasRFactor(), "Invalid rfactor tensor.");
     const auto& producer_root = producer_tv->getRootDomain();
     std::vector<Val*> strided_inds;
     for (size_t i = 0; i < producer_root.size(); ++i) {
@@ -1221,8 +1285,11 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
                  });
   // TODO (CD): This goes back all the way to the root
   // domain. Should stop at rfactor root?
-  auto producer_exprs = ExprSort::getExprs(producer_tv->fusion(),
-                                           producer_domain);
+
+  //auto producer_exprs = ExprSort::getExprs(producer_tv->fusion(),
+  //producer_domain);
+  auto producer_exprs = getExprsFromRFactorRoot(producer_tv, producer_domain);
+
   for (auto expr: producer_exprs) {
     std::cerr << "Producer expr: " << expr;
     if (expr->getExprType() == ExprType::Split) {
@@ -1461,6 +1528,34 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
   return new kir::TensorIndex(consumer_tv, strided_inds);
 }
 
+namespace {
+// Special case for expressions initializing reduction
+// buffers. This special handling is necessary because ComputeDomain
+// do not refelect the initialization loop nest.
+kir::TensorIndex* getConsumerIndexForReductionInit(
+    TensorView* consumer_tv,
+    const std::vector<kir::ForLoop*>& loops) {
+
+  TORCH_INTERNAL_ASSERT(loops.size() ==
+                        consumer_tv->domain()->noReductions().size());
+  std::vector<Val*> strided_inds;
+  for (auto loop_i = loops.begin() + consumer_tv->getThisComputeAtAxis();
+       loop_i != loops.end(); ++loop_i) {
+    if ((*loop_i)->iter_domain()->isThread()) continue;
+    auto idx = (*loop_i)->index();
+    Val* extent = nullptr;
+    for (auto loop_j = loop_i + 1; loop_j != loops.end(); ++loop_j) {
+      if ((*loop_j)->iter_domain()->isThread()) continue;
+      Val* extent_j = (*loop_j)->iter_domain()->extent();
+      extent = (extent != nullptr) ? kir::mulExpr(extent, extent_j) : extent_j;
+    }
+    strided_inds.push_back(extent != nullptr ? kir::mulExpr(idx, extent) : idx);
+  }
+  return new kir::TensorIndex(consumer_tv, strided_inds);
+}
+
+} // namespace
+
 kir::TensorIndex* Index::getConsumerIndex_impl2(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops) {
@@ -1471,6 +1566,20 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
             << std::endl;
 
   const ComputeDomain* cd = consumer_tv->getComputeDomain();
+
+  if (cd->nDims() != loops.size()) {
+    // TODO (CD): Is this an error?
+    // It happens when initializing reduction buffers. In that case,
+    // the number of loops should be equal to the number of
+    // non-reduction axes.
+    if (loops.size() == consumer_tv->domain()->noReductions().size()) {
+      return getConsumerIndexForReductionInit(consumer_tv, loops);
+    }
+    TORCH_INTERNAL_ASSERT(false, "Invalid number of loops: ",
+                          loops.size(), ", whereas the ComputeDomain for the consumer TV is",
+                          *cd);
+  }
+
   // TODO (CD): TV compute-at position vs CD position
   auto tv_ca_pos = consumer_tv->getThisComputeAtAxis();
   if (tv_ca_pos == consumer_tv->nDims()) {
@@ -1479,6 +1588,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
   }
   auto left_most_own_axis = cd->getComputeDomainAxisIndex(tv_ca_pos);
   std::vector<Val*> strided_inds;
+  //size_t loop_idx = left_most_own_axis;
   for (size_t i = left_most_own_axis; i < cd->nDims(); ++i) {
     IterDomain* axis = cd->axis(i);
     std::cerr << "CD axis at " << i << ": " << axis << std::endl;
@@ -1489,6 +1599,8 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
     // Reduction domain doesn't contribute to offsetting
     if (axis->isReduction()) continue;
     kir::IterDomain* kir_axis = kir::lowerValue(axis)->as<kir::IterDomain>();
+    //loop_idx = i;
+    //TORCH_INTERNAL_ASSERT(loop_idx < loops.size());
     TORCH_INTERNAL_ASSERT(i < loops.size());
     kir::ForLoop* loop = loops.at(i);
     Val* idx = loop->index();

@@ -1220,13 +1220,27 @@ class MatchingIterDomainSearch: public IterVisitor {
     auto root_y = tv_y->domain()->noPlaceholder();
     auto x_it = root_x.begin();
     auto y_it = root_y.begin();
-    while (x_it != root_x.end() && y_it != root_y.end()) {
+    while (x_it != root_x.end() || y_it != root_y.end()) {
+      if ((*x_it)->isReduction()) {
+        ++x_it;
+        continue;
+      }
+      if ((*y_it)->isReduction()) {
+        ++y_it;
+        continue;
+      }
+      TORCH_INTERNAL_ASSERT(x_it != root_x.end());
+      TORCH_INTERNAL_ASSERT(y_it != root_y.end());
       addToEquivalentSets(*x_it, *y_it);
       ++x_it;
       ++y_it;
     }
-    TORCH_INTERNAL_ASSERT(x_it == root_x.end() &&
-                          y_it == root_y.end());
+    TORCH_INTERNAL_ASSERT(x_it == root_x.end(),
+                          "tv_x: ", tv_x,
+                          ", tv_y: ", tv_y);
+    TORCH_INTERNAL_ASSERT(y_it == root_y.end(),
+                          "tv_x: ", tv_x,
+                          ", tv_y: ", tv_y);
   }
 
   void addToEquivalentSets(const IterDomain *id_x,

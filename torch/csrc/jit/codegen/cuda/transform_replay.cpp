@@ -220,7 +220,7 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
                           std::vector<bool>& target_contig,
                           std::vector<bool>& ca_placeholder,
                           const std::vector<IterDomain*>& reference_root,
-                          const std::unordered_set<IterDomain*>& reference_root_ca_ids,
+                          std::unordered_set<IterDomain*> reference_root_ca_ids,
                           bool reference_is_consumer) {
   std::stringstream ss;
   ss << "{";
@@ -253,6 +253,8 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
         ref_id != nullptr && ref_id->isReduction();
     const bool reference_is_broadcast =
         ref_id != nullptr && ref_id->isBroadcast();
+
+    auto ref_offset_old = ref_offset;
 
     if (target_id == ref_id ||
         (target_id && ref_id && ComputeDomain::sameAxes(target_id, ref_id))) {
@@ -290,9 +292,18 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
       ++ref_offset;
       ca_placeholder.push_back(false);
     }
+
+    if (ref_offset != ref_offset_old) {
+      DEBUG("Erasing ", ref_id);
+      reference_root_ca_ids.erase(ref_id);
+      if (reference_root_ca_ids.empty()) {
+        DEBUG("Root ca empty");
+        break;
+      }
+    }
   }
 
-  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
+  ca_placeholder.resize(target_root.size(), false);
 
   std::cerr << "insertMissingDomains done: " << target_root << std::endl;
   return insertion_done;
@@ -347,7 +358,9 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
     std::cerr << "consumer CA root ID: " << id << std::endl;
   }
 
-  std::vector<IterDomain*> producer_root = producer->getMaybeRFactorDomain();
+  //std::vector<IterDomain*> producer_root =
+  //producer->getMaybeRFactorDomain();
+  std::vector<IterDomain*> producer_root = producer->getRootDomain();
   std::cerr << "Producer root: " << producer_root << std::endl;
   auto producer_contig = producer->contiguity();
   std::vector<bool> ca_placeholder;
