@@ -1108,6 +1108,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   std::cerr << "getProducerIndex_impl2: "
             << "producer: " << producer_tv
             << ", consumer: " << consumer_tv
+            << ", global?: " << global
             << std::endl;
 
   std::cerr << "producer root: " << producer_tv->getRootDomain() << std::endl;
@@ -1120,7 +1121,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
 
   // If the producer is computed at -1, no indexing is involved. This
   // is optional; it just skips the rest of the analysis.
-  if (producer_tv->getThisComputeAtAxis() == producer_tv->nDims()) {
+  if (producer_tv->getThisComputeAtAxis() == producer_tv->nDims() && !global) {
     return new kir::TensorIndex(producer_tv, {});
   }
 

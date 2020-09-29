@@ -6179,6 +6179,9 @@ void testGPU_FusionComputeAtNonterminatingOutput() {
 
   tv0->computeAt(tv2, -1);
 
+  fusion.printMath();
+  fusion.printKernel();  
+
   TORCH_CHECK(
       !(tv3->getComputeAtView() == tv4 && tv4->getComputeAtView() == tv3),
       "ComputeAt cycle detected between tv3 and tv4");
