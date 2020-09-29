@@ -233,13 +233,15 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
             << ", reference: " << reference_root
             << ", reference_root_ca_ids: " << ss.str()
             << ", reference_is_consumer: " << reference_is_consumer
+            << ", current placeholder: " << ca_placeholder
             << std::endl;
 
-  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == 0);
+  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
 
   bool insertion_done = false;
   size_t target_offset = 0;
   size_t ref_offset = 0;
+  auto ca_placeholder_it = ca_placeholder.begin();
   // This is very similar to TensorDomain::mapRootDomains. Refactoring possible?
   while (target_offset < target_root.size() || ref_offset < reference_root.size()) {
     IterDomain* target_id = target_offset < target_root.size() ?
@@ -260,10 +262,10 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
         (target_id && ref_id && ComputeDomain::sameAxes(target_id, ref_id))) {
       ++target_offset;
       ++ref_offset;
-      ca_placeholder.push_back(false);
+      ++ca_placeholder_it;
     } else if (reference_is_consumer && target_is_reduction) {
       ++target_offset;
-      ca_placeholder.push_back(false);
+      ++ca_placeholder_it;
     } else if (!reference_is_consumer && reference_is_reduction) {
       ++ref_offset;
     } else if (reference_is_broadcast) {
@@ -273,7 +275,7 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
       // ref_id. This avoids inserting again even if this function is
       // called again.
       // Note that target_id may be a broadcast as well. We assume
-      // that target_id ad ref_id don't match when their pointer
+      // that target_id and ref_id don't match when their pointer
       // values are different. Since the pointer values are already
       // checked, at this point target_id and ref_id are considered
       // different even if they are broadcast.
@@ -281,16 +283,17 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
         std::cerr << "Inserting " << ref_id << " at position " << target_offset << std::endl;
         target_root.insert(target_root.begin() + target_offset, ref_id);
         target_contig.insert(target_contig.begin() + target_offset, true);
-        ca_placeholder.push_back(true);
+        ca_placeholder.insert(ca_placeholder_it, true);
         insertion_done = true;
         ++target_offset;
+        ++ca_placeholder_it;
       }
       ++ref_offset;
     } else {
       TORCH_INTERNAL_ASSERT(target_id != nullptr && ref_id != nullptr);
       ++target_offset;
       ++ref_offset;
-      ca_placeholder.push_back(false);
+      ++ca_placeholder_it;
     }
 
     if (ref_offset != ref_offset_old) {
@@ -303,9 +306,12 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
     }
   }
 
-  ca_placeholder.resize(target_root.size(), false);
+  //ca_placeholder.resize(target_root.size(), false);
+  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
 
-  std::cerr << "insertMissingDomains done: " << target_root << std::endl;
+  std::cerr << "insertMissingDomains done: " << target_root
+            << ", placeholder: " << ca_placeholder
+            << std::endl;
   return insertion_done;
 }
 } // namespace
@@ -364,7 +370,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   std::vector<IterDomain*> producer_root = producer->getRootDomain();
   std::cerr << "Producer root: " << producer_root << std::endl;
   auto producer_contig = producer->contiguity();
-  std::vector<bool> ca_placeholder;
+  std::vector<bool> ca_placeholder = producer->placeholder();
 
   insertMissingDomains(
       producer_root,
@@ -615,7 +621,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   std::vector<IterDomain*> consumer_root = consumer->getRootDomain();
   std::cerr << "Consumer root: " << consumer_root << std::endl;
   auto consumer_contig = consumer->contiguity();
-  std::vector<bool> ca_placeholder;
+  std::vector<bool> ca_placeholder = consumer->placeholder();
 
   insertMissingDomains(consumer_root, consumer_contig, ca_placeholder,
                        producer->getRootDomain(),

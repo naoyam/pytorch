@@ -1090,16 +1090,24 @@ class BroadcastMapping: public BackwardVisitor {
       while (input_it != input_view.end() && output_it != output_view.end()) {
         IterDomain* concrete_id = nullptr;
         IterDomain* bcast_id = nullptr;
+        if (input_it->isReduction()) {
+          ++input_it;
+          continue;
+        }
         if (!input_it->isBroadcast() && output_it->isBroadcast()) {
-          concrete_id = *input_it;
-          bcast_id = *output_it;
+          TORCH_INTERNAL_ASSERT(false, "Unexpected expression: ", bop,
+                                ", input root: ", input_tv->getRootDomain(),
+                                ", input placeholder: ", input_tv->domain()->placeholder(),
+                                ", output root: ", output_tv->getRootDomain(),
+                                ", output placeholder: ", output_tv->domain()->placeholder());
+          //concrete_id = *input_it;
+          //bcast_id = *output_it;
         } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
           concrete_id = *output_it;
           bcast_id = *input_it;
         }
         if (concrete_id != nullptr && bcast_id != nullptr) {
-          std::cerr << "Concrete ID found: "
-                    << concrete_id << " -> " << bcast_id << std::endl;
+          DEBUG("Concrete ID found: ", concrete_id, " -> ", bcast_id);
           map_.insert({bcast_id, concrete_id});
         }
         ++input_it;
