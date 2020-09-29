@@ -315,7 +315,8 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
 // really want to do is validate if we replayed these axes to the ones they
 // mapped to in the consumer the operations would all be the same. then we want
 // to start the replay of the producer from the rfactor root axes, not the root.
-std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::replayPasC(
+std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
+           std::unordered_map<IterDomain*, IterDomain*>> TransformReplay::replayPasC(
     const TensorDomain* producer,
     const TensorDomain* consumer,
     const ComputeDomain* consumer_cd,
@@ -412,6 +413,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   }
 
   auto leaf_ids(replay_PasC.getUnorderedLeafIDs());
+  auto crossover_map(replay_PasC.getLeafMap());
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
@@ -434,6 +436,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_CA_ids)) {
     if (leaf_ids.find(replayed_id.first) != leaf_ids.end()) {
       leaf_ids.erase(replayed_id.first);
+      //crossover_map.erase(replayed_id.first);
     }
   }
 #endif
@@ -568,14 +571,17 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
       new_IDs,
       //producer->contiguity());
       producer_contig,
-      ca_placeholder);
+      ca_placeholder,
+      crossover_map);
   std::cerr << "replayPasC done: " << replayed
             << ", num shared axes: " << producer_compute_at_axis
             << std::endl;
-  return {replayed, producer_compute_at_axis, td2cd_map};
+  return {replayed, producer_compute_at_axis, td2cd_map,
+          crossover_map};
 }
 
-std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::replayCasP(
+std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
+           std::unordered_map<IterDomain*, IterDomain*>> TransformReplay::replayCasP(
     const TensorDomain* consumer,
     const TensorDomain* producer,
     const ComputeDomain* producer_cd,
@@ -684,6 +690,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   }
 
   auto leaf_ids(replay_CasP.getUnorderedLeafIDs());
+  auto crossover_map(replay_CasP.getLeafMap());
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
@@ -704,6 +711,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_CA_ids)) {
     if (leaf_ids.find(replayed_id.first) != leaf_ids.end()) {
       leaf_ids.erase(replayed_id.first);
+      //crossover_map.erase(replayed_id.first);
     }
   }
 #endif
@@ -835,7 +843,8 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
       new_IDs,
       //consumer->contiguity(),
       consumer_contig,
-      ca_placeholder);
+      ca_placeholder,
+      crossover_map);
 
   std::cerr << "replayCasP done: " << replayed
             << ", num shared axes: " << num_shared_axes
@@ -844,7 +853,8 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> TransformReplay::re
   // TODO: computeAt position should be on a position in the compute domain.
   //return {replayed,
   //TensorDomain::noReductions(producer_CA_ids).size()};
-  return {replayed, num_shared_axes, td2cd_map};
+  return {replayed, num_shared_axes, td2cd_map,
+          crossover_map};
 }
 
 // replay Producer as Consumer
@@ -868,7 +878,8 @@ std::tuple<TensorView*, unsigned int, unsigned int> TransformReplay::replayPasC(
                                           std::get<1>(replay),
                                           consumer->getComputeDomain(),
                                           compute_at_axis,
-                                          std::get<2>(replay));
+                                          std::get<2>(replay),
+                                          std::get<3>(replay));
   producer->getComputeDomain()->registerAsDependent(consumer->getComputeDomain());
   std::cerr << "producer new CD: " << *producer->getComputeDomain() << std::endl;
   return {producer, std::get<1>(replay), producer->getComputeDomain()->getComputeAtPos()};
@@ -895,7 +906,8 @@ std::tuple<TensorView*, unsigned int, unsigned int> TransformReplay::replayCasP(
                                           std::get<1>(replay),
                                           producer->getComputeDomain(),
                                           compute_at_axis,
-                                          std::get<2>(replay));
+                                          std::get<2>(replay),
+                                          std::get<3>(replay));
   consumer->getComputeDomain()->registerAsDependent(producer->getComputeDomain());
   std::cerr << "consumer new CD: " << *consumer->getComputeDomain() << std::endl;
   return {consumer, std::get<1>(replay), consumer->getComputeDomain()->getComputeAtPos()};

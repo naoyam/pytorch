@@ -1103,6 +1103,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     const std::vector<kir::ForLoop*>& loops,
     bool global) {
 
+  const ComputeDomain* consumer_cd = consumer_tv->getComputeDomain();
+
   std::cerr << "getProducerIndex_impl2: "
             << "producer: " << producer_tv
             << ", consumer: " << consumer_tv
@@ -1111,6 +1113,10 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   std::cerr << "producer root: " << producer_tv->getRootDomain() << std::endl;
   std::cerr << "producer maybe rfactor: " << producer_tv->getMaybeRFactorDomain() << std::endl;
   std::cerr << "consumer root: " << consumer_tv->getRootDomain() << std::endl;
+  std::cerr << "consumer cd: " << *consumer_cd << std::endl;
+  for (auto m: consumer_cd->crossoverMap()) {
+    std::cerr << "crossover map: " << m.first << " -> " << m.second << std::endl;
+  }
 
   // If the producer is computed at -1, no indexing is involved. This
   // is optional; it just skips the rest of the analysis.
@@ -1118,14 +1124,13 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     return new kir::TensorIndex(producer_tv, {});
   }
 
-  const ComputeDomain* consumer_cd = consumer_tv->getComputeDomain();
-
-  std::unordered_map<IterDomain*, Val*> consumer_map;
+  std::unordered_map<const IterDomain*, Val*> consumer_map;
   for (size_t i = 0; i < consumer_tv->nDims(); ++i) {
     std::cerr << "idx: " << i << std::endl;
     IterDomain* dom = consumer_tv->axis(i);
     std::cerr << "dom: " << dom << std::endl;
     auto cd_axis_idx = consumer_cd->getComputeDomainAxisIndex(i);
+    IterDomain* cd_dom = consumer_cd->getAxisForReplay(cd_axis_idx);
     TORCH_INTERNAL_ASSERT(cd_axis_idx < loops.size());
     Val* loop_idx = loops.at(cd_axis_idx)->index();
     if (dom->isBroadcast()) {
@@ -1133,10 +1138,11 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     }
     std::cerr << "Initial entry: "
               << dom
+              << ", cd axis: " << cd_dom
               << ", " << loop_idx
               << std::endl;
     TORCH_INTERNAL_ASSERT(kir::isLoweredVal(loop_idx));
-    consumer_map.insert({dom, loop_idx});
+    consumer_map.insert({cd_dom, loop_idx});
   }
 
   std::cerr << "Initial consumer_idx_map\n";
@@ -1151,25 +1157,39 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
                  [](IterDomain* id) {
                    return static_cast<Val*>(id);
                  });
-  auto domain_exprs = ExprSort::getExprs(consumer_tv->fusion(), consumer_domain);
+  //auto domain_exprs = ExprSort::getExprs(consumer_tv->fusion(), consumer_domain);
 
-  // traverse in a reverse order
-  for (auto it = domain_exprs.rbegin(); it != domain_exprs.rend(); ++it) {
+  const auto& cd_exprs = consumer_cd->getExprsToRoot();
+
+  for (auto it = cd_exprs.begin(); it != cd_exprs.end(); ++it) {
     Expr* expr = *it;
     std::cerr << "Traversing " << expr << std::endl;
+    if (std::any_of(expr->outputs().begin(), expr->outputs().end(),
+                    [&consumer_map](const Val* out) {
+                      const auto* output_id = out->as<IterDomain>();
+                      return (consumer_map.find(output_id) == consumer_map.end());
+                    })) {
+      DEBUG("Ignoring unrelated expression");
+      continue;
+    }
     if (expr->getExprType() == ExprType::Split) {
       Split* split = expr->as<Split>();
       IterDomain* outer = split->outer();
       IterDomain* inner = split->inner();
       auto outer_map = consumer_map.find(outer);
-      TORCH_INTERNAL_ASSERT(outer_map != consumer_map.end());
+      TORCH_INTERNAL_ASSERT(outer_map != consumer_map.end(),
+                            "Outer ID not found: ", outer);
       auto inner_map = consumer_map.find(inner);
-      TORCH_INTERNAL_ASSERT(inner_map != consumer_map.end());
+      TORCH_INTERNAL_ASSERT(inner_map != consumer_map.end(),
+                            "Inner ID not found: ", inner);
       Val* outer_idx = outer_map->second;
       Val* inner_idx = inner_map->second;
       Val* inner_extent = kir::lowerValue(inner->extent());
       Val* in_idx = addx(mulx(outer_idx, inner_extent), inner_idx);
-      consumer_map.insert({split->in(), {in_idx}});
+      IterDomain* split_in = consumer_cd->getAxisForReplay(split->in());
+      DEBUG("Inserting new map: ", split_in, " to ", in_idx,
+            " (original split in: ", split->in(), ")");
+      consumer_map.insert({split_in, {in_idx}});
       consumer_map.erase(outer);
       consumer_map.erase(inner);
     } else if (expr->getExprType() == ExprType::Merge) {
@@ -1184,23 +1204,30 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
         inner_idx = new kir::Int(0);
         outer_idx = new kir::Int(0);
       }
-      consumer_map.insert({merge->outer(), outer_idx});
-      consumer_map.insert({merge->inner(), inner_idx});
+      IterDomain* outer_id = consumer_cd->getAxisForReplay(merge->outer());
+      IterDomain* inner_id = consumer_cd->getAxisForReplay(merge->inner());
+      consumer_map.insert({outer_id, outer_idx});
+      DEBUG("Inserting new map: ", outer_id, " to ", outer_idx,
+            " (original id: ", merge->outer(), ")");
+      consumer_map.insert({inner_id, inner_idx});
+      DEBUG("Inserting new map: ", inner_id, " to ", inner_idx,
+            " (original id: ", merge->inner(), ")");
       consumer_map.erase(merge->out());
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
     }
   }
 
-  std::cerr << "Root consumer_map\n";
-  for (auto k: consumer_map) {
-    std::cerr << k.first << " -> {" << k.second;
-    if (k.second->getOrigin()) {
-      std::cerr << " (" << k.second->getOrigin() << ")";
-    }
-    std::cerr << "}\n";
+  DEBUG("Root consumer_map");
+  std::unordered_map<const IterDomain*, Val*> consumer_td_map;
+  for (auto it = consumer_map.begin(); it != consumer_map.end(); ++it) {
+    DEBUG(const_cast<IterDomain*>(it->first), " -> ", it->second);
+    auto td_axis = consumer_cd->getTensorDomainAxisForDependentAxis(it->first);
+    consumer_td_map.insert({td_axis, it->second});
+    std::stringstream ss;
+    ss << td_axis;
+    DEBUG("Adding a root consumer map: ", ss.str());
   }
-  std::cerr << "Consumer root: " << consumer_tv->getRootDomain() << std::endl;
 
   std::unordered_map<IterDomain*, IterDomainInfo> producer_map;
   const auto root_mapping = TensorDomain::mapRootPandC(producer_tv->domain(),
@@ -1209,9 +1236,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   auto root_ca_ids = getMaybeRFactorCAIDs(producer_tv);
 
   // Propagate consumer root to producer toot
-  // TOOD (CD): Should this be getMaybeRFactorDomain()?
   for (auto producer_root_id: producer_tv->getMaybeRFactorDomain()) {
-    std::cerr << "Producer root: " << producer_root_id << std::endl;
+    DEBUG("Producer root: ", producer_root_id);
     auto consumer_root_id = std::find_if(root_mapping.begin(), root_mapping.end(),
                                          [producer_root_id](const auto& pair) {
                                            return pair.first == producer_root_id;
@@ -1220,10 +1246,12 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       TORCH_INTERNAL_ASSERT(producer_root_id->isReduction());
       continue;
     }
-    auto idx_map = consumer_map.find(consumer_root_id->second);
-    TORCH_INTERNAL_ASSERT(idx_map != consumer_map.end(),
+    DEBUG("Corresponding consumer TD root ID: ",
+          const_cast<IterDomain*>(consumer_root_id->second));
+    auto idx_map = consumer_td_map.find(consumer_root_id->second);
+    TORCH_INTERNAL_ASSERT(idx_map != consumer_td_map.end(),
                           "Consumer root not found: ",
-                          consumer_root_id->second);
+                          const_cast<IterDomain*>(consumer_root_id->second));
     Val* consumer_idx = idx_map->second;
     Val* producer_idx = nullptr;
     Val* producer_extent = nullptr;
@@ -1272,7 +1300,9 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
           kir::mulExpr(idx, new kir::NamedScalar(ss.str(), DataType::Int)));
     }
     std::cerr << "Global getProducerIndex_impl2: Strided indices: " << strided_inds << std::endl;
-    return new kir::TensorIndex(producer_tv, strided_inds);
+    auto ti = new kir::TensorIndex(producer_tv, strided_inds);
+    DEBUG("Generated TensorIndex: ", ti);
+    return ti;
   }
 
   // Transform to the original producer domain
@@ -1283,8 +1313,6 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
                  [](IterDomain* dom) {
                    return dom->as<Val>();
                  });
-  // TODO (CD): This goes back all the way to the root
-  // domain. Should stop at rfactor root?
 
   //auto producer_exprs = ExprSort::getExprs(producer_tv->fusion(),
   //producer_domain);
@@ -1361,7 +1389,9 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
 
   std::cerr << "getProducerIndex_impl2: Strided indices: " << strided_inds << std::endl;
 
-  return new kir::TensorIndex(producer_tv, strided_inds);
+  auto ti = new kir::TensorIndex(producer_tv, strided_inds);
+  DEBUG("Generated TensorIndex: ", ti);
+  return ti;
 }
 
 kir::TensorIndex* Index::getGlobalConsumerIndex(

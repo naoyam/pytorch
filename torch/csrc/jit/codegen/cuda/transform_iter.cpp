@@ -247,6 +247,23 @@ void ReplayTransformations::runReplay() {
       [](std::pair<IterDomain*, size_t> entry) { return entry.first; });
 }
 
+// Mapping from replayed IDs to the reference IDs
+std::unordered_map<IterDomain*, IterDomain*> ReplayTransformations::getLeafMap() const {
+  std::unordered_map<IterDomain*, IterDomain*> map;
+  for (auto leaf_id_pair: leaf_ids_) {
+    IterDomain* leaf_id = leaf_id_pair.first;
+    auto it = std::find_if(id_map_.begin(), id_map_.end(),
+                           [leaf_id](const auto p) {
+                             return p.second == leaf_id;
+                           });
+    TORCH_INTERNAL_ASSERT(it != id_map_.end(),
+                          "Leaf ID, ", leaf_id, " not found in ID map.");
+    map.insert({it->second, it->first});
+  }
+  TORCH_INTERNAL_ASSERT(map.size() == leaf_ids_.size());
+  return map;
+}
+
 BestEffortReplay::BestEffortReplay(
     const std::vector<IterDomain*>& replay_domain,
     const std::vector<IterDomain*>& target_domain,

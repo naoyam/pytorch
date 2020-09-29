@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <vector>
+#include <unordered_map>
 
 namespace torch {
 namespace jit {
@@ -119,11 +120,13 @@ namespace fuser {
 class TensorDomain;
 class TensorView;
 class ComputeDomain;
+class IterDomain;
 
 class TORCH_CUDA_API TransformReplay {
  public:
   // Replay producer as consumer, returns {producer, producer_compute_at_axis}.
-  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> replayPasC(
+  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
+                    std::unordered_map<IterDomain*, IterDomain*>> replayPasC(
       const TensorDomain* producer,
       const TensorDomain* consumer,
       const ComputeDomain* consumer_cd,
@@ -137,7 +140,8 @@ class TORCH_CUDA_API TransformReplay {
       int consumer_compute_at_axis);
 
   // Replay producer as consumer, returns {consumer, consumer_compute_at_axis}.
-  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>> replayCasP(
+  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
+                    std::unordered_map<IterDomain*, IterDomain*>> replayCasP(
       const TensorDomain* consumer,
       const TensorDomain* producer,
       const ComputeDomain* producer_cd,

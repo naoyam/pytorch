@@ -382,7 +382,8 @@ class TORCH_CUDA_API TensorDomain : public Val {
       std::vector<IterDomain*> _rfactor_domain,
       std::vector<IterDomain*> _domain,
       std::vector<bool> _contiguity = std::vector<bool>(),
-      std::vector<bool> _placeholder = std::vector<bool>());
+      std::vector<bool> _placeholder = std::vector<bool>(),
+      std::unordered_map<IterDomain*, IterDomain*> _crossover_map = {});
 
   TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
 
@@ -564,8 +565,12 @@ class TORCH_CUDA_API TensorDomain : public Val {
 
 class TORCH_CUDA_API ComputeDomain {
  public:
-  explicit ComputeDomain() = default;
+  ComputeDomain() = default;
   explicit ComputeDomain(const TensorDomain* td);
+
+  const TensorDomain* td() const {
+    return td_;
+  }
 
   size_t nDims() const {
     return axes().size();
@@ -579,6 +584,9 @@ class TORCH_CUDA_API ComputeDomain {
     return axes_[idx];
   }
 
+  IterDomain* getAxisForReplay(IterDomain* id) const;
+  IterDomain* getAxisForReplay(size_t idx) const;
+
   const std::deque<IterDomain*>& axes() const {
     return axes_;
   }
@@ -587,7 +595,8 @@ class TORCH_CUDA_API ComputeDomain {
                  int this_pos,
                  const ComputeDomain* target,
                  int target_pos,
-                 const std::vector<size_t>& td2cd_map);
+                 const std::vector<size_t>& td2cd_map,
+                 const std::unordered_map<IterDomain*, IterDomain*>& crossover_map);
 
   std::unordered_set<IterDomain*> getRootDomain() const;
 
@@ -634,10 +643,14 @@ class TORCH_CUDA_API ComputeDomain {
     return std::find(td_map_.begin(), td_map_.end(), cd_axis) != td_map_.end();
   }
 
-  size_t getTensorDomainAxisIndex(size_t cd_axis) const {
-    auto it = std::find(td_map_.begin(), td_map_.end(), cd_axis);
+  size_t getTensorDomainAxisIndex(size_t cd_axis_idx) const {
+    auto it = std::find(td_map_.begin(), td_map_.end(), cd_axis_idx);
     TORCH_INTERNAL_ASSERT(it != td_map_.end());
     return std::distance(td_map_.begin(), it);
+  }
+
+  IterDomain* getTensorDomainAxis(size_t cd_axis_idx) const {
+    return td_->axis(getTensorDomainAxisIndex(cd_axis_idx));
   }
 
   std::ostream& print(std::ostream& os) const;
@@ -647,6 +660,13 @@ class TORCH_CUDA_API ComputeDomain {
   void registerAsDependent(ComputeDomain* target);
   void registerDependent(ComputeDomain* dependent, size_t pos);
 
+  const std::unordered_map<IterDomain*, IterDomain*>& crossoverMap() const {
+    return crossover_map_;
+  }
+
+  const std::vector<Expr*>& getExprsToRoot() const;
+  const IterDomain* getTensorDomainAxisForDependentAxis(const IterDomain* cd_axis) const;
+
  private:
   void setAxis(size_t cd_axis, IterDomain* id);
   void insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis);
@@ -655,14 +675,24 @@ class TORCH_CUDA_API ComputeDomain {
   void fixupPosition();
   void updateDependents();
   bool isDependent(const ComputeDomain* cd) const;
+  void buildExprListToRoot() const;
+  void invalidateExprList() {
+    exprs_to_root_valid_ = false;
+  }
 
  private:
-  std::vector<IterDomain*> td_;
+  const TensorDomain* td_ = nullptr;
   std::deque<IterDomain*> axes_;
   // Mapping from TD IterDomain index to CD IterDomain index
   std::vector<size_t> td_map_;
   size_t pos_ = 0;
   std::vector<std::pair<size_t, ComputeDomain*>> dependents_;
+
+  std::unordered_map<IterDomain*, IterDomain*> crossover_map_;
+
+  mutable bool exprs_to_root_valid_ = false;
+  mutable std::vector<Expr*> exprs_to_root_;
+  mutable std::unordered_map<const IterDomain*, const IterDomain*> cd2td_map_;
 };
 
 std::ostream& operator<<(std::ostream& os, const ComputeDomain& cd);

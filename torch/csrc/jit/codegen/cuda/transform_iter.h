@@ -90,6 +90,8 @@ class TORCH_CUDA_API ReplayTransformations : public IterVisitor {
       runReplay();
     return leaf_vec_;
   }
+
+  std::unordered_map<IterDomain*, IterDomain*> getLeafMap() const;
 };
 
 /*
