@@ -1294,6 +1294,10 @@ class MatchingIterDomainSearch: public IterVisitor {
       const TensorView* tv = input->as<TensorView>();
       addToEquivalentSets(base_tv, tv);
     }
+    // This can happen when all inputs are scalar
+    if (base_tv == nullptr) {
+      return;
+    }
     const TensorView* out_tv = bop->output(0)->as<TensorView>();
     addToEquivalentSets(base_tv, out_tv);
   }
