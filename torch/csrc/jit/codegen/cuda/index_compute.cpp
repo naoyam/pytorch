@@ -1032,13 +1032,6 @@ std::ostream& operator<<(std::ostream& os, const IterDomainInfo& info) {
   return info.print(os);
 }
 
-std::unordered_set<Val*> getRootCAIDs(TensorView* tv) {
-  std::vector<Val*> ids{tv->domain()->domain().begin(),
-                        tv->domain()->domain().begin() + tv->getThisComputeAtAxis()};
-  std::unordered_set<Val*> root_vals = IterVisitor::getInputsTo(ids);
-  return root_vals;
-}
-
 std::unordered_set<IterDomain*> getMaybeRFactorCAIDs(TensorView* tv) {
   std::vector<IterDomain*> root = tv->getMaybeRFactorDomain();
   std::vector<Val*> ca_ids{tv->domain()->domain().begin(),
@@ -1233,7 +1226,6 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   std::unordered_map<IterDomain*, IterDomainInfo> producer_map;
   const auto root_mapping = TensorDomain::mapRootPandC(producer_tv->domain(),
                                                        consumer_tv->domain());
-  //auto root_ca_ids = getRootCAIDs(producer_tv);
   auto root_ca_ids = getMaybeRFactorCAIDs(producer_tv);
 
   // Propagate consumer root to producer toot
