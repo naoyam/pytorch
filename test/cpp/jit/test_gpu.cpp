@@ -5373,7 +5373,7 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
           auto aten_output = input.sum({axis});
 
           TORCH_CHECK(
-              aten_output.allclose(outputs[0], 1e-02, 1e-03),
+              aten_output.allclose(outputs[0], 1e-03, 1e-03),
               "Error of: ",
               aten_output.sub(outputs[0]).abs().max());
         }
