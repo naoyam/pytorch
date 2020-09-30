@@ -6180,7 +6180,7 @@ void testGPU_FusionComputeAtNonterminatingOutput() {
   tv0->computeAt(tv2, -1);
 
   fusion.printMath();
-  fusion.printKernel();  
+  fusion.printKernel();
 
   TORCH_CHECK(
       !(tv3->getComputeAtView() == tv4 && tv4->getComputeAtView() == tv3),
@@ -8200,6 +8200,146 @@ void testGPU_FusionComputeDomainRfactor() {
     auto aten_output = input.sum({1});
     TORCH_CHECK(aten_output.allclose(cg_output));
   }
+}
+
+void testGPU_FusionComputeDomainReorder() {
+  bool is_all = true;
+  int case_num_env = -1;
+  if (std::getenv("case")) {
+    is_all = false;
+    case_num_env = std::stoi(std::getenv("case"));
+    //std::cerr << "Case " << case_num_env << std::endl;
+  }
+
+  auto check_case = [&](int x) {
+    bool ret = is_all || (case_num_env == x);
+    if (ret) {
+      std::cerr << "\nCase " << x << std::endl << std::endl;
+    }
+    return ret;
+  };
+
+  if (check_case(1)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->reorder({{0, 1}, {1, 0}});
+    tv2->reorder({{0, 1}, {1, 0}});
+
+    //tv1->computeAt(tv2, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(1)->parallelize(ParallelType::BIDy);
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::BIDy);
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 101;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(2)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    //tv1->reorder({{0, 1}, {1, 0}});
+    tv2->reorder({{0, 1}, {1, 0}});
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(1)->parallelize(ParallelType::BIDy);
+    tv2->axis(1)->parallelize(ParallelType::BIDx);
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 101;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(3)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->reorder({{0, 1}, {1, 0}});
+    //tv2->reorder({{0, 1}, {1, 0}});
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(1)->parallelize(ParallelType::BIDy);
+    tv2->axis(1)->parallelize(ParallelType::BIDx);
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 101;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
 }
 
 void testGPU_FusionBCastMerge() {

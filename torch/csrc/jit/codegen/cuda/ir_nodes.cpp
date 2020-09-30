@@ -1566,6 +1566,15 @@ void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
             << std::endl;
 }
 
+void ComputeDomain::reorder() {
+  TORCH_INTERNAL_ASSERT(!computed_at_,
+                        "Reordering computed-at tensor not supported: ",
+                        *this);
+  TORCH_INTERNAL_ASSERT(td_->nDims() == nDims());
+  std::copy(td_->domain().begin(), td_->domain().end(),
+            axes_.begin());
+}
+
 // Transform this compute domain so that it is computed under the
 // target domain. TensorDomain is assumed to be already transformed by
 // replayPasC or replayCasP.
@@ -1645,6 +1654,7 @@ void ComputeDomain::computeAt(const TensorDomain* td,
 
   fixupPosition();
   invalidateExprList();
+  computed_at_ = true;
   std::cerr << "computeAt done: " << *this << std::endl;
 }
 

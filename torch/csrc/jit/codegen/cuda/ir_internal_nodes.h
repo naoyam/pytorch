@@ -609,6 +609,8 @@ class TORCH_CUDA_API ComputeDomain {
 
   void merge(const TensorDomain* new_td, int axis_o, int axis_i);
 
+  void reorder();
+
   size_t getComputeAtPos() const {
     return pos_;
   }
@@ -683,6 +685,7 @@ class TORCH_CUDA_API ComputeDomain {
  private:
   const TensorDomain* td_ = nullptr;
   std::deque<IterDomain*> axes_;
+  bool computed_at_ = false;
   // Mapping from TD IterDomain index to CD IterDomain index
   std::vector<size_t> td_map_;
   size_t pos_ = 0;

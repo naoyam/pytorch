@@ -233,6 +233,7 @@ namespace jit {
   _(GPU_FusionComputeAtBCastReduction)              \
   _(GPU_FusionComputeDomain)                        \
   _(GPU_FusionComputeDomainRfactor)                 \
+  _(GPU_FusionComputeDomainReorder)                 \
   _(GPU_FusionBCastMerge)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
