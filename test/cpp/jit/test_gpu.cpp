@@ -6838,6 +6838,8 @@ void testGPU_FusionComputeAtBCastReduction() {
     return;
   }
 
+  // 09/29/2020: Fails here. A loop is generated with a broadcast
+  // IterDomain. Bug in loop nest generation?
   tv0->computeAt(tv5, 1);
 
   std::cerr << "After computeAt" << std::endl;
