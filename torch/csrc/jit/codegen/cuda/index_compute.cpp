@@ -1461,7 +1461,9 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
   if (strided_inds.size() == 0)
     strided_inds.push_back(new kir::Int(0));
 
-  return new kir::TensorIndex(consumer_tv, strided_inds);
+  auto ti = new kir::TensorIndex(consumer_tv, strided_inds);
+  DEBUG("Generated TI: ", ti);
+  return ti;
 }
 
 // Consumer index for either shared or local memory
@@ -1573,16 +1575,21 @@ kir::TensorIndex* getConsumerIndexForReductionInit(
   for (auto loop_i = loops.begin() + consumer_tv->getThisComputeAtAxis();
        loop_i != loops.end(); ++loop_i) {
     if ((*loop_i)->iter_domain()->isThread()) continue;
+    if ((*loop_i)->iter_domain()->isBroadcast()) continue;
     auto idx = (*loop_i)->index();
     Val* extent = nullptr;
     for (auto loop_j = loop_i + 1; loop_j != loops.end(); ++loop_j) {
       if ((*loop_j)->iter_domain()->isThread()) continue;
+      if ((*loop_j)->iter_domain()->isBroadcast()) continue;
       Val* extent_j = (*loop_j)->iter_domain()->extent();
       extent = (extent != nullptr) ? kir::mulExpr(extent, extent_j) : extent_j;
     }
     strided_inds.push_back(extent != nullptr ? kir::mulExpr(idx, extent) : idx);
   }
-  return new kir::TensorIndex(consumer_tv, strided_inds);
+  //return new kir::TensorIndex(consumer_tv, strided_inds);
+  auto ti = new kir::TensorIndex(consumer_tv, strided_inds);
+  DEBUG("Generated TI: ", ti);
+  return ti;
 }
 
 } // namespace
@@ -1606,6 +1613,14 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
     if (loops.size() == consumer_tv->domain()->noReductions().size()) {
       return getConsumerIndexForReductionInit(consumer_tv, loops);
     }
+    std::stringstream ss;
+    int i = 0;
+    for (auto loop: loops) {
+      ss << "loop[" << i++ << "]: " << loop->index()
+         << ", " << loop->iter_domain()
+         << "\n";
+    }
+    std::cerr << ss.str();
     TORCH_INTERNAL_ASSERT(false, "Invalid number of loops: ",
                           loops.size(), ", whereas the ComputeDomain for the consumer TV is",
                           *cd);
@@ -1659,7 +1674,9 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
 
   std::cerr << "strided inds: " << strided_inds << std::endl;
 
-  return new kir::TensorIndex(consumer_tv, strided_inds);
+  auto ti = new kir::TensorIndex(consumer_tv, strided_inds);
+  DEBUG("Generated TI: ", ti);
+  return ti;
 }
 
 // Producer is the inputs of an expression

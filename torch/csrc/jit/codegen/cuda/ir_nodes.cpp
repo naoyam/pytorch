@@ -1077,6 +1077,26 @@ class BroadcastMapping: public BackwardVisitor {
     traverseFrom(fusion, fusion->outputs(), false);
   }
 
+  int counter_ = 0;
+  std::vector<std::unordered_set<const IterDomain*>> bc_doms;
+
+  void handleEquivalentBroadcastDomains(const IterDomain* bc1, const IterDomain* bc2) {
+    for (auto& s: bc_doms) {
+      if (s.find(bc1) != s.end()) {
+        s.insert(bc2);
+        return;
+      }
+      if (s.find(bc2) != s.end()) {
+        s.insert(bc1);
+        return;
+      }
+    }
+    std::unordered_set<const IterDomain*> new_set;
+    new_set.insert(bc1);
+    new_set.insert(bc2);
+    bc_doms.emplace_back(new_set);
+  }
+
   void handle(BinaryOp* bop) override {
     if (!ir_utils::isTVOp(bop)) return;
     for (const auto input: bop->inputs()) {
@@ -1105,6 +1125,13 @@ class BroadcastMapping: public BackwardVisitor {
         } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
           concrete_id = *output_it;
           bcast_id = *input_it;
+        } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+          // Even if the output is broadcast, if it's a different
+          // broadcast dom, mark them as equivalent.
+          handleEquivalentBroadcastDomains(*input_it, *output_it);
+          ++input_it;
+          ++output_it;
+          continue;
         }
         if (concrete_id != nullptr && bcast_id != nullptr) {
           DEBUG("Concrete ID found: ", concrete_id, " -> ", bcast_id);
@@ -1115,6 +1142,51 @@ class BroadcastMapping: public BackwardVisitor {
       }
     }
   }
+
+  void handle(ReductionOp* rop) override {
+    if (!ir_utils::isTVOp(rop)) return;
+    const TensorView* input_tv = rop->input(0)->as<TensorView>();
+    const TensorView* output_tv = rop->output(0)->as<TensorView>();
+    auto input_view = input_tv->domain()->noPlaceholder();
+    auto output_view = output_tv->domain()->noPlaceholder();
+    auto input_it = input_view.begin();
+    auto output_it = output_view.begin();
+    while (input_it != input_view.end() && output_it != output_view.end()) {
+      IterDomain* concrete_id = nullptr;
+      IterDomain* bcast_id = nullptr;
+      if (input_it->isReduction()) {
+        ++input_it;
+        continue;
+      }
+      if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+        TORCH_INTERNAL_ASSERT(false, "Unexpected expression: ", rop,
+                              ", input root: ", input_tv->getRootDomain(),
+                              ", input placeholder: ", input_tv->domain()->placeholder(),
+                              ", output root: ", output_tv->getRootDomain(),
+                              ", output placeholder: ", output_tv->domain()->placeholder());
+        //concrete_id = *input_it;
+        //bcast_id = *output_it;
+      } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+        concrete_id = *output_it;
+        bcast_id = *input_it;
+      } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+        // Even if the output is broadcast, if it's a different
+        // broadcast dom, mark them as equivalent.
+        handleEquivalentBroadcastDomains(*input_it, *output_it);
+        ++input_it;
+        ++output_it;
+        continue;
+      }
+
+      if (concrete_id != nullptr && bcast_id != nullptr) {
+        DEBUG("Concrete ID found: ", concrete_id, " -> ", bcast_id);
+        map_.insert({bcast_id, concrete_id});
+      }
+      ++input_it;
+      ++output_it;
+    }
+  }
+
 
 #if 0
   void handle(UnaryOp* uop) override {
@@ -1157,11 +1229,21 @@ class BroadcastMapping: public BackwardVisitor {
   std::unordered_map<const IterDomain*, const IterDomain*> map_;
 
   const IterDomain* lookup(const IterDomain *id) const {
-    while (id->isBroadcast()) {
-      TORCH_INTERNAL_ASSERT(map_.find(id) != map_.end());
-      id = map_.find(id)->second;
+    if (map_.find(id) != map_.end()) {
+      return map_.find(id)->second;
     }
-    return id;
+    // Try the equivalent sets
+    for (const auto& s: bc_doms) {
+      if (s.find(id) != s.end()) {
+        for (const auto& equiv_id: s) {
+          if (map_.find(equiv_id) != map_.end()) {
+            DEBUG("Concrete ID for ", id, " in the equivalent set for ", equiv_id);
+            return map_.find(equiv_id)->second;
+          }
+        }
+      }
+    }
+    TORCH_INTERNAL_ASSERT(false, "No concrete ID found for ", id);
   }
 
   static const IterDomain* getConcreteDomain(const IterDomain* bcast_dom) {
@@ -1189,14 +1271,10 @@ class BroadcastMapping: public BackwardVisitor {
       }
     }
 
-    auto it = bcast_mapping.map_.find(bcast_dom);
-    std::stringstream ss;
-    ss << "Concrete domain not found for "
-       << bcast_dom;
-    TORCH_INTERNAL_ASSERT(it != bcast_mapping.map_.end(), ss.str());
+    auto concrete_dom = bcast_mapping.lookup(bcast_dom);
     std::cerr << "Concrete domain for " << bcast_dom
-              << ": " << it->second << std::endl;
-    return it->second;
+              << ": " << concrete_dom << std::endl;
+    return concrete_dom;
   }
 };
 
