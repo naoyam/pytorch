@@ -150,8 +150,7 @@ class Index {
   static kir::TensorIndex* getProducerIndex_impl2(
       TensorView* producer,
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops,
-      bool global);
+      const std::vector<kir::ForLoop*>& loops);
 
   // Consumer indexing if it's in shared or local memory
   static kir::TensorIndex* getConsumerIndex_impl(

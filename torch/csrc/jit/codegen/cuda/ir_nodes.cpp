@@ -1824,12 +1824,12 @@ class ComputeDomainVisitor {
               cd_axis, " to ", td_axis);
       }
     }
-#if 0
+#if 1
     DEBUG("Traversal started for ", cd_);
-    for (auto v: frontier_) {
+    for (auto v: frontier) {
       std::cerr << "Frontier: " << v << std::endl;
     }
-    for (auto v: visited_vals_) {
+    for (auto v: visited_vals) {
       std::cerr << "Visited val: " << v << std::endl;
     }
 #endif
@@ -1838,7 +1838,7 @@ class ComputeDomainVisitor {
       std::unordered_set<Val*> new_frontier;
       std::unordered_set<Expr*> visited_exprs;
       for (Val* val : frontier) {
-        //DEBUG("Examining ", val);
+        DEBUG("Examining ", val);
         Expr* expr = val->getOrigin();
         if (expr == nullptr) continue;
         if (!std::all_of(
@@ -1848,13 +1848,13 @@ class ComputeDomainVisitor {
                   return visited_vals.find(out) != visited_vals.end();
                 })) {
           // some output is still not visited
-          //DEBUG("Not ready to visit: ", expr);
+          DEBUG("Not ready to visit: ", expr);
           new_frontier.insert(val);
           continue;
         }
         if (visited_exprs.find(expr) != visited_exprs.end()) {
           // expr already visited
-          //DEBUG("Already visited: ", expr);
+          DEBUG("Already visited: ", expr);
           continue;
         }
         // expr is ready to visit
@@ -1871,11 +1871,11 @@ class ComputeDomainVisitor {
       }
       frontier = new_frontier;
     }
-    //DEBUG("Traversal done");
+    DEBUG("Traversal done");
   }
 
   std::vector<Val*> next(Expr* expr) {
-    //DEBUG("Next expr: ", expr);
+    DEBUG("Next expr: ", expr);
     std::vector<Val*> next_vals;
     std::transform(expr->inputs().begin(),  expr->inputs().end(),
                    std::back_inserter(next_vals),
@@ -1883,7 +1883,7 @@ class ComputeDomainVisitor {
                      TORCH_INTERNAL_ASSERT(input->isA<IterDomain>());
                      IterDomain* id = input->as<IterDomain>();
                      IterDomain* replaced_id = cd_.getAxisForReplay(id);
-#if 0
+#if 1
                      if (id != replaced_id) {
                        DEBUG("Next val: ", replaced_id, " (originally ", id, ")");
                      } else {
@@ -1902,11 +1902,31 @@ class ComputeDomainVisitor {
     // Build mapping from ComputeDomain IDs to TensorDomain IDs
     const Expr* td_expr = cd2td_map_.at(expr->output(0)->as<IterDomain>())->getOrigin();
     if (td_expr == nullptr) {
+      // This should never occur as placeholders should have been inserted
+      TORCH_INTERNAL_ASSERT(false, "Corresponding TD expr not found for: ", expr);
+      DEBUG("TD expr not found");
       // Corresponding expression for TensorDomain not found despite
       // all of the outputs exist for the TensorDomain. This can
       // happen if there are extra broadcast domains in the
       // ComputeDomain CA axes. Should be safe to ignore.
-      return;
+      TORCH_INTERNAL_ASSERT(expr->getExprType() == ExprType::Merge);
+      auto td_out = cd2td_map_.at(expr->output(0)->as<IterDomain>());
+      // td_out must be a root ID
+      TORCH_INTERNAL_ASSERT(
+          std::find(cd_.getRootDomain().begin(), cd_.getRootDomain().end(), td_out)
+          != cd_.getRootDomain().end());
+      // One of the input IDs should have the same extent.
+      for (size_t i = 0; i < expr->inputs().size(); ++i) {
+        IterDomain* cd_axis = cd_.getAxisForReplay(
+            expr->input(i)->as<IterDomain>());
+        if (!ComputeDomain::sameAxes(cd_axis, td_out)) continue;
+        // Propagate up the output ID
+        DEBUG("Registering mapping from ", cd_axis,
+              " to ", td_out);
+        cd2td_map_.insert({cd_axis, td_out});
+        return;
+      }
+      TORCH_INTERNAL_ASSERT(false, "Can't traveres up");
     }
     // Create new mapping for the inputs
     TORCH_INTERNAL_ASSERT(expr->getExprType() == td_expr->getExprType());
@@ -1930,7 +1950,7 @@ class ComputeDomainVisitor {
 
 void ComputeDomain::buildExprListToRoot() const {
   if (!exprs_to_root_valid_) {
-    DEBUG("BUilding expr list to root for ", *this);
+    DEBUG("Building expr list to root for ", *this);
     exprs_to_root_.clear();
     cd2td_map_.clear();
     ComputeDomainVisitor cdv(*this, exprs_to_root_, cd2td_map_);
@@ -1948,10 +1968,7 @@ const IterDomain* ComputeDomain::getTensorDomainAxisForDependentAxis(
     const IterDomain* cd_axis) const {
   buildExprListToRoot();
   auto it = cd2td_map_.find(cd_axis);
-  TORCH_INTERNAL_ASSERT(it != cd2td_map_.end(),
-                        "Corresponding TensorDomain axis not found for ",
-                        cd_axis);
-  return it->second;
+  return (it != cd2td_map_.end()) ? it->second : nullptr;
 }
 
 IterDomain* ComputeDomain::getAxisForReplay(IterDomain* id) const {

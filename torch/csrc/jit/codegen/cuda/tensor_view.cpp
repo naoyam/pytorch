@@ -1,9 +1,10 @@
+#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/compute_at.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
-#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+
 // #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
@@ -12,6 +13,87 @@
 // #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
+
+TORCH_CUDA_API std::ostream& operator<<(
+    std::ostream& os,
+    const torch::jit::fuser::Statement* stmt);
+
+namespace str_test {
+template <typename T>
+struct CanonicalizeStrTypes {
+  using type = const T&;
+};
+
+template <size_t N>
+struct CanonicalizeStrTypes<char[N]> {
+  using type = const char *;
+};
+
+template <typename T>
+std::string test(const T& t) {
+  std::stringstream ss;
+  ss << t;
+  return ss.str();
+}
+
+inline std::ostream& _str(std::ostream& ss) {
+  return ss;
+}
+
+template <typename T>
+inline std::ostream& _str(std::ostream& ss, const T& t) {
+  ss << t;
+  return ss;
+}
+
+template <typename T, typename... Args>
+inline std::ostream& _str(std::ostream& ss, const T& t, const Args&... args) {
+  return _str(_str(ss, t), args...);
+}
+
+template<typename... Args>
+struct _str_wrapper final {
+  static std::string call(const Args&... args) {
+    std::ostringstream ss;
+    _str(ss, args...);
+    return ss.str();
+  }
+};
+
+// Specializations for already-a-string types.
+template<>
+struct _str_wrapper<std::string> final {
+  // return by reference to avoid the binary size of a string copy
+  static const std::string& call(const std::string& str) {
+    return str;
+  }
+};
+
+template<>
+struct _str_wrapper<const char*> final {
+  static std::string call(const char* str) {
+    return str;
+  }
+};
+
+// For c10::str() with an empty argument list (which is common in our assert macros),
+// we don't want to pay the binary size for constructing and destructing a stringstream
+// or even constructing a string. Let's just return a reference to an empty string.
+template<>
+struct _str_wrapper<> final {
+  static const std::string& call() {
+    thread_local const std::string empty_string_literal;
+    return empty_string_literal;
+  }
+};
+
+
+template <typename... Args>
+inline decltype(auto) str(const Args&... args) {
+  return _str_wrapper<typename CanonicalizeStrTypes<Args>::type...>::call(args...);
+}
+
+} // namespace
 
 namespace torch {
 namespace jit {
@@ -187,12 +269,14 @@ void TensorView::setComputeAt(TensorView* computeAtView, int axis) {
       " tried to set to local axis ",
       getThisComputeAtAxis());
 
+  std::cerr << "Domain: " << domain() << std::endl;
   TORCH_INTERNAL_ASSERT(
       std::none_of(
           domain()->domain().begin(),
           domain()->domain().begin() + getThisComputeAtAxis(),
           [](IterDomain* id) { return id->isReduction(); }),
-      "Invalid computeAt, reduction domain inside computeAt axis.");
+      "Invalid computeAt, reduction domain inside computeAt axis.",
+      "; computeatpos: ", getThisComputeAtAxis());
 }
 
 void TensorView::setComputeAt(
@@ -281,6 +365,10 @@ void TensorView::setThisComputeAtAxis() {
 TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   // Make sure this and consumer are not the same tensor, that's illegal
   TORCH_CHECK(!sameAs(consumer), "Cannot call this->computeAt(this, ...)");
+
+  DEBUG("ComputeAt: ", const_cast<const TensorView*>(this), " -> ",
+        const_cast<const TensorView*>(consumer), " at ", axis);
+  fusion()->printMath();
 
   // We support negative axes, so increment it by consumer->nDims() + 1 and make
   // sure the result is within consumer->nDims() + 1. being at consumer->nDims()
@@ -376,6 +464,8 @@ TensorView* TensorView::reorder(const std::unordered_map<int, int>& old2new_) {
 
 TensorView* TensorView::rFactor(const std::vector<int>& axes) {
   TORCH_INTERNAL_ASSERT(nDims() > 0, "Tried to rFactor a 0-dim TensorView");
+  DEBUG("rFactor: ", const_cast<const TensorView*>(this),
+        " with ", axes);
   FusionGuard fg(fusion());
   Expr* origin_expr = fusion()->origin(this);
   TORCH_CHECK(

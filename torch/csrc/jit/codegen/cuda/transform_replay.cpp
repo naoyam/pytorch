@@ -221,7 +221,8 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
                           std::vector<bool>& ca_placeholder,
                           const std::vector<IterDomain*>& reference_root,
                           std::unordered_set<IterDomain*> reference_root_ca_ids,
-                          bool reference_is_consumer) {
+                          bool reference_is_consumer,
+                          bool target_has_rfactor) {
   std::stringstream ss;
   ss << "{";
   for (const auto id: reference_root_ca_ids) {
@@ -234,16 +235,20 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
             << ", reference_root_ca_ids: " << ss.str()
             << ", reference_is_consumer: " << reference_is_consumer
             << ", current placeholder: " << ca_placeholder
+            << ", target_has_rfactor: " << target_has_rfactor
             << std::endl;
 
-  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
+  if (!target_has_rfactor) {
+    TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
+  }
 
   bool insertion_done = false;
   size_t target_offset = 0;
   size_t ref_offset = 0;
   auto ca_placeholder_it = ca_placeholder.begin();
   // This is very similar to TensorDomain::mapRootDomains. Refactoring possible?
-  while (target_offset < target_root.size() || ref_offset < reference_root.size()) {
+  while (target_offset < target_root.size() ||
+         ref_offset < reference_root.size()) {
     IterDomain* target_id = target_offset < target_root.size() ?
                                             target_root.at(target_offset) : nullptr;
     IterDomain* ref_id = ref_offset < reference_root.size() ?
@@ -281,6 +286,9 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
       // different even if they are broadcast.
       if (reference_root_ca_ids.find(ref_id) != reference_root_ca_ids.end()) {
         std::cerr << "Inserting " << ref_id << " at position " << target_offset << std::endl;
+        // Not supported for rfactor tensors
+        TORCH_INTERNAL_ASSERT(!target_has_rfactor,
+                              "Inserting placeholder not supported for rfactor tensros.");
         target_root.insert(target_root.begin() + target_offset, ref_id);
         target_contig.insert(target_contig.begin() + target_offset, true);
         ca_placeholder.insert(ca_placeholder_it, true);
@@ -290,7 +298,8 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
       }
       ++ref_offset;
     } else {
-      TORCH_INTERNAL_ASSERT(target_id != nullptr && ref_id != nullptr);
+      TORCH_INTERNAL_ASSERT(target_id != nullptr);
+      TORCH_INTERNAL_ASSERT(ref_id != nullptr);
       ++target_offset;
       ++ref_offset;
       ++ca_placeholder_it;
@@ -307,7 +316,9 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
   }
 
   //ca_placeholder.resize(target_root.size(), false);
-  TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
+  if (insertion_done) {
+    TORCH_INTERNAL_ASSERT(ca_placeholder.size() == target_root.size());
+  }
 
   std::cerr << "insertMissingDomains done: " << target_root
             << ", placeholder: " << ca_placeholder
@@ -365,20 +376,18 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
     std::cerr << "consumer CA root ID: " << id << std::endl;
   }
 
-  //std::vector<IterDomain*> producer_root =
-  //producer->getMaybeRFactorDomain();
-  std::vector<IterDomain*> producer_root = producer->getRootDomain();
+  std::vector<IterDomain*> producer_root =
+      producer->getMaybeRFactorDomain();
   std::cerr << "Producer root: " << producer_root << std::endl;
   auto producer_contig = producer->contiguity();
   std::vector<bool> ca_placeholder = producer->placeholder();
-
-  insertMissingDomains(
+  bool placeholder_inserted = insertMissingDomains(
       producer_root,
       producer_contig,
       ca_placeholder,
       consumer->getRootDomain(),
       getRootCAIDs(consumer->domain(), td_pos),
-      true);
+      true, producer->hasRFactor());
 
   // Map of consumer_CA_root_ids to related producer_CA_ids
   auto replay_root_map =
@@ -570,15 +579,25 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
 
   std::cerr << "New IDs: " << new_IDs << std::endl;
 
-  TensorDomain* replayed = new TensorDomain(
-      //producer->getRootDomain(),
-      producer_root,
-      producer->getRFactorDomain(),
-      new_IDs,
-      //producer->contiguity());
-      producer_contig,
-      ca_placeholder,
-      crossover_map);
+  TensorDomain* replayed = nullptr;
+  if (placeholder_inserted) {
+    TORCH_INTERNAL_ASSERT(producer->getRFactorDomain().size() == 0);
+    replayed = new TensorDomain(
+        producer_root,
+        producer->getRFactorDomain(),
+        new_IDs,
+        producer_contig,
+        ca_placeholder,
+        crossover_map);
+  } else {
+    replayed = new TensorDomain(
+        producer->getRootDomain(),
+        producer->getRFactorDomain(),
+        new_IDs,
+        producer->contiguity(),
+        ca_placeholder,
+        crossover_map);
+  }
   std::cerr << "replayPasC done: " << replayed
             << ", num shared axes: " << producer_compute_at_axis
             << std::endl;
@@ -622,11 +641,10 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   std::cerr << "Consumer root: " << consumer_root << std::endl;
   auto consumer_contig = consumer->contiguity();
   std::vector<bool> ca_placeholder = consumer->placeholder();
-
-  insertMissingDomains(consumer_root, consumer_contig, ca_placeholder,
-                       producer->getRootDomain(),
-                       getRootCAIDs(producer->domain(), td_pos),
-                       false);
+  bool placeholder_inserted = insertMissingDomains(consumer_root, consumer_contig, ca_placeholder,
+                                                   producer->getRootDomain(),
+                                                   getRootCAIDs(producer->domain(), td_pos),
+                                                   false, consumer->hasRFactor());
 
 #if 0
   // If producer has an rfactor root, that's what will match the consumer
@@ -842,15 +860,26 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
 
   std::cerr << "New IDs: " << new_IDs << std::endl;
 
-  TensorDomain* replayed = new TensorDomain(
-      //consumer->getRootDomain(),
-      consumer_root,
-      consumer->getRFactorDomain(),
-      new_IDs,
-      //consumer->contiguity(),
-      consumer_contig,
-      ca_placeholder,
-      crossover_map);
+  TensorDomain* replayed = nullptr;
+
+  if (placeholder_inserted) {
+    TORCH_INTERNAL_ASSERT(consumer->getRFactorDomain().size() == 0);
+    replayed = new TensorDomain(
+        consumer_root,
+        consumer->getRFactorDomain(),
+        new_IDs,
+        consumer_contig,
+        ca_placeholder,
+        crossover_map);
+  } else {
+    replayed = new TensorDomain(
+        consumer->getRootDomain(),
+        consumer->getRFactorDomain(),
+        new_IDs,
+        consumer->contiguity(),
+        ca_placeholder,
+        crossover_map);
+  }
 
   std::cerr << "replayCasP done: " << replayed
             << ", num shared axes: " << num_shared_axes
