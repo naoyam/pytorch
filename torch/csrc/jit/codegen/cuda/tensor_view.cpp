@@ -368,7 +368,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
 
   DEBUG("ComputeAt: ", const_cast<const TensorView*>(this), " -> ",
         const_cast<const TensorView*>(consumer), " at ", axis);
-  fusion()->printMath();
+  //fusion()->printMath();
 
   // We support negative axes, so increment it by consumer->nDims() + 1 and make
   // sure the result is within consumer->nDims() + 1. being at consumer->nDims()

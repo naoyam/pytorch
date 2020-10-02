@@ -1522,19 +1522,20 @@ ComputeDomain::ComputeDomain(const TensorDomain* td):
 std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapRootDomain(
     const std::vector<IterDomain*>& root_domain,
     const std::unordered_set<IterDomain*>& compute_root_ids) {
-  auto root_ids = compute_root_ids;
+  auto cd_root_ids = compute_root_ids;
+  // Mapping from CD root IDs to IDS in root_domain
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
   for (const auto& id: root_domain) {
-    auto it = std::find_if(
-        root_ids.begin(), root_ids.end(),
-        [id](const IterDomain* d) {
-          return ComputeDomain::sameAxes(id, d);
+    auto cd_it = std::find_if(
+        cd_root_ids.begin(), cd_root_ids.end(),
+        [id](const IterDomain* cd_id) {
+          return ComputeDomain::sameAxes(id, cd_id);
         });
-    if (it == root_ids.end()) {
+    if (cd_it == cd_root_ids.end()) {
       continue;
     }
-    root_id_map.emplace(*it, id);
-    root_ids.erase(it);
+    root_id_map.emplace(*cd_it, id);
+    cd_root_ids.erase(cd_it);
   }
   return root_id_map;
 }
