@@ -1531,6 +1531,7 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
   }
 
   std::vector<Val*> strided_inds;
+  const bool is_smem = producer_tv->getMemoryType() == MemoryType::Shared;
   for (size_t i = alloc_pos; i < producer_tv->nDims(); ++i) {
     IterDomain* prod_id = producer_tv->axis(i);
     if (prod_id->isReduction()) {
@@ -1543,7 +1544,7 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
       TORCH_INTERNAL_ASSERT(false, "Mapping not detected for ", prod_id);
       continue;
     }
-    if (prod_id->isThread()) {
+    if (prod_id->isBlockDim() || (prod_id->isThreadDim() && !is_smem)) {
       continue;
     }
     Idx idx = producer_map.find(prod_id)->second.idx();
@@ -1556,7 +1557,9 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
     Val* extent = nullptr;
     for (size_t j = i + 1; j < producer_tv->nDims(); ++j) {
       IterDomain* id = producer_tv->axis(j);
-      if (id->isThread() || id->isReduction()) {
+      if (id->isBlockDim() ||
+          (id->isThreadDim() && !is_smem) ||
+          id->isReduction()) {
         continue;
       }
       extent = mulx(extent, kir::lowerValue(id->extent()));
@@ -1877,6 +1880,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     }
   }
 
+  const bool is_smem = producer_tv->getMemoryType() == MemoryType::Shared;
   std::vector<Val*> strided_inds;
   for (size_t i = alloc_pos; i < producer_tv->nDims(); ++i) {
     IterDomain* prod_id = producer_tv->axis(i);
@@ -1890,7 +1894,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       TORCH_INTERNAL_ASSERT(false, "Mapping not detected for ", prod_id);
       continue;
     }
-    if (prod_id->isThread()) {
+    if (prod_id->isBlockDim() || (prod_id->isThreadDim() && !is_smem)) {
       continue;
     }
     Idx idx = producer_map.find(prod_id)->second.idx();
@@ -1903,7 +1907,9 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     Val* extent = nullptr;
     for (size_t j = i + 1; j < producer_tv->nDims(); ++j) {
       IterDomain* id = producer_tv->axis(j);
-      if (id->isThread() || id->isReduction()) {
+      if (id->isBlockDim() ||
+          (id->isThreadDim() && !is_smem) ||
+          id->isReduction()) {
         continue;
       }
       extent = mulx(extent, kir::lowerValue(id->extent()));
@@ -2158,12 +2164,13 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
   }
   auto left_most_own_axis = cd->getComputeDomainAxisIndex(tv_ca_pos);
   std::vector<Val*> strided_inds;
+  const bool is_smem = consumer_tv->getMemoryType() == MemoryType::Shared;
   //size_t loop_idx = left_most_own_axis;
   for (size_t i = left_most_own_axis; i < cd->nDims(); ++i) {
     IterDomain* axis = cd->axis(i);
     std::cerr << "CD axis at " << i << ": " << axis << std::endl;
     // Parallelized domain doesn't need offsetting
-    if (axis->isThread()) continue;
+    if (axis->isBlockDim() || (axis->isThreadDim() && !is_smem)) continue;
     // Broadcast domain doesn't contribute to offsetting
     if (axis->isBroadcast()) continue;
     // Reduction domain doesn't contribute to offsetting
@@ -2186,7 +2193,8 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
       std::cerr << "j: " << j << std::endl;
       IterDomain* axis_j = cd->axis(j);
       std::cerr << "axis_j: " << axis_j << std::endl;
-      if (axis_j->isParallelized()) continue;
+      if (axis_j->isBlockDim() ||
+          (axis_j->isThreadDim() && !is_smem)) continue;
       if (axis_j->isBroadcast()) continue;
       if (axis_j->isReduction()) continue;
       Val* extent = kir::lowerValue(axis_j->extent());
