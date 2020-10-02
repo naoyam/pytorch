@@ -5624,9 +5624,6 @@ void testGPU_FusionSmem() {
   tv3->setMemoryType(MemoryType::Shared);
   tv4->setMemoryType(MemoryType::Shared);
 
-  fusion.printMath();
-  fusion.printKernel();
-
   constexpr int BSY = 32;
   constexpr int BSX = 128;
   tv2->split(0, BSY);
