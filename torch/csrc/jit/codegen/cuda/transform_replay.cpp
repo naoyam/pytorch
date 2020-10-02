@@ -340,6 +340,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
     int consumer_compute_at_axis) {
   // producer_compute_at_axis is a position in the producer compute domain.
   normalizeComputeAtPos(consumer_compute_at_axis, consumer_cd->nDims());
+
   const auto td_pos = consumer_cd->getTensorDomainPos(consumer_compute_at_axis);
 
   std::cerr << "replayPasC: producer: " << producer
@@ -392,6 +393,16 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   // Map of consumer_CA_root_ids to related producer_CA_ids
   auto replay_root_map =
       consumer_cd->mapRootDomain(producer_root, consumer_CA_root_ids);
+  // Reduction IDs can't be shared.
+  for (auto it = replay_root_map.begin(); it != replay_root_map.end();) {
+    IterDomain* producer_root_id = it->second;
+    if (producer_root_id->isReduction()) {
+      DEBUG("Remove reduction ID from CA root mapping: ", producer_root_id);
+      it = replay_root_map.erase(it);
+    } else {
+      ++it;
+    }
+  }
 
   // Track which root axes in producer we will send to replay
   std::unordered_set<IterDomain*> producer_roots4replay;
@@ -613,6 +624,19 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
     int producer_compute_at_axis) {
   // producer_compute_at_axis is a position in the producer compute domain.
   normalizeComputeAtPos(producer_compute_at_axis, producer_cd->nDims());
+
+  // Can't share reduction axes
+  for (int i = 0; i < producer_compute_at_axis; ++i) {
+    if (producer_cd->isComputeDomainAxisUsed(i)) {
+      if (producer_cd->getTensorDomainAxis(i)->isReduction()) {
+        producer_compute_at_axis = i;
+        DEBUG("Moved compute-at position to ", i, " because the producer axis at ",
+              producer_cd->getTensorDomainAxisIndex(i), " is a reduction domain.");
+        break;
+      }
+    }
+  }
+
   const auto td_pos = producer_cd->getTensorDomainPos(producer_compute_at_axis);
 
   std::cerr << "replayCasP: consumer: " << consumer
@@ -665,7 +689,6 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
     }
   }
 #else
-  // TODO (CD) rfactor
   auto input_ids = IterVisitor::getInputsTo(
       std::vector<Val*>(producer_CA_ids.begin(), producer_CA_ids.end()));
   std::unordered_set<IterDomain*> producer_CA_root_ids{
