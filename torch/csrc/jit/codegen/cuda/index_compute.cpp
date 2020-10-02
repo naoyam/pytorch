@@ -1786,15 +1786,11 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   }
 
   if (global) {
-    // ".stride" is used here. Is it defined for an Rfactor tensor?
-    // Assume not, so fail if this is an rfactor tensor.
-    TORCH_INTERNAL_ASSERT(!producer_tv->hasRFactor(), "Invalid rfactor tensor.");
-    const auto& producer_root = producer_tv->getRootDomain();
+    const auto& producer_root = producer_tv->getMaybeRFactorDomain();
     std::vector<Val*> strided_inds;
     for (size_t i = 0; i < producer_root.size(); ++i) {
       IterDomain* id = producer_root[i];
-      const IterDomainInfo& info = producer_map.at(id);
-      std::cerr << "Global Producer root: " << id << std::endl;
+      DEBUG("Global Producer root: ", id);
       if (id->isReduction()) {
         std::cerr << "global root is reduction; ignored\n";
         continue;
@@ -1803,6 +1799,10 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
         std::cerr << "global root is broadcast; ignored\n";
         continue;
       }
+      auto id_it = producer_map.find(id);
+      TORCH_INTERNAL_ASSERT(id_it != producer_map.end(),
+                            "Not found in producer_map: ", id);
+      const IterDomainInfo& info = id_it->second;
       auto idx = info.idx();
       std::stringstream ss;
       ss << "T" << producer_tv->name() << ".stride[" << i << "]";
