@@ -184,21 +184,43 @@ std::vector<std::pair<IterDomain*, size_t>> replayMapFind(
     //std::cerr << "replayMapFind:: id: " << id << std::endl;
   //}
   std::vector<std::pair<IterDomain*, size_t>> cd_map;
+  std::unordered_set<size_t> found;
+  // First, look for identical domains
   for (size_t i = 0; i < ids.size(); ++i) {
     const IterDomain* id = ids.at(i);
-    // TODO: just compare pointer values. Should not need to use sameAxes.
     auto it = std::find_if(map.begin(), map.end(),
                            [id](const auto& map_kv) {
                              IterDomain* id_in_map = map_kv.first;
-                             //return id == id_in_map;
+                             return id == id_in_map;
+                           });
+    if (it != map.end()) {
+      auto mapped_id = it->second;
+      map.erase(it);
+      cd_map.push_back({mapped_id, i});
+      found.insert(i);
+    }
+  }
+  // Next, try to find matching "same" IDs
+  for (size_t i = 0; i < ids.size(); ++i) {
+    if (found.find(i) == found.end()) continue;
+    const IterDomain* id = ids.at(i);
+    auto it = std::find_if(map.begin(), map.end(),
+                           [id](const auto& map_kv) {
+                             IterDomain* id_in_map = map_kv.first;
                              return ComputeDomain::sameAxes(id, id_in_map);
                            });
     if (it != map.end()) {
       auto mapped_id = it->second;
       map.erase(it);
       cd_map.push_back({mapped_id, i});
+      found.insert(i);
     }
   }
+  // Reorder the found IDs with the order of ids
+  std::sort(cd_map.begin(), cd_map.end(),
+            [](const auto& x, const auto&y) {
+              return x.second < y.second;
+            });
   return cd_map;
 }
 

@@ -3967,6 +3967,11 @@ void testGPU_FusionSimpleGemm() {
   // tv5[I0o, I0i{4}, R1i{32}, I2o, I2i{4}]
 
   tv0->computeAt(tv5, -1);
+  fusion.printMath();
+  
+  return;
+  
+  
   tv1->computeAt(tv5, -1);
 
   // tv6[I0o, I0i{4}, R1o, I1i{32}, I2o, I2i{4}]

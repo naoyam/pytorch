@@ -235,6 +235,7 @@ unsigned int ComputeAt::forwardComputeAt_impl(
       consumer, producer, (int)producer_compute_at_axis);
 
   const auto td_pos = std::get<1>(replay);
+  const auto cd_pos = std::get<2>(replay);
 
   if (producer_entry.shouldSetComputeAt(producer_compute_at_axis)) {
     producer->setComputeAt(consumer, td_pos);
@@ -246,7 +247,7 @@ unsigned int ComputeAt::forwardComputeAt_impl(
     consumer_entry.setComputeAtDomain(consumer->domain());
   }
 
-  return td_pos;
+  return cd_pos;
 }
 
 void ComputeAt::setCommonConsumer() {
