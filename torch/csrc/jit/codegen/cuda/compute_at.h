@@ -165,11 +165,12 @@ class ComputeAt {
   ComputeAt& operator=(const ComputeAt& other) = delete;
 };
 
-inline void normalizeComputeAtPos(int& pos, size_t num_dimensions) {
+inline int normalizeComputeAtPos(int pos, size_t num_dimensions) {
   if (pos < 0) {
     pos += num_dimensions + 1;
   }
   TORCH_INTERNAL_ASSERT(pos <= num_dimensions);
+  return pos;
 }
 
 } // namespace fuser

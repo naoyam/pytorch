@@ -363,7 +363,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   // producer_compute_at_axis is a position in the producer compute domain.
   //normalizeComputeAtPos(consumer_compute_at_axis,
   //consumer_cd->nDims());
-  normalizeComputeAtPos(consumer_compute_at_axis, consumer->nDims());
+  consumer_compute_at_axis = normalizeComputeAtPos(consumer_compute_at_axis, consumer->nDims());
 
   //const auto td_pos =
   //consumer_cd->getTensorDomainPos(consumer_compute_at_axis);
@@ -659,11 +659,11 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   // producer_compute_at_axis is a position in the producer compute
   // domain.
 #ifdef COMPUTE_AT_USE_TD_POS
-  normalizeComputeAtPos(producer_compute_at_axis, producer->nDims());
+  producer_compute_at_axis = normalizeComputeAtPos(producer_compute_at_axis, producer->nDims());
   auto td_pos = producer_compute_at_axis;
   auto cd_pos = producer_cd->getComputeDomainPos(td_pos);
 #else
-  normalizeComputeAtPos(producer_compute_at_axis, producer_cd->nDims());
+  producer_compute_at_axis = normalizeComputeAtPos(producer_compute_at_axis, producer_cd->nDims());
   auto cd_pos = producer_compute_at_axis;
   auto td_pos = producer_cd->getTensorDomainPos(cd_pos);
 #endif
@@ -988,9 +988,11 @@ TransformReplay::replay(TensorView* tv,
 
   const auto reference_cd = reference->getComputeDomain();
 #ifdef COMPUTE_AT_USE_TD_POS
+  pos = normalizeComputeAtPos(pos, reference->nDims());
   const auto td_pos = pos;
   const auto cd_pos = reference_cd->getComputeDomainPos(td_pos);
 #else
+  pos = normalizeComputeAtPos(pos, reference_cd->nDims());
   const auto cd_pos = compute_at_axis;
   const auto td_pos = reference_cd->getTensorDomainPos(cd_pos);
 #endif

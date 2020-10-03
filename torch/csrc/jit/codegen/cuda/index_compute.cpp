@@ -1072,8 +1072,12 @@ std::ostream& operator<<(std::ostream& os, const IdxGraphNode& info) {
 
 class IterDomainInfo {
  public:
-  IterDomainInfo(std::shared_ptr<IdxGraphNode> idx, bool is_ca=false):
-      idx_(idx), is_ca_(is_ca) {
+  IterDomainInfo() = default;
+  IterDomainInfo(std::shared_ptr<IdxGraphNode> idx,
+                 bool is_ca=false,
+                 Val* extent=nullptr,
+                 IterDomain* cd_dom=nullptr):
+      idx_(idx), is_ca_(is_ca), extent_(extent), cd_dom_(cd_dom) {
     validate();
   }
   void validate() const {
@@ -1084,6 +1088,7 @@ class IterDomainInfo {
   }
   std::ostream& print(std::ostream& os) const {
     os << "{idx: " << *idx_;
+    os << ", is CA?: " << (is_ca_ ? "true" : "false");
 #if 0
     if (extent_) {
       os << ", extent: " << extent_;
@@ -1092,25 +1097,28 @@ class IterDomainInfo {
       }
     }
 #endif
-    os << ", is CA?: " << (is_ca_ ? "true" : "false");
     os << "}";
     return os;
   }
   std::shared_ptr<IdxGraphNode> idx() const {
     return idx_;
   }
-#if 0
   Val* extent() const {
     return extent_;
   }
-#endif
   bool isCA() const {
     return is_ca_;
   }
+  IterDomain* cdDom() const {
+    return cd_dom_;
+  }
  private:
   std::shared_ptr<IdxGraphNode> idx_ = nullptr;
-  //Val* extent_ = nullptr;
   bool is_ca_ = false;
+  // TODO (CD): remove extent. should be fine without this as it can
+  // be retrieved from cd_dom_.
+  Val* extent_ = nullptr;
+  IterDomain* cd_dom_ = nullptr;
 };
 
 std::ostream& operator<<(std::ostream& os, const IterDomainInfo& info) {
@@ -1220,6 +1228,99 @@ class MarkCAIDs: public BackwardVisitor {
   std::unordered_map<IterDomain*, bool> ca_ids_;
 };
 
+
+std::unordered_map<const IterDomain*, Val*> buildExtentMap(TensorView* tv) {
+  std::unordered_map<const IterDomain*, Val*> map;
+  const auto& root_domain = tv->getRootDomain();
+  for (const IterDomain* root_id: root_domain) {
+    Val* extent = root_id->extent();
+    if (root_id->isBroadcast()) {
+      extent = ComputeDomain::getConcreteDomain(root_id)->extent();
+    }
+    extent = kir::lowerValue(extent);
+    map.insert({root_id, extent});
+  }
+  std::vector<Val*> domain_vals(
+      ir_utils::filterByType<Val>(tv->domain()->domain()).begin(),
+      ir_utils::filterByType<Val>(tv->domain()->domain()).end());
+  auto exprs = ExprSort::getExprs(tv->fusion(), domain_vals);
+  for (const Expr* expr: exprs) {
+    if (expr->getExprType() == ExprType::Split) {
+      const Split* split = expr->as<Split>();
+      map.insert({split->inner(), kir::lowerValue(split->factor())});
+      map.insert({split->outer(), kir::ceilDivExpr(map.at(split->in()),
+                                                   kir::lowerValue(split->factor()))});
+    } else if (expr->getExprType() == ExprType::Merge) {
+      const Merge* merge = expr->as<Merge>();
+      map.insert({merge->out(), mulx(map.at(merge->outer()), map.at(merge->inner()))});
+    }
+  }
+  return map;
+}
+
+std::pair<IterDomain*, IterDomain*> getInputToMerge(IterDomain* merge_id) {
+  Expr* origin = merge_id->getOrigin();
+  TORCH_INTERNAL_ASSERT(origin != nullptr, "Expression defining merged IterDomain not found: ",
+                        merge_id);
+  TORCH_INTERNAL_ASSERT(origin->getExprType() == ExprType::Merge,
+                        "Unexpected expression type: ", origin);
+  Merge* merge = origin->as<Merge>();
+  return std::make_pair(merge->outer(), merge->inner());
+}
+
+Split* getSplitOrigin(IterDomain* id) {
+  Expr* origin = id->getOrigin();
+  if (origin == nullptr) {
+    return nullptr;
+  }
+  TORCH_INTERNAL_ASSERT(origin->getExprType() == ExprType::Split,
+                        "Unexpected expression type: ", origin);
+  Split* split = origin->as<Split>();
+  return split;
+}
+
+IterDomain* getInputToSplit(IterDomain* split_id1,
+                            IterDomain* split_id2) {
+  Split* split1 = getSplitOrigin(split_id1);
+  Split* split2 = getSplitOrigin(split_id2);
+  Split* split = nullptr;
+  TORCH_INTERNAL_ASSERT(!(split1 == nullptr && split2 == nullptr));
+  if (split1 == nullptr) {
+    split = split2;
+  } else if (split2 == nullptr) {
+    split = split1;
+  } else if (split1 == split2) {
+    split = split1;
+  } else {
+    DEBUG("Crossover split: ", split_id1, " and ", split_id2);
+    DEBUG("Split1: ", split1, ", split2: ", split2);
+    TORCH_INTERNAL_ASSERT(split1->outputs().size() == 2);
+    if (std::all_of(split1->outputs().begin(),
+                    split1->outputs().end(),
+                    [split_id1, split_id2](const Val* val) {
+                      const IterDomain* id = val->as<IterDomain>();
+                      return ComputeDomain::sameAxes(id, split_id1) ||
+                          ComputeDomain::sameAxes(id, split_id2);
+                    })) {
+      // Move upward with split1
+      DEBUG("Chose split1: ", split1);
+      split = split1;
+    } else {
+      bool match = std::all_of(split2->outputs().begin(),
+                               split2->outputs().end(),
+                               [split_id1, split_id2](const Val* val) {
+                                 const IterDomain* id = val->as<IterDomain>();
+                                 return ComputeDomain::sameAxes(id, split_id1) ||
+                                     ComputeDomain::sameAxes(id, split_id2);
+                               });
+      TORCH_INTERNAL_ASSERT(match);
+      DEBUG("Chose split2: ", split2);
+      split = split2;
+    }
+  }
+  return split->in();
+}
+
 kir::TensorIndex* getProducerIndex_impl2_rfactor(
     TensorView* producer_tv,
     TensorView* consumer_tv,
@@ -1256,7 +1357,8 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
     IterDomain* dom = consumer_tv->axis(i);
     DEBUG("dom: ", dom);
     auto cd_axis_idx = consumer_cd->getComputeDomainAxisIndex(i);
-    //IterDomain* cd_dom = consumer_cd->getAxisForReplay(cd_axis_idx);
+    IterDomain* cd_dom = consumer_cd->axis(cd_axis_idx);
+    Val* extent = kir::lowerValue(cd_dom->extent());
     bool is_ca = i < producer_tv->getRelativeComputeAtAxis() && !global;
     std::shared_ptr<IdxGraphNode> ign;
     if (is_ca) {
@@ -1270,7 +1372,7 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
               << dom
               << *ign
               << std::endl;
-    consumer_map.insert({dom, IterDomainInfo(ign, is_ca)});
+    consumer_map.insert({dom, IterDomainInfo(ign, is_ca, extent, cd_dom)});
   }
 
   std::cerr << "Initial consumer_idx_map\n";
@@ -1288,7 +1390,7 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
 
   auto cd_exprs = ExprSort::getExprs(consumer_tv->fusion(), consumer_domain);
   //const auto& cd_exprs = consumer_cd->getExprsToRoot();
-
+  //auto extent_map = buildExtentMap(consumer_tv);
   DEBUG("Traversing consumer exprs upward");
   for (auto it = cd_exprs.rbegin(); it != cd_exprs.rend(); ++it) {
     Expr* expr = *it;
@@ -1309,40 +1411,47 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
       auto outer_map = consumer_map.find(outer);
       TORCH_INTERNAL_ASSERT(outer_map != consumer_map.end(),
                             "Outer ID not found: ", outer);
+      const IterDomainInfo& outer_info = outer_map->second;
       auto inner_map = consumer_map.find(inner);
       TORCH_INTERNAL_ASSERT(inner_map != consumer_map.end(),
                             "Inner ID not found: ", inner);
-      const bool outer_ca = outer_map->second.isCA();
-      const bool inner_ca = inner_map->second.isCA();
-      const bool is_ca = outer_ca || inner_ca;
+      const IterDomainInfo& inner_info = inner_map->second;
+      const bool outer_ca = outer_info.isCA();
+      const bool inner_ca = inner_info.isCA();
       //IterDomain* split_in =
       //consumer_cd->getAxisForReplay(split->in());
       IterDomain* split_in = split->in();
 
-      auto outer_idx = outer_map->second.idx();
-      auto inner_idx = inner_map->second.idx();
+      auto outer_idx = outer_info.idx();
+      auto inner_idx = inner_info.idx();
 
       //Val* in_idx = addx(mulx(outer_idx, inner_extent), inner_idx);
-      Idx in_idx;
-
+      IterDomainInfo in_info;
       if (outer_ca || inner_ca) {
-        in_idx = std::make_shared<IdxGraphNode>(outer_idx, inner_idx);
+        in_info = IterDomainInfo(std::make_shared<IdxGraphNode>(outer_idx, inner_idx),
+                                 true);
       } else {
         DEBUG("Split: none in CA");
-        Val* inner_extent = kir::lowerValue(inner->extent());
-        in_idx = std::make_shared<IdxGraphNode>(
+        //Val* inner_extent = kir::lowerValue(inner_info.cdDom()->extent());
+          //Val* inner_extent = extent_map.at(inner);
+        Val* inner_extent = inner_info.extent();
+        Val* outer_extent = outer_info.extent();
+        Val* in_extent = mulx(inner_extent, outer_extent);
+        auto in_idx = std::make_shared<IdxGraphNode>(
             addx(mulx(outer_idx->idx(), inner_extent), inner_idx->idx()));
+        in_info = IterDomainInfo(in_idx, false, in_extent,
+                                 getInputToSplit(outer_info.cdDom(), inner_info.cdDom()));
       }
-      DEBUG("Inserting new map: ", split_in, " to ", in_idx,
-            " (original split in: ", split->in(), ")");
-      consumer_map.insert({split_in, IterDomainInfo(in_idx, is_ca)});
+      DEBUG("Inserting new map: ", split_in, " to ", in_info);
+      consumer_map.insert({split_in, in_info});
       consumer_map.erase(outer);
       consumer_map.erase(inner);
     } else if (expr->getExprType() == ExprType::Merge) {
       Merge* merge = expr->as<Merge>();
       auto out_map = consumer_map.find(merge->out());
       TORCH_INTERNAL_ASSERT(out_map != consumer_map.end());
-      Idx out_idx = out_map->second.idx();
+      const IterDomainInfo& out_info = out_map->second;
+      Idx out_idx = out_info.idx();
 
       //IterDomain* outer_id =
       //consumer_cd->getAxisForReplay(merge->outer());
@@ -1350,24 +1459,28 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
       //IterDomain* inner_id =
       //consumer_cd->getAxisForReplay(merge->inner());
       IterDomain* inner_id = merge->inner();
-      Idx inner_idx, outer_idx;
+      //Idx inner_idx, outer_idx;
+      IterDomainInfo inner_info, outer_info;
       bool is_ca = out_map->second.isCA();
       if (is_ca) {
         DEBUG("Merge: out is in CA");
-        inner_idx = out_idx;
-        outer_idx = out_idx;
+        inner_info = IterDomainInfo(out_idx, true);
+        outer_info = IterDomainInfo(out_idx, true);
       } else {
         DEBUG("Merge: not in CA");
-        Val* inner_extent = kir::lowerValue(merge->inner()->extent());
-        inner_idx = std::make_shared<IdxGraphNode>(modx(out_idx->idx(), inner_extent));
-        outer_idx = std::make_shared<IdxGraphNode>(divx(out_idx->idx(), inner_extent));
+        IterDomain* out_cd_dom = out_info.cdDom();
+        auto in_cd_dom = getInputToMerge(out_cd_dom);
+        Val* inner_extent = kir::lowerValue(in_cd_dom.second->extent());
+        Val* outer_extent = kir::lowerValue(in_cd_dom.first->extent());
+        auto inner_idx = std::make_shared<IdxGraphNode>(modx(out_idx->idx(), inner_extent));
+        inner_info = IterDomainInfo(inner_idx, false, inner_extent, in_cd_dom.second);
+        auto outer_idx = std::make_shared<IdxGraphNode>(divx(out_idx->idx(), inner_extent));
+        outer_info = IterDomainInfo(outer_idx, false, outer_extent, in_cd_dom.first);
       }
-      consumer_map.insert({outer_id, IterDomainInfo(outer_idx, is_ca)});
-      DEBUG("Inserting new map: ", outer_id, " to ", outer_idx,
-            " (original id: ", merge->outer(), ")");
-      consumer_map.insert({inner_id, IterDomainInfo(inner_idx, is_ca)});
-      DEBUG("Inserting new map: ", inner_id, " to ", inner_idx,
-            " (original id: ", merge->inner(), ")");
+      DEBUG("Inserting new map: ", outer_id, " to ", outer_info);
+      consumer_map.insert({outer_id, outer_info});
+      consumer_map.insert({inner_id, inner_info});
+      DEBUG("Inserting new map: ", inner_id, " to ", inner_info);
       consumer_map.erase(merge->out());
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
@@ -1608,7 +1721,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     IterDomain* dom = consumer_tv->axis(i);
     DEBUG("dom: ", dom);
     auto cd_axis_idx = consumer_cd->getComputeDomainAxisIndex(i);
-    //IterDomain* cd_dom =  consumer_cd->getAxisForReplay(cd_axis_idx);
+    IterDomain* cd_dom = consumer_cd->axis(cd_axis_idx);
+    Val* extent = kir::lowerValue(cd_dom->extent());
     bool is_ca = i < producer_tv->getRelativeComputeAtAxis() && !global;
     std::shared_ptr<IdxGraphNode> ign;
     if (is_ca) {
@@ -1624,7 +1738,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
               << *ign
               << std::endl;
     //consumer_map.insert({cd_dom, IterDomainInfo(ign, is_ca)});
-    consumer_map.insert({dom, IterDomainInfo(ign, is_ca)});
+    consumer_map.insert({dom, IterDomainInfo(ign, is_ca, extent, cd_dom)});
   }
 
   std::cerr << "Initial consumer_idx_map\n";
@@ -1641,7 +1755,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
                  });
   auto cd_exprs = ExprSort::getExprs(consumer_tv->fusion(), consumer_domain);
   //const auto& cd_exprs = consumer_cd->getExprsToRoot();
-
+  //auto extent_map = buildExtentMap(consumer_tv);
   DEBUG("Traversing consumer exprs upward");
   for (auto it = cd_exprs.rbegin(); it != cd_exprs.rend(); ++it) {
     Expr* expr = *it;
@@ -1662,60 +1776,76 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       auto outer_map = consumer_map.find(outer);
       TORCH_INTERNAL_ASSERT(outer_map != consumer_map.end(),
                             "Outer ID not found: ", outer);
+      const IterDomainInfo& outer_info = outer_map->second;
       auto inner_map = consumer_map.find(inner);
       TORCH_INTERNAL_ASSERT(inner_map != consumer_map.end(),
                             "Inner ID not found: ", inner);
-      const bool outer_ca = outer_map->second.isCA();
-      const bool inner_ca = inner_map->second.isCA();
-      const bool is_ca = outer_ca || inner_ca;
-      //IterDomain* split_in = consumer_cd->getAxisForReplay(split->in());
+      const IterDomainInfo& inner_info = inner_map->second;
+      const bool outer_ca = outer_info.isCA();
+      const bool inner_ca = inner_info.isCA();
+      //IterDomain* split_in =
+      //consumer_cd->getAxisForReplay(split->in());
       IterDomain* split_in = split->in();
 
-      auto outer_idx = outer_map->second.idx();
-      auto inner_idx = inner_map->second.idx();
+      auto outer_idx = outer_info.idx();
+      auto inner_idx = inner_info.idx();
 
       //Val* in_idx = addx(mulx(outer_idx, inner_extent), inner_idx);
-      Idx in_idx;
-
+      IterDomainInfo in_info;
       if (outer_ca || inner_ca) {
-        in_idx = std::make_shared<IdxGraphNode>(outer_idx, inner_idx);
+        in_info = IterDomainInfo(std::make_shared<IdxGraphNode>(outer_idx, inner_idx),
+                                 true);
       } else {
         DEBUG("Split: none in CA");
-        Val* inner_extent = kir::lowerValue(inner->extent());
-        in_idx = std::make_shared<IdxGraphNode>(
+        //Val* inner_extent = kir::lowerValue(inner_info.cdDom()->extent());
+          //Val* inner_extent = extent_map.at(inner);
+        Val* inner_extent = inner_info.extent();
+        Val* outer_extent = outer_info.extent();
+        Val* in_extent = mulx(inner_extent, outer_extent);
+        auto in_idx = std::make_shared<IdxGraphNode>(
             addx(mulx(outer_idx->idx(), inner_extent), inner_idx->idx()));
+        in_info = IterDomainInfo(in_idx, false, in_extent,
+                                 getInputToSplit(outer_info.cdDom(), inner_info.cdDom()));
       }
-      DEBUG("Inserting new map: ", split_in, " to ", *in_idx,
-            " (original split in: ", split->in(), ")");
-      consumer_map.insert({split_in, IterDomainInfo(in_idx, is_ca)});
+      DEBUG("Inserting new map: ", split_in, " to ", in_info);
+      consumer_map.insert({split_in, in_info});
       consumer_map.erase(outer);
       consumer_map.erase(inner);
     } else if (expr->getExprType() == ExprType::Merge) {
       Merge* merge = expr->as<Merge>();
       auto out_map = consumer_map.find(merge->out());
       TORCH_INTERNAL_ASSERT(out_map != consumer_map.end());
-      Idx out_idx = out_map->second.idx();
+      const IterDomainInfo& out_info = out_map->second;
+      Idx out_idx = out_info.idx();
 
-      //IterDomain* outer_id = consumer_cd->getAxisForReplay(merge->outer());
+      //IterDomain* outer_id =
+      //consumer_cd->getAxisForReplay(merge->outer());
       IterDomain* outer_id = merge->outer();
-      //IterDomain* inner_id = consumer_cd->getAxisForReplay(merge->inner());
+      //IterDomain* inner_id =
+      //consumer_cd->getAxisForReplay(merge->inner());
       IterDomain* inner_id = merge->inner();
-      Idx inner_idx, outer_idx;
+      //Idx inner_idx, outer_idx;
+      IterDomainInfo inner_info, outer_info;
       bool is_ca = out_map->second.isCA();
       if (is_ca) {
-        inner_idx = out_idx;
-        outer_idx = out_idx;
+        DEBUG("Merge: out is in CA");
+        inner_info = IterDomainInfo(out_idx, true);
+        outer_info = IterDomainInfo(out_idx, true);
       } else {
-        Val* inner_extent = kir::lowerValue(merge->inner()->extent());
-        inner_idx = std::make_shared<IdxGraphNode>(modx(out_idx->idx(), inner_extent));
-        outer_idx = std::make_shared<IdxGraphNode>(divx(out_idx->idx(), inner_extent));
+        DEBUG("Merge: not in CA");
+        IterDomain* out_cd_dom = out_info.cdDom();
+        auto in_cd_dom = getInputToMerge(out_cd_dom);
+        Val* inner_extent = kir::lowerValue(in_cd_dom.second->extent());
+        Val* outer_extent = kir::lowerValue(in_cd_dom.first->extent());
+        auto inner_idx = std::make_shared<IdxGraphNode>(modx(out_idx->idx(), inner_extent));
+        inner_info = IterDomainInfo(inner_idx, false, inner_extent, in_cd_dom.second);
+        auto outer_idx = std::make_shared<IdxGraphNode>(divx(out_idx->idx(), inner_extent));
+        outer_info = IterDomainInfo(outer_idx, false, outer_extent, in_cd_dom.first);
       }
-      consumer_map.insert({outer_id, IterDomainInfo(outer_idx, is_ca)});
-      DEBUG("Inserting new map for outer: ", outer_id, " to ", *outer_idx,
-            " (original id: ", merge->outer(), ")");
-      consumer_map.insert({inner_id, IterDomainInfo(inner_idx, is_ca)});
-      DEBUG("Inserting new map for inner: ", inner_id, " to ", *inner_idx,
-            " (original id: ", merge->inner(), ")");
+      DEBUG("Inserting new map: ", outer_id, " to ", outer_info);
+      consumer_map.insert({outer_id, outer_info});
+      consumer_map.insert({inner_id, inner_info});
+      DEBUG("Inserting new map: ", inner_id, " to ", inner_info);
       consumer_map.erase(merge->out());
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);

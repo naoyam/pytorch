@@ -657,6 +657,7 @@ class TORCH_CUDA_API ComputeDomain {
 
   std::ostream& print(std::ostream& os) const;
 
+  static const IterDomain* getConcreteDomain(const IterDomain* id);
   static bool sameAxes(const IterDomain* id1, const IterDomain* id2);
 
   void registerAsDependent(ComputeDomain* target);

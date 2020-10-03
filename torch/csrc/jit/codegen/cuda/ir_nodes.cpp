@@ -1483,6 +1483,14 @@ bool sameAs(Val* v1, Val* v2) {
 
 } // namespace
 
+const IterDomain* ComputeDomain::getConcreteDomain(const IterDomain* id) {
+  if (id->isBroadcast()) {
+    return BroadcastMapping::getConcreteDomain(id);
+  } else {
+    return id;
+  }
+}
+
 bool ComputeDomain::sameAxes(const IterDomain* id1, const IterDomain* id2) {
   bool dbg = false;
   std::stringstream debug_msg;
@@ -1599,8 +1607,8 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   td_map_.resize(td_->nDims());
   pos_ = 0;
 
-  normalizeComputeAtPos(target_pos, target->nDims());
-  normalizeComputeAtPos(this_pos, td->nDims());
+  target_pos = normalizeComputeAtPos(target_pos, target->nDims());
+  this_pos = normalizeComputeAtPos(this_pos, td->nDims());
 
   TORCH_INTERNAL_ASSERT(this_pos <= target_pos);
   TORCH_INTERNAL_ASSERT((size_t)this_pos <= td->nDims());
