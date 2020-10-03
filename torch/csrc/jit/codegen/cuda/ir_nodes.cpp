@@ -1975,6 +1975,7 @@ const IterDomain* ComputeDomain::getTensorDomainAxisForDependentAxis(
 IterDomain* ComputeDomain::getAxisForReplay(IterDomain* id) const {
   TORCH_INTERNAL_ASSERT(id != nullptr);
   while (true) {
+    DEBUG("getAxisForReplay: ", id);
     auto it = crossover_map_.find(id);
     if (it == crossover_map_.end() ||
         id == it->second) {
