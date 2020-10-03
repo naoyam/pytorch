@@ -3355,7 +3355,23 @@ void testGPU_FusionBranches() {
 }
 
 void testGPU_FusionSimpleBCast() {
-  {
+  bool is_all = true;
+  int case_num_env = -1;
+  if (std::getenv("case")) {
+    is_all = false;
+    case_num_env = std::stoi(std::getenv("case"));
+    std::cerr << "Case " << case_num_env << std::endl;
+  }
+
+  auto check_case = [&](int x) {
+    bool ret = is_all || (case_num_env == x);
+    if (ret) {
+      std::cerr << "\nCase " << x << std::endl << std::endl;
+    }
+    return ret;
+  };
+
+  if (check_case(1)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3408,7 +3424,7 @@ void testGPU_FusionSimpleBCast() {
     TORCH_CHECK(t7.allclose(outputs[0]));
   }
 
-  {
+  if (check_case(2)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3464,7 +3480,7 @@ void testGPU_FusionSimpleBCast() {
     TORCH_CHECK(t7.allclose(cg_output));
   }
 
-  {
+  if (check_case(3)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3495,6 +3511,9 @@ void testGPU_FusionSimpleBCast() {
     tv0->computeAt(tv3, -1);
     tv2->computeAt(tv3, -1);
 
+    fusion.printMath();
+    fusion.printKernel();
+
     tv3->axis(0)->parallelize(ParallelType::BIDx);
 
     constexpr int x = 2, y = 3, z = 4;
@@ -3514,7 +3533,7 @@ void testGPU_FusionSimpleBCast() {
     TORCH_CHECK(t3.allclose(cg_output));
   }
 
-  {
+  if (check_case(4)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3566,7 +3585,7 @@ void testGPU_FusionSimpleBCast() {
     TORCH_CHECK(t3.allclose(cg_output));
   }
 
-  {
+  if (check_case(5)) {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
@@ -3968,10 +3987,7 @@ void testGPU_FusionSimpleGemm() {
 
   tv0->computeAt(tv5, -1);
   fusion.printMath();
-  
-  return;
-  
-  
+
   tv1->computeAt(tv5, -1);
 
   // tv6[I0o, I0i{4}, R1o, I1i{32}, I2o, I2i{4}]
