@@ -7,6 +7,10 @@
 #include <unordered_map>
 #include <vector>
 
+#ifndef COMPUTE_AT_USE_TD_POS
+#define COMPUTE_AT_USE_TD_POS
+#endif
+
 namespace torch {
 namespace jit {
 namespace fuser {

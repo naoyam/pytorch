@@ -158,6 +158,21 @@ class TORCH_CUDA_API TransformReplay {
   static TensorDomain* fullSelfReplay(
       const TensorDomain* new_self_root,
       const TensorDomain* self);
+
+ private:
+  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
+                    std::unordered_map<IterDomain*, IterDomain*>> replay(
+    const TensorDomain* td,
+    const TensorDomain* reference,
+    const ComputeDomain* reference_cd,
+    int pos,
+    bool is_producer);
+
+  static std::tuple<TensorView*, unsigned int, unsigned int> replay(
+      TensorView* tv,
+      TensorView* reference,
+      int pos,
+      bool is_producer);
 };
 
 } // namespace fuser

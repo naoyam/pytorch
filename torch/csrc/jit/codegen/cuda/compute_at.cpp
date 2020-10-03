@@ -312,8 +312,11 @@ void ComputeAt::traverseBackward() {
   for (auto tv_chain : chains) {
     TensorView* running_producer = tv_chain.back();
     TensorView* running_consumer = nullptr;
-    //unsigned int running_consumer_pos = consumer_position_;
+#ifdef COMPUTE_AT_USE_TD_POS
+    unsigned int running_consumer_pos = consumer_position_;
+#else
     unsigned int running_consumer_pos = consumer_cd_position_;
+#endif
     tv_chain.pop_back();
 
     TORCH_INTERNAL_ASSERT(running_producer == consumer_);
