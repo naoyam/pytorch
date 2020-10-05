@@ -741,7 +741,10 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   }
 #endif
 
+
 #if 1
+  std::cerr << "mapRootPtoC: " << producer->getMaybeRFactorDomain()
+            << ", " << consumer->getRootDomain() << std::endl;
   auto replay_root_map =
       TensorDomain::mapRootPtoC(producer, consumer, producer_CA_root_ids);
 #else

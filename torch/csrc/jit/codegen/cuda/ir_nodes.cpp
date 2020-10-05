@@ -941,12 +941,12 @@ std::vector<std::pair<int, int>> TensorDomain::mapDomainPandC(
 
   size_t itc = 0, itp = 0;
   while (itc < consumer.size() && itp < producer.size()) {
-    if (consumer[itc]->isBroadcast() && !producer[itp]->isBroadcast()) {
-      itc++;
-      continue;
-    }
     if (producer[itp]->isReduction()) {
       itp++;
+      continue;
+    }
+    if (consumer[itc]->isBroadcast() && !producer[itp]->isBroadcast()) {
+      itc++;
       continue;
     }
 
@@ -1233,43 +1233,50 @@ class BroadcastMapping: public BackwardVisitor {
     }
   }
 
-
-#if 0
-  void handle(UnaryOp* uop) override {
-    if (!ir_utils::isTVOp(uop)) return;
-    const auto input = uop->input(0);
-    if (input->getValType().value() != ValType::TensorView) return;
-    const TensorView* input_tv = input->as<TensorView>();
-    const auto& input_root = input_tv->getRootDomain();
-    const auto& output_root = uop->output(0)->as<TensorView>()->getRootDomain();
-    for (size_t i = 0; i < input_root.size(); ++i) {
-      if (!input_root.at(i)->isBroadcast()) continue;
-      std::cerr << "Concrete ID found: "
-                << input_root.at(i) << " -> " << output_root.at(i) << std::endl;
-      map_.insert({input_root.at(i), output_root.at(i)});
-    }
-  }
-
   void handle(BroadcastOp* op) override {
     if (!ir_utils::isTVOp(op)) return;
     const auto input = op->input(0);
     if (input->getValType().value() != ValType::TensorView) return;
     const TensorView* input_tv = input->as<TensorView>();
-    const auto& input_root = input_tv->getRootDomain();
-    const auto& output_root = op->output(0)->as<TensorView>()->getRootDomain();
-    for (size_t i = 0; i < input_root.size(); ++i) {
-      if (!input_root.at(i)->isBroadcast()) continue;
-#if 0
-      if (output_root.at(i)->isBroadcast()) {
+    const TensorView* output_tv = op->output(0)->as<TensorView>();
+    auto input_view = input_tv->domain()->noPlaceholder();
+    auto output_view = output_tv->domain()->noPlaceholder();
+    auto input_it = input_view.begin();
+    auto output_it = output_view.begin();
+    while (input_it != input_view.end() && output_it != output_view.end()) {
+      IterDomain* concrete_id = nullptr;
+      IterDomain* bcast_id = nullptr;
+      if (input_it->isReduction()) {
+        ++input_it;
         continue;
       }
-#endif
-      std::cerr << "Concrete ID found: "
-                << input_root.at(i) << " -> " << output_root.at(i) << std::endl;
-      map_.insert({input_root.at(i), output_root.at(i)});
+      if (*input_it == *output_it) {
+        ++input_it;
+        ++output_it;
+        continue;
+      }
+      if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+        ++output_it;
+        continue;
+      } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+        concrete_id = *output_it;
+        bcast_id = *input_it;
+      } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+        // Even if the output is broadcast, if it's a different
+        // broadcast dom, mark them as equivalent.
+        handleEquivalentBroadcastDomains(*input_it, *output_it);
+        ++input_it;
+        ++output_it;
+        continue;
+      }
+      if (concrete_id != nullptr && bcast_id != nullptr) {
+        DEBUG("Concrete ID found: ", concrete_id, " -> ", bcast_id);
+        map_.insert({bcast_id, concrete_id});
+      }
+      ++input_it;
+      ++output_it;
     }
   }
-#endif
 
   // Mapping from a broadcast domain to its concrete domain
   std::unordered_map<const IterDomain*, const IterDomain*> map_;
