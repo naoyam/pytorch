@@ -255,10 +255,16 @@ LaunchParams FusionExecutor::computeLaunchParams(
   // Add workspace for reduction and broadcast
   uint64_t reduction_broadcast_workspace = 0;
   if (has_block_reductions || has_grid_reductions || has_block_broadcasts) {
-    // Not using nThreads here since it does not handle uninitialized value
-    reduction_broadcast_workspace =
-        dataTypeSize(fusion_.getMaximumSmemDataType()) * launch_params.bdimx() *
-        launch_params.bdimy() * launch_params.bdimz();
+    // Not using nThreads here since it does not handle uninitialized
+    // value
+    auto max_type = fusion_.getMaximumSmemDataType();
+    if (max_type != DataType::Null) {
+      reduction_broadcast_workspace =
+          dataTypeSize(fusion_.getMaximumSmemDataType()) * launch_params.bdimx() *
+          launch_params.bdimy() * launch_params.bdimz();
+    } else {
+      reduction_broadcast_workspace = 0;
+    }
   }
 
   uint64_t dynamic_smem_size = computeSharedMemory(
