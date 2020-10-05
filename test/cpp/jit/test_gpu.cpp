@@ -5491,17 +5491,28 @@ void testGPU_FusionCacheBcast() {
   tv2->computeAt(tv4, 2);
   // 0, 1 | 2, 3, 4
 
+  fusion.printMath();
+  fusion.printKernel();
   // Case 1
   tv0->cache_after();
 
   // Case 2
   tv1->cache_before();
 
+  fusion.printMath();
+  fusion.printKernel();
+
   // Case 3
   tv1->cache_after();
 
+  fusion.printMath();
+  fusion.printKernel();
+
   // Case 4
   TensorView* tv8 = tv4->cache_before();
+
+  fusion.printMath();
+  fusion.printKernel();
 
   tv4->axis(0)->parallelize(ParallelType::BIDx);
   tv4->axis(1)->parallelize(ParallelType::BIDy);
@@ -5551,11 +5562,24 @@ void testGPU_FusionCacheComplex() {
   tv5->reorder({{0, 0}, {1, 2}, {2, 1}, {3, 3}});
   // M/BSX, N/BSY, BSX, BSY
   tv0->computeAt(tv5, 2);
+
   tv1->computeAt(tv5, 2);
   // 0, 1 | 2, 3, 4
 
+  fusion.printMath();
+  //fusion.printKernel();
+
+  std::cerr << "Calling tv2->cache_after" << std::endl;
+
   tv2->cache_after();
+
+  fusion.printMath();
+  fusion.printKernel();
+
   TensorView* tv7 = tv5->cache_before();
+
+  fusion.printMath();
+  fusion.printKernel();
 
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
