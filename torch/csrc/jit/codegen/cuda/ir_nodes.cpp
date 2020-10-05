@@ -1143,6 +1143,52 @@ class BroadcastMapping: public BackwardVisitor {
     }
   }
 
+  void handle(UnaryOp* uop) override {
+    if (!ir_utils::isTVOp(uop)) return;
+    for (const auto input: uop->inputs()) {
+      if (input->getValType().value() != ValType::TensorView) continue;
+      const TensorView* input_tv = input->as<TensorView>();
+      const TensorView* output_tv = uop->output(0)->as<TensorView>();
+      auto input_view = input_tv->domain()->noPlaceholder();
+      auto output_view = output_tv->domain()->noPlaceholder();
+      auto input_it = input_view.begin();
+      auto output_it = output_view.begin();
+      while (input_it != input_view.end() && output_it != output_view.end()) {
+        IterDomain* concrete_id = nullptr;
+        IterDomain* bcast_id = nullptr;
+        if (input_it->isReduction()) {
+          ++input_it;
+          continue;
+        }
+        if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+          TORCH_INTERNAL_ASSERT(false, "Unexpected expression: ", uop,
+                                ", input root: ", input_tv->getRootDomain(),
+                                ", input placeholder: ", input_tv->domain()->placeholder(),
+                                ", output root: ", output_tv->getRootDomain(),
+                                ", output placeholder: ", output_tv->domain()->placeholder());
+          //concrete_id = *input_it;
+          //bcast_id = *output_it;
+        } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+          concrete_id = *output_it;
+          bcast_id = *input_it;
+        } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+          // Even if the output is broadcast, if it's a different
+          // broadcast dom, mark them as equivalent.
+          handleEquivalentBroadcastDomains(*input_it, *output_it);
+          ++input_it;
+          ++output_it;
+          continue;
+        }
+        if (concrete_id != nullptr && bcast_id != nullptr) {
+          DEBUG("Concrete ID found: ", concrete_id, " -> ", bcast_id);
+          map_.insert({bcast_id, concrete_id});
+        }
+        ++input_it;
+        ++output_it;
+      }
+    }
+  }
+
   void handle(ReductionOp* rop) override {
     if (!ir_utils::isTVOp(rop)) return;
     const TensorView* input_tv = rop->input(0)->as<TensorView>();
@@ -1243,7 +1289,10 @@ class BroadcastMapping: public BackwardVisitor {
         }
       }
     }
-    TORCH_INTERNAL_ASSERT(false, "No concrete ID found for ", id);
+    FusionGuard::getCurFusion()->printMath();
+    std::stringstream ss;
+    ss << id;
+    TORCH_INTERNAL_ASSERT(false, "No concrete ID found for ", ss.str());
   }
 
   static const IterDomain* getConcreteDomain(const IterDomain* bcast_dom) {

@@ -1590,7 +1590,6 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
       IterDomain* in = split->in();
       if (producer_map.find(in) == producer_map.end()) {
         TORCH_INTERNAL_ASSERT(false);
-        continue;
       }
       const auto& in_info = producer_map.find(in)->second;
       TORCH_INTERNAL_ASSERT(in_info.idx() != nullptr);
@@ -1600,8 +1599,13 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
         outer_idx = in_info.idx()->getOuter();
         inner_idx = in_info.idx()->getInner();
       } else {
-        inner_idx = std::make_shared<IdxGraphNode>(modx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
-        outer_idx = std::make_shared<IdxGraphNode>(divx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
+        if (in->isBroadcast()) {
+          inner_idx = std::make_shared<IdxGraphNode>(new kir::Int(0));
+          outer_idx = std::make_shared<IdxGraphNode>(new kir::Int(0));
+        } else {
+          inner_idx = std::make_shared<IdxGraphNode>(modx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
+          outer_idx = std::make_shared<IdxGraphNode>(divx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
+        }
       }
       producer_map.insert({split->outer(),
                            IterDomainInfo(outer_idx)});
@@ -1642,6 +1646,9 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
       // this should not appear at the consumer
       continue;
     }
+    if (prod_id->isBroadcast()) {
+      continue;
+    }
     if (producer_map.find(prod_id) == producer_map.end()) {
       // If the index is determined to be 0, no mapping entry is
       // created.
@@ -1663,7 +1670,8 @@ kir::TensorIndex* getProducerIndex_impl2_rfactor(
       IterDomain* id = producer_tv->axis(j);
       if (id->isBlockDim() ||
           (id->isThreadDim() && !is_smem) ||
-          id->isReduction()) {
+          id->isReduction() ||
+          id->isBroadcast()) {
         continue;
       }
       extent = mulx(extent, kir::lowerValue(id->extent()));
@@ -1966,8 +1974,13 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
         outer_idx = in_info.idx()->getOuter();
         inner_idx = in_info.idx()->getInner();
       } else {
-        inner_idx = std::make_shared<IdxGraphNode>(modx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
-        outer_idx = std::make_shared<IdxGraphNode>(divx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
+        if (in->isBroadcast()) {
+          inner_idx = std::make_shared<IdxGraphNode>(new kir::Int(0));
+          outer_idx = std::make_shared<IdxGraphNode>(new kir::Int(0));
+        } else {
+          inner_idx = std::make_shared<IdxGraphNode>(modx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
+          outer_idx = std::make_shared<IdxGraphNode>(divx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
+        }
       }
       producer_map.insert({split->outer(),
                            IterDomainInfo(outer_idx)});
@@ -2008,6 +2021,9 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       // this should not appear at the consumer
       continue;
     }
+    if (prod_id->isBroadcast()) {
+      continue;
+    }
     if (producer_map.find(prod_id) == producer_map.end()) {
       // If the index is determined to be 0, no mapping entry is
       // created.
@@ -2029,7 +2045,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       IterDomain* id = producer_tv->axis(j);
       if (id->isBlockDim() ||
           (id->isThreadDim() && !is_smem) ||
-          id->isReduction()) {
+          id->isReduction() ||
+          id->isBroadcast()) {
         continue;
       }
       extent = mulx(extent, kir::lowerValue(id->extent()));
