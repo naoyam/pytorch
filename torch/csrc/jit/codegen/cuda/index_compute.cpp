@@ -2239,14 +2239,23 @@ kir::TensorIndex* getConsumerIndexForReductionInit(
   TORCH_INTERNAL_ASSERT(loops.size() ==
                         consumer_tv->domain()->noReductions().size());
   std::vector<Val*> strided_inds;
+  const bool is_shared = consumer_tv->getMemoryType() == MemoryType::Shared;
   for (auto loop_i = loops.begin() + consumer_tv->getThisComputeAtAxis();
        loop_i != loops.end(); ++loop_i) {
-    if ((*loop_i)->iter_domain()->isThread()) continue;
+    auto id_i = (*loop_i)->iter_domain();
+    if ((id_i->isThreadDim() && !is_shared) ||
+        id_i->isBlockDim()) {
+      continue;
+    }
     if ((*loop_i)->iter_domain()->isBroadcast()) continue;
     auto idx = (*loop_i)->index();
     Val* extent = nullptr;
     for (auto loop_j = loop_i + 1; loop_j != loops.end(); ++loop_j) {
-      if ((*loop_j)->iter_domain()->isThread()) continue;
+      auto id_j = (*loop_j)->iter_domain();
+      if ((id_j->isThreadDim() && !is_shared) ||
+          id_j->isBlockDim()) {
+        continue;
+      }
       if ((*loop_j)->iter_domain()->isBroadcast()) continue;
       Val* extent_j = (*loop_j)->iter_domain()->extent();
       extent = (extent != nullptr) ? kir::mulExpr(extent, extent_j) : extent_j;
