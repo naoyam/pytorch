@@ -384,7 +384,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
       "Invalid axis in transform replayPasC.");
 
 #ifdef REPLAY_WITH_CD
-  const auto& consumer_domain = consumer_cd->axes();
+  const auto& consumer_domain = consumer_cd->axesForRFactor();
   // consumer ids we need to match in producer
   std::vector<IterDomain*> consumer_CA_ids(
       consumer_domain.begin(),
@@ -510,7 +510,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
-#if 1
   for (auto c_id : consumer_CA_ids) {
 #ifdef REPLAY_WITH_CD
     c_id = consumer_cd->getAxisForReplay(c_id);
@@ -530,13 +529,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
       leaf_ids.erase(it->second);
     }
   }
-#else
-  for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_CA_ids)) {
-    if (leaf_ids.find(replayed_id.first) != leaf_ids.end()) {
-      leaf_ids.erase(replayed_id.first);
-    }
-  }
-#endif
 
   // leaf_ids now contains all producer ID products that are not used to satisfy
   // the computeAt Turn into a  map so we can play forward these IDs in producer
@@ -582,7 +574,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   std::vector<IterDomain*> new_IDs;
   std::unordered_set<IterDomain*> used_IDs;
   // Add axes in (1)
-#if 1
   for (size_t i = 0; i < consumer_CA_ids.size(); ++i) {
     auto c_id = consumer_CA_ids[i];
 #ifdef REPLAY_WITH_CD
@@ -609,22 +600,13 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     replay_info.td2cd_map_.push_back(consumer_cd->getComputeDomainAxisIndex(i));
 #endif
   }
-#else
-  for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_CA_ids)) {
-    std::cerr << "(1): " << replayed_id << std::endl;
-    new_IDs.push_back(replayed_id.first);
-    used_IDs.emplace(replayed_id.first);
-    replay_info.td2cd_map_.push_back(replayed_id.second);
-  }
-#endif
 
   auto num_shared_axes = new_IDs.size();
+
   // Add axes in (2)
-#if 1
-  for (auto c_id : consumer_domain) {
 #ifdef REPLAY_WITH_CD
-    c_id = consumer_cd->getAxisForReplay(c_id);
-#endif
+  for (size_t i = 0; i < consumer_cd->nDims(); ++i) {
+    auto c_id = consumer_cd->getAxisForReplay(i);
     auto it = replay_PasC.getReplay().find(c_id);
     if (it != replay_PasC.getReplay().end()) {
       auto id = it->second;
@@ -640,19 +622,19 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     }
   }
 #else
-  for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_domain)) {
-    // If the leaf id from ReplayTransformation is used to move
-    // forward with BestEffortReplay, it is not a final ID. It is
-    // initialy set as a leaf for BestEffortReplay, and so if it does
-    // not remain there, it means the ID is used to replay.
-    if (producer_replayed_leaves.getUnorderedLeafIDs().find(replayed_id.first) ==
-        producer_replayed_leaves.getUnorderedLeafIDs().end()) {
-      continue;
-    }
-    if (used_IDs.find(replayed_id.first) == used_IDs.end()) {
-      std::cerr << "(2): " << replayed_id << std::endl;
-      new_IDs.push_back(replayed_id.first);
-      used_IDs.emplace(replayed_id.first);
+  for (auto c_id : consumer_domain) {
+    auto it = replay_PasC.getReplay().find(c_id);
+    if (it != replay_PasC.getReplay().end()) {
+      auto id = it->second;
+      if (producer_replayed_leaves.getUnorderedLeafIDs().find(id) ==
+          producer_replayed_leaves.getUnorderedLeafIDs().end()) {
+        continue;
+      }
+      if (used_IDs.find(id) == used_IDs.end()) {
+        std::cerr << "(2): " << id << std::endl;
+        new_IDs.push_back(id);
+        used_IDs.emplace(id);
+      }
     }
   }
 #endif
@@ -757,7 +739,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
       "Invalid axis in transform replayCasP.");
 
 #ifdef REPLAY_WITH_CD
-  const auto& producer_domain = producer_cd->axes();
+  const auto& producer_domain = producer_cd->axesForRFactor();
   // producer ids we need to match in consumer
   std::vector<IterDomain*> producer_CA_ids(
       producer_domain.begin(),
@@ -791,13 +773,13 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   auto root_map = producer_cd->mapToConsumer(consumer);
 #if 1
   for (auto kv: root_map) {
-    std::cerr << "root_map: ";
+    std::cerr << "root_map: CD: ";
     if (kv.first == nullptr) {
       std::cerr << "null";
     } else {
       std::cerr << kv.first;
     }
-    std::cerr << " -> ";
+    std::cerr << " -> consumer: ";
     if (kv.second == nullptr) {
       std::cerr << "null";
     } else {
@@ -807,7 +789,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   }
 #endif
   auto all_ca_ids = producer_cd->getInputsTo(producer_CA_ids);
-#if 0
+#if 1
   for (auto id: all_ca_ids) {
     std::cerr << "All ca ID: " << id << std::endl;
   }
@@ -847,9 +829,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   }
 
 #ifdef REPLAY_WITH_CD
-  for (auto m: root_map) {
-    std::cerr << "mapToCD: " << m.first << " -> " << m.second << std::endl;
-  }
   auto replay_root_map_view = ir_utils::filterView(root_map,
                                                    [&producer_CA_root_ids](const auto& kv) {
                                                      return producer_CA_root_ids.find(kv.first) != producer_CA_root_ids.end();
@@ -897,7 +876,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
-#if 1
   for (auto p_id : producer_CA_ids) {
 #ifdef REPLAY_WITH_CD
     p_id = producer_cd->getAxisForReplay(p_id);
@@ -919,14 +897,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
       leaf_ids.erase(replayed_id);
     }
   }
-#else
-  for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_CA_ids)) {
-    if (leaf_ids.find(replayed_id.first) != leaf_ids.end()) {
-      leaf_ids.erase(replayed_id.first);
-      //crossover_map.erase(replayed_id.first);
-    }
-  }
-#endif
 
   // leaf_ids now contains all consumer ID products that are not used to satisfy
   // the computeAt Turn into a  map so we can play forward these IDs in consumer
@@ -972,7 +942,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   std::vector<IterDomain*> new_IDs;
   std::unordered_set<IterDomain*> used_IDs;
   // Add axes in (1)
-#if 1
   for (size_t i = 0; i < producer_CA_ids.size(); ++i) {
     auto p_id = producer_CA_ids[i];
 #ifdef REPLAY_WITH_CD
@@ -1000,23 +969,13 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     replay_info.td2cd_map_.push_back(producer_cd->getComputeDomainAxisIndex(i));
 #endif
   }
-#else
-  for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_CA_ids)) {
-    new_IDs.push_back(replayed_id.first);
-    used_IDs.emplace(replayed_id.first);
-    replay_info.td2cd_map_.push_back(replayed_id.second);
-    std::cerr << "(1): " << replayed_id.first << std::endl;
-  }
-#endif
 
   auto num_shared_axes = new_IDs.size();
 
   // Add axes in (2)
-#if 1
-  for (auto p_id : producer_domain) {
 #ifdef REPLAY_WITH_CD
-    p_id = producer_cd->getAxisForReplay(p_id);
-#endif
+  for (size_t i = 0; i < producer_cd->nDims(); ++i) {
+    auto p_id = producer_cd->getAxisForReplay(i);
     auto it = replay_CasP.getReplay().find(p_id);
     if (it != replay_CasP.getReplay().end()) {
       auto id = it->second;
@@ -1032,19 +991,19 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     }
   }
 #else
-  for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_cd->axes())) {
-    // If the leaf id from ReplayTransformation is used to move
-    // forward with BestEffortReplay, it is not a final ID. It is
-    // initialy set as a leaf for BestEffortReplay, and so if it does
-    // not remain there, it means the ID is used to replay.
-    if (consumer_replayed_leaves.getUnorderedLeafIDs().find(replayed_id.first) ==
-        consumer_replayed_leaves.getUnorderedLeafIDs().end()) {
-      continue;
-    }
-    if (used_IDs.find(replayed_id.first) == used_IDs.end()) {
-      new_IDs.push_back(replayed_id.first);
-      used_IDs.emplace(replayed_id.first);
-      std::cerr << "(2): " << replayed_id.first << std::endl;
+  for (auto p_id : producer_domain) {
+    auto it = replay_CasP.getReplay().find(p_id);
+    if (it != replay_CasP.getReplay().end()) {
+      auto id = it->second;
+      if (consumer_replayed_leaves.getUnorderedLeafIDs().find(id) ==
+          consumer_replayed_leaves.getUnorderedLeafIDs().end()) {
+        continue;
+      }
+      if (used_IDs.find(id) == used_IDs.end()) {
+        new_IDs.push_back(id);
+        used_IDs.emplace(id);
+        std::cerr << "(2): " << id << std::endl;
+      }
     }
   }
 #endif

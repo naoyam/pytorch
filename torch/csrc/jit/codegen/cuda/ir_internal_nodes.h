@@ -589,11 +589,22 @@ class TORCH_CUDA_API ComputeDomain {
     return axes_[idx];
   }
 
+  IterDomain* axisForRFactor(size_t idx) const {
+    TORCH_INTERNAL_ASSERT(idx < axes_rf_.size(),
+                          "Out of range error. Attempting to access axis at offset ",
+                          idx, " of size-", axes_rf_.size(),
+                          " compute domain.");
+    return axes_rf_[idx];
+  }
+
   IterDomain* getAxisForReplay(IterDomain* id) const;
   IterDomain* getAxisForReplay(size_t idx) const;
 
   const std::deque<IterDomain*>& axes() const {
     return axes_;
+  }
+  const std::deque<IterDomain*>& axesForRFactor() const {
+    return axes_rf_;
   }
 
 #ifdef INCOMPLETE_MERGE_EXPR
@@ -726,6 +737,7 @@ class TORCH_CUDA_API ComputeDomain {
  private:
   const TensorDomain* td_ = nullptr;
   std::deque<IterDomain*> axes_;
+  std::deque<IterDomain*> axes_rf_;
   bool computed_at_ = false;
   // Mapping from TD IterDomain index to CD IterDomain index
   std::vector<size_t> td_map_;

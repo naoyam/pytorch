@@ -1578,6 +1578,8 @@ ComputeDomain::ComputeDomain(const TensorDomain* td):
     td_(td),
     axes_(td->domain().begin(),
           td->domain().end()),
+    axes_rf_(td->domain().begin(),
+             td->domain().end()),
     td_map_(td->nDims()) {
   std::iota(td_map_.begin(), td_map_.end(), 0);
 }
@@ -1694,43 +1696,19 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   TORCH_INTERNAL_ASSERT((size_t)this_pos <= td->nDims());
   TORCH_INTERNAL_ASSERT((size_t)target_pos <= target->nDims());
 
-  //size_t first_changed_axis = findFirstChangedAxisIndex(*this, *target, target_pos);
   auto old_axes = axes_;
 
   // reset the current status
   td_ = td;
   axes_.clear();
+  axes_rf_.clear();
   td_map_.clear();
   td_map_.resize(td_->nDims());
   pos_ = 0;
 
-#if 0
-  std::vector<IterDomain*> target_axes{target->axes().begin(),
-                                       target->axes().begin() + target_pos};
-  auto target_axes_it = target_axes.begin();
-  for (int i = 0; i < this_pos; ++i) {
-    IterDomain* this_axis = td_.at(i);
-    target_axes_it = std::find_if(
-        target_axes_it, target_axes.end(),
-        [this_axis](const IterDomain* ca) {
-          return ComputeDomain::sameAxes(this_axis, ca);
-        });
-    if (target_axes_it == target_axes.end()) {
-      std::cerr << "Axis not found: " << this_axis
-                << " of " << td << std::endl;
-      std::cerr << "Target axes: " << target_axes
-                << ", target domain: " << *target << std::endl;
-      TORCH_INTERNAL_ASSERT(false);
-    }
-    td_map_.at(i) = std::distance(target_axes.begin(), target_axes_it);
-    // Search the rest of td in the remaining target axes
-    ++target_axes_it;
-  }
-#else
-  TORCH_INTERNAL_ASSERT(td2cd_map.size() == this_pos);
+  TORCH_INTERNAL_ASSERT(td2cd_map.size() == (size_t)this_pos);
   std::copy(td2cd_map.begin(), td2cd_map.end(),
             td_map_.begin());
-#endif
 
   //auto num_shared_axes = std::distance(target_axes.begin(),
   //target_axes_it);
@@ -1740,6 +1718,9 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   std::copy(target->axes().begin(),
             target->axes().begin() + num_shared_axes,
             std::back_inserter(axes_));
+  std::copy(target->axesForRFactor().begin(),
+            target->axesForRFactor().begin() + num_shared_axes,
+            std::back_inserter(axes_rf_));
 
   pos_ = num_shared_axes;
 
@@ -1747,9 +1728,22 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   std::copy(td_->domain().begin() + this_pos,
             td_->domain().end(),
             std::back_inserter(axes_));
+  std::copy(td_->domain().begin() + this_pos,
+            td_->domain().end(),
+            std::back_inserter(axes_rf_));
 
   std::iota(td_map_.begin() + this_pos, td_map_.end(),
             num_shared_axes);
+
+  if (td_->hasRFactor()) {
+    // Replace the rfactor ID with its own ID since the rfactor ID
+    // doesn't hold the expression history, which is necessary for
+    // indexing.
+    for (int i = 0; i < this_pos; ++i) {
+      auto cd_idx = td_map_[i];
+      axes_rf_.at(cd_idx) = td_->axis(i);
+    }
+  }
 
   crossover_map_ = crossover_map;
   joinMap(crossover_map_, target->crossoverMap());
@@ -1783,6 +1777,11 @@ void ComputeDomain::setAxis(size_t cd_axis, IterDomain* id) {
                         cd_axis, " of size-", axes_.size(),
                         " compute domain.");
   axes_[cd_axis] = id;
+  TORCH_INTERNAL_ASSERT(cd_axis < axes_rf_.size(),
+                        "Out of range error. Attempting to access RF axis at offset ",
+                        cd_axis, " of size-", axes_rf_.size(),
+                        " compute domain.");
+  axes_rf_[cd_axis] = id;
 }
 
 void ComputeDomain::insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis) {
@@ -1791,6 +1790,7 @@ void ComputeDomain::insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis
                         cd_axis, " of size-", axes_.size(),
                         " compute domain.");
   axes_.insert(axes_.begin() + cd_axis, cd_id);
+  axes_rf_.insert(axes_rf_.begin() + cd_axis, cd_id);
   // shift right and increment
   td_map_.resize(td_map_.size() + 1);
   for (auto i = td_axis; i < td_map_.size() - 1; ++i) {
@@ -1807,6 +1807,7 @@ void ComputeDomain::eraseAxis(size_t cd_axis) {
                         " compute domain.");
   auto td_axis = getTensorDomainAxisIndex(cd_axis);
   axes_.erase(axes_.begin() + cd_axis);
+  axes_rf_.erase(axes_rf_.begin() + cd_axis);
   // shift and decrement
   for (auto i = td_axis; i < td_map_.size() - 1; ++i) {
     td_map_[i] = td_map_[i+1] - 1;
@@ -1828,6 +1829,7 @@ void ComputeDomain::sanityCheck() const {
       prev_cd_pos = cd_pos;
     }
   }
+  TORCH_INTERNAL_ASSERT(axes_.size() == axes_rf_.size());
 }
 
 void ComputeDomain::registerAsDependent(ComputeDomain* target) {
@@ -1853,6 +1855,10 @@ void ComputeDomain::updateDependents(size_t first_changed_axis) {
     auto affected_cd = dep.second;
     std::copy(axes().begin(), axes().begin() + num_axes,
               affected_cd->axes_.begin());
+    if (!affected_cd->td()->hasRFactor()) {
+      std::copy(axesForRFactor().begin(), axesForRFactor().begin() + num_axes,
+                affected_cd->axes_rf_.begin());
+    }
     joinMap(affected_cd->crossover_map_, crossover_map_);
 #ifdef INCOMPLETE_MERGE_EXPR
     joinMap(affected_cd->incomplete_merge_, incomplete_merge_);
@@ -1870,16 +1876,6 @@ void ComputeDomain::registerDependent(ComputeDomain* dependent, size_t pos) {
   dependents_.push_back({pos, dependent});
 }
 
-#if 0
-std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
-  auto root_vals = IterVisitor::getInputsTo(
-      std::vector<Val*>(axes().begin(), axes().end()));
-  std::unordered_set<IterDomain*> root_domain =
-      {ir_utils::filterByType<IterDomain>(root_vals).begin(),
-       ir_utils::filterByType<IterDomain>(root_vals).end()};
-  return root_domain;
-}
-#endif
 #if 0
 void ComputeDomain::cacheBefore(const TensorDomain* new_td) {
   if (td_ == new_td) {
@@ -1947,6 +1943,16 @@ class ComputeDomainVisitor {
   void traverse() {
     exprs_.clear();
     cd2td_map_.clear();
+    {
+      std::stringstream ss;
+      ss << "Traversing " << cd_ << "\n";
+      ss << "axes for rf: ";
+      for (auto id: cd_.axesForRFactor()) {
+        ss << id << " ";
+      }
+      ss << "\n";
+      std::cerr << ss.str();
+    }
     std::unordered_set<IterDomain*> visited_vals;
     std::unordered_set<IterDomain*> frontier;
     for (size_t i = 0; i < cd_.nDims(); ++i) {
@@ -2210,6 +2216,12 @@ IterDomain* ComputeDomain::getTensorDomainAxisForDependentAxis(
 
 IterDomain* ComputeDomain::getAxisForReplay(IterDomain* id) const {
   TORCH_INTERNAL_ASSERT(id != nullptr);
+  // Don't change if it's an axis for rfactor
+  // TODO (CD): make this something more efficient
+  if (std::find(axes_rf_.begin(), axes_rf_.end(), id) != axes_rf_.end() &&
+      std::find(axes_.begin(), axes_.end(), id) == axes_.end()) {
+    return id;
+  }
   //DEBUG("getAxisForReplay: ", id);
   auto original_id = id;
   std::unordered_set<IterDomain*> visited;
@@ -2237,8 +2249,15 @@ IterDomain* ComputeDomain::getAxisForReplay(size_t idx) const {
                         "Out of range error. Attempting to access axis at offset ",
                         idx, " of size-", axes_.size(),
                         " compute domain.");
+  IterDomain* rf_id = axisForRFactor(idx);
   IterDomain* id = axis(idx);
-  return getAxisForReplay(id);
+  // When the rfactor axis is different from the normal axis, it means
+  // that rfactor axis should be used to traverse up the history.
+  if (id != rf_id) {
+    return rf_id;
+  } else {
+    return getAxisForReplay(id);
+  }
 }
 
 std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
