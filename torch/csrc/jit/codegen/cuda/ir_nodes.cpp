@@ -1644,6 +1644,38 @@ void ComputeDomain::reorder() {
             axes_.begin());
 }
 
+namespace {
+size_t findFirstChangedAxisIndex(const std::deque<IterDomain*>& old_axes,
+                                 const std::deque<IterDomain*>& new_axes) {
+  std::stringstream old_ss;
+  for (auto id: old_axes) {
+    old_ss << id << " ";
+  }
+  std::stringstream new_ss;
+  for (auto id: new_axes) {
+    new_ss << id << " ";
+  }
+  DEBUG("Finding first_changed_axis: ",
+        old_ss.str(), ", ", new_ss.str());
+  for (size_t i = 0; i < std::min(old_axes.size(), new_axes.size()); ++i) {
+    if (old_axes[i] != new_axes[i]) {
+      DEBUG("Differing axes: ", old_axes[i], ", ", new_axes[i]);
+      return i;
+    } else {
+      DEBUG("same axis at ", i);
+    }
+  }
+  return std::min(old_axes.size(), new_axes.size());
+}
+
+template <typename MapT>
+void joinMap(MapT& dest, const MapT& src) {
+  for (auto kv: src) {
+    dest[kv.first] = kv.second;
+  }
+}
+} // namespace
+
 // Transform this compute domain so that it is computed under the
 // target domain. TensorDomain is assumed to be already transformed by
 // replayPasC or replayCasP.
@@ -1652,23 +1684,26 @@ void ComputeDomain::computeAt(const TensorDomain* td,
                               const ComputeDomain* target,
                               int target_pos,
                               const std::vector<size_t>& td2cd_map,
-                              const std::unordered_map<IterDomain*, IterDomain*>& crossover_map) {
+                              const std::unordered_map<IterDomain*, IterDomain*>& crossover_map,
+                              const IncompleteMergeType& incomplete_merge) {
   std::cerr << "computeAt: " << *target
             << " at " << target_pos
             << ", td: " << td << " at " << this_pos << std::endl;
+  target_pos = normalizeComputeAtPos(target_pos, target->nDims());
+  this_pos = normalizeComputeAtPos(this_pos, td->nDims());
+  TORCH_INTERNAL_ASSERT(this_pos <= target_pos);
+  TORCH_INTERNAL_ASSERT((size_t)this_pos <= td->nDims());
+  TORCH_INTERNAL_ASSERT((size_t)target_pos <= target->nDims());
+
+  //size_t first_changed_axis = findFirstChangedAxisIndex(*this, *target, target_pos);
+  auto old_axes = axes_;
+
   // reset the current status
   td_ = td;
   axes_.clear();
   td_map_.clear();
   td_map_.resize(td_->nDims());
   pos_ = 0;
-
-  target_pos = normalizeComputeAtPos(target_pos, target->nDims());
-  this_pos = normalizeComputeAtPos(this_pos, td->nDims());
-
-  TORCH_INTERNAL_ASSERT(this_pos <= target_pos);
-  TORCH_INTERNAL_ASSERT((size_t)this_pos <= td->nDims());
-  TORCH_INTERNAL_ASSERT((size_t)target_pos <= target->nDims());
 
 #if 0
   std::vector<IterDomain*> target_axes{target->axes().begin(),
@@ -1718,8 +1753,14 @@ void ComputeDomain::computeAt(const TensorDomain* td,
             num_shared_axes);
 
   crossover_map_ = crossover_map;
+  joinMap(crossover_map_, target->crossoverMap());
+  incomplete_merge_ = incomplete_merge;
+#ifdef INCOMPLETE_MERGE_EXPR
+  joinMap(incomplete_merge_, target->incompleteMerge());
+#endif
 
-  updateDependents();
+  auto first_changed_axis = findFirstChangedAxisIndex(old_axes, axes_);
+  updateDependents(first_changed_axis);
 
   fixupPosition();
   invalidateExprList();
@@ -1803,16 +1844,21 @@ bool ComputeDomain::isDependent(const ComputeDomain* cd) const {
   return false;
 }
 
-void ComputeDomain::updateDependents() {
+void ComputeDomain::updateDependents(size_t first_changed_axis) {
+  DEBUG("first axis: ", first_changed_axis);
   for (auto& dep: dependents_) {
     const auto num_axes = dep.first;
+    if (first_changed_axis >= num_axes) {
+      continue;
+    }
     auto affected_cd = dep.second;
     std::copy(axes().begin(), axes().begin() + num_axes,
               affected_cd->axes_.begin());
-    for (auto kv: crossover_map_) {
-      affected_cd->crossover_map_[kv.first] = kv.second;
-    }
-    affected_cd->updateDependents();
+    joinMap(affected_cd->crossover_map_, crossover_map_);
+#ifdef INCOMPLETE_MERGE_EXPR
+    joinMap(affected_cd->incomplete_merge_, incomplete_merge_);
+#endif
+    affected_cd->updateDependents(first_changed_axis);
     affected_cd->invalidateExprList();
   }
 }
@@ -1825,6 +1871,7 @@ void ComputeDomain::registerDependent(ComputeDomain* dependent, size_t pos) {
   dependents_.push_back({pos, dependent});
 }
 
+#if 0
 std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
   auto root_vals = IterVisitor::getInputsTo(
       std::vector<Val*>(axes().begin(), axes().end()));
@@ -1833,7 +1880,17 @@ std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
        ir_utils::filterByType<IterDomain>(root_vals).end()};
   return root_domain;
 }
+#endif
+#if 0
+void ComputeDomain::cacheBefore(const TensorDomain* new_td) {
+  if (td_ == new_td) {
+    // nothing has changed
+    return;
+  }
 
+
+}
+#endif
 std::ostream& ComputeDomain::print(std::ostream& os) const {
   os << "compute_domain(";
   auto map_it = td_map_.begin();
@@ -1867,29 +1924,37 @@ class ComputeDomainVisitor {
  public:
   ComputeDomainVisitor(const ComputeDomain& cd,
                        std::vector<Expr*>& exprs,
-                       std::unordered_map<const IterDomain*, const IterDomain*>& cd2td_map):
+                       std::unordered_map<IterDomain*, IterDomain*>& cd2td_map,
+                       std::unordered_set<IterDomain*> inputs_to_seed):
       cd_(cd),
       exprs_(exprs),
-      cd2td_map_(cd2td_map) {}
+      cd2td_map_(cd2td_map),
+      incomplete_merge_(cd.incompleteMerge()) {
+    for (auto id: inputs_to_seed) {
+      inputs_to_.insert(cd_.getAxisForReplay(id));
+    }
+  }
 
   void traverse() {
     exprs_.clear();
     cd2td_map_.clear();
-    std::unordered_set<Val*> visited_vals;
-    std::unordered_set<Val*> frontier;
+    std::unordered_set<IterDomain*> visited_vals;
+    std::unordered_set<IterDomain*> frontier;
     for (size_t i = 0; i < cd_.nDims(); ++i) {
       IterDomain* cd_axis = cd_.getAxisForReplay(i);
-      frontier.insert(cd_axis->as<Val>());
-      visited_vals.insert(cd_axis->as<Val>());
+      //frontier.insert(cd_axis->as<Val>());
+      frontier.insert(cd_axis);
+      //visited_vals.insert(cd_axis->as<Val>());
+      visited_vals.insert(cd_axis);
       if (cd_.isComputeDomainAxisUsed(i)) {
         IterDomain* cd_axis = cd_.getAxisForReplay(i);
         IterDomain* td_axis = cd_.getTensorDomainAxis(i);
         cd2td_map_.insert({cd_axis, td_axis});
-        DEBUG("Initial registering mapping from ",
-              cd_axis, " to ", td_axis);
+        //DEBUG("Initial registering mapping from ",
+        //cd_axis, " to ", td_axis);
       }
     }
-#if 1
+#if 0
     DEBUG("Traversal started for ", cd_);
     for (auto v: frontier) {
       std::cerr << "Frontier: " << v << std::endl;
@@ -1898,28 +1963,33 @@ class ComputeDomainVisitor {
       std::cerr << "Visited val: " << v << std::endl;
     }
 #endif
+    std::unordered_set<Expr*> visited_exprs;
     while (true) {
       bool status_changed = false;
-      std::unordered_set<Val*> new_frontier;
-      std::unordered_set<Expr*> visited_exprs;
-      for (Val* val : frontier) {
-        DEBUG("Examining ", val);
+      std::unordered_set<IterDomain*> new_frontier;
+      for (IterDomain* val : frontier) {
+        //DEBUG("Examining ", val);
         Expr* expr = val->getOrigin();
         if (expr == nullptr) continue;
+#if 0
+        std::cerr << "Expr: " << expr
+                  << " @ " << (void*)expr << std::endl;
+#endif
         if (!std::all_of(
                 expr->outputs().begin(),
                 expr->outputs().end(),
                 [&visited_vals](Val* out) {
-                  return visited_vals.find(out) != visited_vals.end();
+                  TORCH_INTERNAL_ASSERT(out->getValType() == ValType::IterDomain);
+                  return visited_vals.find(out->as<IterDomain>()) != visited_vals.end();
                 })) {
           // some output is still not visited
-          DEBUG("Not ready to visit: ", expr);
+          //DEBUG("Not ready to visit: ", expr);
           new_frontier.insert(val);
           continue;
         }
         if (visited_exprs.find(expr) != visited_exprs.end()) {
           // expr already visited
-          DEBUG("Already visited: ", expr);
+          //DEBUG("Already visited: ", expr);
           continue;
         }
         // expr is ready to visit
@@ -1939,16 +2009,22 @@ class ComputeDomainVisitor {
     DEBUG("Traversal done");
   }
 
-  std::vector<Val*> next(Expr* expr) {
+  const auto& getInputsTo() const {
+    return inputs_to_;
+  }
+
+ private:
+
+  std::vector<IterDomain*> next(Expr* expr) {
     DEBUG("Next expr: ", expr);
-    std::vector<Val*> next_vals;
+    std::vector<IterDomain*> next_vals;
     std::transform(expr->inputs().begin(),  expr->inputs().end(),
                    std::back_inserter(next_vals),
                    [this](Val* input) {
                      TORCH_INTERNAL_ASSERT(input->isA<IterDomain>());
                      IterDomain* id = input->as<IterDomain>();
                      IterDomain* replaced_id = cd_.getAxisForReplay(id);
-#if 1
+#if 0
                      if (id != replaced_id) {
                        DEBUG("Next val: ", replaced_id, " (originally ", id, ")");
                      } else {
@@ -1957,68 +2033,147 @@ class ComputeDomainVisitor {
 #endif
                      return replaced_id;
                    });
+    // propagate inputs-to
+    const bool is_input = std::any_of(expr->outputs().begin(),
+                                      expr->outputs().end(),
+                                      [this](Val* out) {
+                                        return inputs_to_.find(out->as<IterDomain>()) != inputs_to_.end();
+                                      });
+    if (is_input) {
+      for (auto id: next_vals) {
+        inputs_to_.insert(id);
+      }
+    }
+
     return next_vals;
+  }
+
+  std::string printIncompleteMerge() {
+    std::stringstream ss;
+    auto& m = incomplete_merge_;
+    ss << "Incomplete merge:\n";
+    for (auto k: m) {
+      ss << k.first << std::endl;
+    }
+    ss << "Incomplete merge done\n";
+    return ss.str();
   }
 
   void handle(Expr* expr) {
     DEBUG("Appending ", expr);
     exprs_.push_back(expr);
 
+    auto td_out = cd2td_map_.at(expr->output(0)->as<IterDomain>());
+
+    if (expr->getExprType() == ExprType::Merge) {
+      Merge* merge = expr->as<Merge>();
+      TORCH_INTERNAL_ASSERT(td_out != nullptr);
+      std::cerr << printIncompleteMerge();
+      std::cerr << "TD out: " << td_out << std::endl;
+#ifdef INCOMPLETE_MERGE_EXPR
+      auto it = incomplete_merge_.find(merge);
+      if (it != incomplete_merge_.end()) {
+        auto is_inner = it->second;
+        auto merge_matching_in = is_inner ? merge->inner() : merge->outer();
+        auto merge_non_matching_in = is_inner ? merge->outer() : merge->inner();
+        merge_matching_in = cd_.getAxisForReplay(merge_matching_in);
+        merge_non_matching_in = cd_.getAxisForReplay(merge_non_matching_in);
+        DEBUG("Registering mapping for incomplete broadcast: ", merge_matching_in,
+              " to ", td_out);
+        cd2td_map_.insert({merge_matching_in, td_out});
+        // Add an entry even for the non-matching one so that
+        // traversal can proceed and all the IDs are saved in cd2td_map_.
+        cd2td_map_.insert({merge_non_matching_in, nullptr});
+        incomplete_merge_.erase(it);
+        return;
+      }
+#else
+      auto it = incomplete_merge_.find(td_out);
+      if (it != incomplete_merge_.end()) {
+        auto is_inner = it->second;
+        auto merge_matching_in = is_inner ? merge->inner() : merge->outer();
+        auto merge_non_matching_in = is_inner ? merge->outer() : merge->inner();
+        merge_matching_in = cd_.getAxisForReplay(merge_matching_in);
+        merge_non_matching_in = cd_.getAxisForReplay(merge_non_matching_in);
+        DEBUG("Registering mapping for incomplete broadcast: ", merge_matching_in,
+              " to ", td_out);
+        cd2td_map_.insert({merge_matching_in, td_out});
+        // Add an entry even for the non-matching one so that
+        // traversal can proceed and all the IDs are saved in cd2td_map_.
+        cd2td_map_.insert({merge_non_matching_in, nullptr});
+        incomplete_merge_.erase(it);
+        return;
+      }
+#endif
+    }
+
     // Build mapping from ComputeDomain IDs to TensorDomain IDs
-    const Expr* td_expr = cd2td_map_.at(expr->output(0)->as<IterDomain>())->getOrigin();
-    if (td_expr == nullptr) {
-      // This should never occur as placeholders should have been inserted
-      TORCH_INTERNAL_ASSERT(false, "Corresponding TD expr not found for: ", expr);
-      DEBUG("TD expr not found");
-      // Corresponding expression for TensorDomain not found despite
-      // all of the outputs exist for the TensorDomain. This can
-      // happen if there are extra broadcast domains in the
-      // ComputeDomain CA axes. Should be safe to ignore.
-      TORCH_INTERNAL_ASSERT(expr->getExprType() == ExprType::Merge);
-      auto td_out = cd2td_map_.at(expr->output(0)->as<IterDomain>());
-      // td_out must be a root ID
-      TORCH_INTERNAL_ASSERT(
-          std::find(cd_.getRootDomain().begin(), cd_.getRootDomain().end(), td_out)
-          != cd_.getRootDomain().end());
-      // One of the input IDs should have the same extent.
+    if (td_out != nullptr) {
+      const Expr* td_expr = td_out->getOrigin();
+      if (td_expr == nullptr) {
+        // This should never occur as placeholders should have been inserted
+        TORCH_INTERNAL_ASSERT(false, "Corresponding TD expr not found for: ", expr);
+      }
+      // Create new mapping for the inputs
+      TORCH_INTERNAL_ASSERT(expr->getExprType() == td_expr->getExprType());
+      TORCH_INTERNAL_ASSERT(expr->inputs().size() == td_expr->inputs().size());
       for (size_t i = 0; i < expr->inputs().size(); ++i) {
         IterDomain* cd_axis = cd_.getAxisForReplay(
             expr->input(i)->as<IterDomain>());
-        if (!ComputeDomain::sameAxes(cd_axis, td_out)) continue;
-        // Propagate up the output ID
         DEBUG("Registering mapping from ", cd_axis,
-              " to ", td_out);
-        cd2td_map_.insert({cd_axis, td_out});
-        return;
+              " to ", td_expr->input(i)->as<IterDomain>());
+        cd2td_map_.insert({cd_axis, td_expr->input(i)->as<IterDomain>()});
       }
-      TORCH_INTERNAL_ASSERT(false, "Can't traveres up");
-    }
-    // Create new mapping for the inputs
-    TORCH_INTERNAL_ASSERT(expr->getExprType() == td_expr->getExprType());
-    TORCH_INTERNAL_ASSERT(expr->inputs().size() == td_expr->inputs().size());
-    for (size_t i = 0; i < expr->inputs().size(); ++i) {
-      IterDomain* cd_axis = cd_.getAxisForReplay(
-          expr->input(i)->as<IterDomain>());
-      DEBUG("Registering mapping from ", cd_axis,
-            " to ", td_expr->input(i)->as<IterDomain>());
-      cd2td_map_.insert({cd_axis, td_expr->input(i)->as<IterDomain>()});
+    } else {
+      for (size_t i = 0; i < expr->inputs().size(); ++i) {
+        IterDomain* cd_axis = cd_.getAxisForReplay(
+            expr->input(i)->as<IterDomain>());
+        DEBUG("Registering mapping from ", cd_axis,
+              " to null");
+        cd2td_map_.insert({cd_axis, nullptr});
+      }
     }
   }
 
  private:
   const ComputeDomain& cd_;
   std::vector<Expr*>& exprs_;
-  std::unordered_map<const IterDomain*, const IterDomain*>& cd2td_map_;
+  std::unordered_map<IterDomain*, IterDomain*>& cd2td_map_;
+  std::unordered_set<IterDomain*> inputs_to_;
+#ifdef INCOMPLETE_MERGE_EXPR
+  std::unordered_map<Merge*, bool> incomplete_merge_;
+#else
+  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+#endif
 };
 
 } // namespace
+
+IterDomain* ComputeDomain::getCorrespondingTensorDomainID(IterDomain* cd_id) const {
+  auto it = getCD2TDMap().find(cd_id);
+  if (it == getCD2TDMap().end()) {
+    return nullptr;
+  } else {
+    return it->second;
+  }
+}
+
+// TODO: Consider building a map from TD IDs to CD IDs
+IterDomain* ComputeDomain::getCorrespondingComputeDomainID(IterDomain* td_id) const {
+  for (const auto m: getCD2TDMap()) {
+    if (m.second == td_id) {
+      return m.first;
+    }
+  }
+  return nullptr;
+}
 
 void ComputeDomain::buildExprListToRoot() const {
   if (!exprs_to_root_valid_) {
     DEBUG("Building expr list to root for ", *this);
     exprs_to_root_.clear();
     cd2td_map_.clear();
-    ComputeDomainVisitor cdv(*this, exprs_to_root_, cd2td_map_);
+    ComputeDomainVisitor cdv(*this, exprs_to_root_, cd2td_map_, {});
     cdv.traverse();
     exprs_to_root_valid_ = true;
   }
@@ -2029,8 +2184,13 @@ const std::vector<Expr*>& ComputeDomain::getExprsToRoot() const {
   return exprs_to_root_;
 }
 
-const IterDomain* ComputeDomain::getTensorDomainAxisForDependentAxis(
-    const IterDomain* cd_axis) const {
+const std::unordered_map<IterDomain*, IterDomain*>& ComputeDomain::getCD2TDMap() const {
+  buildExprListToRoot();
+  return cd2td_map_;
+}
+
+IterDomain* ComputeDomain::getTensorDomainAxisForDependentAxis(
+    IterDomain* cd_axis) const {
   buildExprListToRoot();
   auto it = cd2td_map_.find(cd_axis);
   return (it != cd2td_map_.end()) ? it->second : nullptr;
@@ -2038,14 +2198,24 @@ const IterDomain* ComputeDomain::getTensorDomainAxisForDependentAxis(
 
 IterDomain* ComputeDomain::getAxisForReplay(IterDomain* id) const {
   TORCH_INTERNAL_ASSERT(id != nullptr);
+  //DEBUG("getAxisForReplay: ", id);
+  auto original_id = id;
+  std::unordered_set<IterDomain*> visited;
+  visited.insert(id);
   while (true) {
-    DEBUG("getAxisForReplay: ", id);
+    //DEBUG("ID: ", id);
     auto it = crossover_map_.find(id);
     if (it == crossover_map_.end() ||
         id == it->second) {
       break;
     }
     id = it->second;
+    if (visited.find(id) != visited.end()) {
+      std::stringstream ss;
+      ss << original_id;
+      TORCH_INTERNAL_ASSERT(false, "loop detected when searching replay axis for ", ss.str());
+    }
+    visited.insert(id);
   }
   return id;
 }
@@ -2057,6 +2227,137 @@ IterDomain* ComputeDomain::getAxisForReplay(size_t idx) const {
                         " compute domain.");
   IterDomain* id = axis(idx);
   return getAxisForReplay(id);
+}
+
+std::unordered_set<IterDomain*> ComputeDomain::getRootDomain() const {
+  buildExprListToRoot();
+  std::unordered_set<IterDomain*> set;
+  for (const auto& td_axis : td_->getRootDomain()) {
+    auto cd_axis = getCorrespondingComputeDomainID(td_axis);
+    set.insert(cd_axis);
+  }
+  return set;
+}
+
+std::unordered_set<IterDomain*> ComputeDomain::getRFactorDomain() const {
+  buildExprListToRoot();
+  std::unordered_set<IterDomain*> set;
+  for (const auto& td_axis : td_->getRFactorDomain()) {
+    auto cd_axis = getCorrespondingComputeDomainID(td_axis);
+    set.insert(cd_axis);
+  }
+  return set;
+}
+
+std::unordered_set<IterDomain*> ComputeDomain::getMaybeRFactorDomain() const {
+  if (td_->hasRFactor()) {
+    return getRFactorDomain();
+  } else {
+    return getRootDomain();
+  }
+}
+
+std::unordered_set<IterDomain*> ComputeDomain::getCompleteRootDomain() const {
+  buildExprListToRoot();
+  std::unordered_set<IterDomain*> set;
+  std::stringstream ss;
+  for (const auto& kv : getCD2TDMap()) {
+    auto cd_axis = kv.first;
+    if (cd_axis->getOrigin() == nullptr) {
+      set.insert(cd_axis);
+      ss << cd_axis << " ";
+    }
+  }
+  DEBUG("Complete root domain: ", ss.str());
+  return set;
+}
+
+std::unordered_set<IterDomain*> ComputeDomain::getInputsTo(const std::vector<IterDomain*>& axes) const {
+  // TODO (CD)
+  DEBUG("getInputsTo: ", axes);
+  std::vector<Expr*> exprs;
+  std::unordered_map<IterDomain*, IterDomain*> cd2td_map;
+  ComputeDomainVisitor cdv(*this, exprs, cd2td_map, {axes.begin(), axes.end()});
+  cdv.traverse();
+  return cdv.getInputsTo();
+}
+
+std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapProducerAndComputeDomain(
+    const TensorDomain* producer, bool from_producer) const {
+  buildExprListToRoot();
+  // td_ is assumed to be a consumer
+  auto root_map_to_td = TensorDomain::mapRootPandC(producer, td_);
+  std::unordered_map<IterDomain*, IterDomain*> map;
+  for (const auto& m : root_map_to_td) {
+    auto producer_axis = m.first;
+    auto td_axis = m.second;
+    auto cd_axis = getCorrespondingComputeDomainID(td_axis);
+    auto map_pair = std::make_pair(
+        from_producer ? producer_axis : cd_axis,
+        from_producer ? cd_axis : producer_axis);
+    map.insert(map_pair);
+  }
+  return map;
+}
+
+std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapFromProducer(
+    const TensorDomain* producer) const {
+  return mapProducerAndComputeDomain(producer, true);
+}
+
+std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapToProducer(
+    const TensorDomain* producer) const {
+  return mapProducerAndComputeDomain(producer, false);
+}
+
+std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapConsumerAndComputeDomain(
+    const TensorDomain* consumer, bool from_consumer) const {
+  buildExprListToRoot();
+  // td_ is assumed to be a producer
+  auto root_map_to_td = TensorDomain::mapRootPandC(td_, consumer);
+  std::unordered_map<IterDomain*, IterDomain*> map;
+  std::unordered_set<IterDomain*> consumer_root(consumer->getRootDomain().begin(),
+                                                consumer->getRootDomain().end());
+  auto cd_root = getCompleteRootDomain();
+  for (const auto& m : root_map_to_td) {
+    auto producer_axis = m.first;
+    auto consumer_axis = m.second;
+    auto cd_axis = getCorrespondingComputeDomainID(producer_axis);
+    auto map_pair = std::make_pair(
+        from_consumer ? consumer_axis : cd_axis,
+        from_consumer ? cd_axis : consumer_axis);
+    map.insert(map_pair);
+    consumer_root.erase(consumer_axis);
+    cd_root.erase(cd_axis);
+  }
+  for (const auto& consumer_axis: consumer_root) {
+    DEBUG("Remaining consumer root axis: ", consumer_axis);
+    // No matching ID was found for ID
+    // Try to find a matching ID in the root ComputeDomain IDs
+    for (const auto& cd_axis: cd_root) {
+      DEBUG("Examining CD axis: ", cd_axis);
+      if (ComputeDomain::sameAxes(consumer_axis, cd_axis)) {
+        // matching IDs found
+        auto map_pair = std::make_pair(
+            from_consumer ? consumer_axis : cd_axis,
+            from_consumer ? cd_axis : consumer_axis);
+        map.insert(map_pair);
+        cd_root.erase(cd_axis);
+        break;
+      }
+    }
+  }
+  return map;
+}
+
+std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapFromConsumer(
+    const TensorDomain* consumer) const {
+  return mapConsumerAndComputeDomain(consumer, true);
+}
+
+std::unordered_map<IterDomain*, IterDomain*> ComputeDomain::mapToConsumer(
+    const TensorDomain* consumer) const {
+  return mapConsumerAndComputeDomain(consumer, false);
 }
 
 Split::Split(

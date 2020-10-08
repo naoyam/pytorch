@@ -122,11 +122,26 @@ class TensorView;
 class ComputeDomain;
 class IterDomain;
 
+// #define INCOMPLETE_MERGE_EXPR
+
+#ifdef INCOMPLETE_MERGE_EXPR
+class Merge;
+#endif
+
+struct ReplayInfoForComputeDomain {
+  std::vector<size_t> td2cd_map_;
+  std::unordered_map<IterDomain*, IterDomain*> crossover_map_;
+#ifdef INCOMPLETE_MERGE_EXPR
+  std::unordered_map<Merge*, bool> incomplete_merge_;
+#else
+  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+#endif
+};
+
 class TORCH_CUDA_API TransformReplay {
  public:
   // Replay producer as consumer, returns {producer, producer_compute_at_axis}.
-  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
-                    std::unordered_map<IterDomain*, IterDomain*>> replayPasC(
+  static std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> replayPasC(
       const TensorDomain* producer,
       const TensorDomain* consumer,
       const ComputeDomain* consumer_cd,
@@ -140,8 +155,7 @@ class TORCH_CUDA_API TransformReplay {
       int consumer_compute_at_axis);
 
   // Replay producer as consumer, returns {consumer, consumer_compute_at_axis}.
-  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
-                    std::unordered_map<IterDomain*, IterDomain*>> replayCasP(
+  static std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> replayCasP(
       const TensorDomain* consumer,
       const TensorDomain* producer,
       const ComputeDomain* producer_cd,
@@ -160,8 +174,7 @@ class TORCH_CUDA_API TransformReplay {
       const TensorDomain* self);
 
  private:
-  static std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
-                    std::unordered_map<IterDomain*, IterDomain*>> replay(
+  static std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> replay(
     const TensorDomain* td,
     const TensorDomain* reference,
     const ComputeDomain* reference_cd,

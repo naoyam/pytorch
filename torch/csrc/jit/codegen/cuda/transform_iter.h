@@ -25,6 +25,8 @@ struct id_int_lt {
 
 } // namespace
 
+// #define INCOMPLETE_MERGE_EXPR
+
 // Uses the history of _target_domain, and replays that history using the
 // provided map.
 //
@@ -47,6 +49,13 @@ class TORCH_CUDA_API ReplayTransformations : public IterVisitor {
   size_t counter = 0;
   bool error_on_failure_ = true;
   bool ran_replay = false; // Mark if replay has been run
+  // Map from incomplete merge to bool indicating if it's the inner
+  // domain is found.
+#ifdef INCOMPLETE_MERGE_EXPR
+  std::unordered_map<Merge*, bool> incomplete_merge_;
+#else
+  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+#endif
   using IterVisitor::handle;
 
   // Transform dispatch
@@ -92,6 +101,12 @@ class TORCH_CUDA_API ReplayTransformations : public IterVisitor {
   }
 
   std::unordered_map<IterDomain*, IterDomain*> getLeafMap() const;
+
+  //const std::unordered_map<Merge*, bool> getIncompleteMerge() const
+  //{
+  const auto& getIncompleteMerge() const {
+    return incomplete_merge_;
+  }
 };
 
 /*

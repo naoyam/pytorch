@@ -563,6 +563,12 @@ class TORCH_CUDA_API TensorDomain : public Val {
   std::unordered_map<const IterDomain*, bool> placeholder_map_;
 };
 
+class Merge;
+
+//#ifndef INCOMPLETE_MERGE_EXPR
+//#define INCOMPLETE_MERGE_EXPR
+//#endif
+
 class TORCH_CUDA_API ComputeDomain {
  public:
   ComputeDomain() = default;
@@ -591,14 +597,25 @@ class TORCH_CUDA_API ComputeDomain {
     return axes_;
   }
 
+#ifdef INCOMPLETE_MERGE_EXPR
+  using IncompleteMergeType = std::unordered_map<Merge*, bool>;
+#else
+  using IncompleteMergeType = std::unordered_map<IterDomain*, bool>;
+#endif
+
   void computeAt(const TensorDomain* td,
                  int this_pos,
                  const ComputeDomain* target,
                  int target_pos,
                  const std::vector<size_t>& td2cd_map,
-                 const std::unordered_map<IterDomain*, IterDomain*>& crossover_map);
+                 const std::unordered_map<IterDomain*, IterDomain*>& crossover_map,
+                 const IncompleteMergeType& incomplete_merge);
 
   std::unordered_set<IterDomain*> getRootDomain() const;
+  std::unordered_set<IterDomain*> getRFactorDomain() const;
+  std::unordered_set<IterDomain*> getMaybeRFactorDomain() const;
+  std::unordered_set<IterDomain*> getCompleteRootDomain() const;
+  std::unordered_set<IterDomain*> getInputsTo(const std::vector<IterDomain*>& axes) const;
 
   // Return a map from IterDomains in ComputeDomain to IterDomains in a given domain
   static std::unordered_map<IterDomain*, IterDomain*> mapRootDomain(
@@ -663,25 +680,49 @@ class TORCH_CUDA_API ComputeDomain {
   void registerAsDependent(ComputeDomain* target);
   void registerDependent(ComputeDomain* dependent, size_t pos);
 
-  const std::unordered_map<IterDomain*, IterDomain*>& crossoverMap() const {
+  const auto& crossoverMap() const {
     return crossover_map_;
   }
 
-  const std::vector<Expr*>& getExprsToRoot() const;
-  const IterDomain* getTensorDomainAxisForDependentAxis(const IterDomain* cd_axis) const;
+  const auto& incompleteMerge() const {
+    return incomplete_merge_;
+  }
 
+  const std::vector<Expr*>& getExprsToRoot() const;
+  IterDomain* getTensorDomainAxisForDependentAxis(IterDomain* cd_axis) const;
+
+  std::unordered_map<IterDomain*, IterDomain*> mapFromProducer(
+      const TensorDomain* producer) const;
+  std::unordered_map<IterDomain*, IterDomain*> mapToProducer(
+      const TensorDomain* producer) const;
+  std::unordered_map<IterDomain*, IterDomain*> mapFromConsumer(
+      const TensorDomain* consumer) const;
+  std::unordered_map<IterDomain*, IterDomain*> mapToConsumer(
+      const TensorDomain* consumer) const;
+  IterDomain* getCorrespondingComputeDomainID(IterDomain* td_id) const;
+  IterDomain* getCorrespondingTensorDomainID(IterDomain* cd_id) const;
+
+#if 0
+  void cacheBefore();
+#endif
  private:
   void setAxis(size_t cd_axis, IterDomain* id);
   void insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis);
   void eraseAxis(size_t cd_axis);
   void sanityCheck() const;
   void fixupPosition();
-  void updateDependents();
+  void updateDependents(size_t first_changed_axis);
   bool isDependent(const ComputeDomain* cd) const;
   void buildExprListToRoot() const;
   void invalidateExprList() {
     exprs_to_root_valid_ = false;
   }
+
+  const std::unordered_map<IterDomain*, IterDomain*>& getCD2TDMap() const;
+  std::unordered_map<IterDomain*, IterDomain*> mapProducerAndComputeDomain(
+      const TensorDomain* producer, bool from_producer) const;
+  std::unordered_map<IterDomain*, IterDomain*> mapConsumerAndComputeDomain(
+      const TensorDomain* consumer, bool from_consumer) const;
 
  private:
   const TensorDomain* td_ = nullptr;
@@ -693,10 +734,15 @@ class TORCH_CUDA_API ComputeDomain {
   std::vector<std::pair<size_t, ComputeDomain*>> dependents_;
 
   std::unordered_map<IterDomain*, IterDomain*> crossover_map_;
+#ifdef INCOMPLETE_MERGE_EXPR
+  std::unordered_map<Merge*, bool> incomplete_merge_;
+#else
+  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+#endif
 
   mutable bool exprs_to_root_valid_ = false;
   mutable std::vector<Expr*> exprs_to_root_;
-  mutable std::unordered_map<const IterDomain*, const IterDomain*> cd2td_map_;
+  mutable std::unordered_map<IterDomain*, IterDomain*> cd2td_map_;
 };
 
 std::ostream& operator<<(std::ostream& os, const ComputeDomain& cd);

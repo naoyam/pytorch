@@ -236,7 +236,7 @@ auto getRootCAIDs(const std::vector<IterDomain*>& domain,
     ir_utils::filterByType<IterDomain>(root_vals).end()};
   return root_ca_ids;
 }
-
+#if 0
 // ca_pos: compute-at position in the reference TensorDomain
 bool insertMissingDomains(std::vector<IterDomain*>& target_root,
                           std::vector<bool>& target_contig,
@@ -347,15 +347,17 @@ bool insertMissingDomains(std::vector<IterDomain*>& target_root,
             << std::endl;
   return insertion_done;
 }
+#endif
 } // namespace
+
+#define REPLAY_WITH_CD
 
 // Producer could have rfactor axes which consumer may want replayed. We can
 // "replay" them as long as it doesn't modify the root rfactor axes. What we
 // really want to do is validate if we replayed these axes to the ones they
 // mapped to in the consumer the operations would all be the same. then we want
 // to start the replay of the producer from the rfactor root axes, not the root.
-std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
-           std::unordered_map<IterDomain*, IterDomain*>> TransformReplay::replayPasC(
+std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformReplay::replayPasC(
     const TensorDomain* producer,
     const TensorDomain* consumer,
     const ComputeDomain* consumer_cd,
@@ -381,17 +383,27 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
       (unsigned int)td_pos <= consumer->nDims() &&
       "Invalid axis in transform replayPasC.");
 
-  //const auto& consumer_domain = consumer_cd->axes();
+#ifdef REPLAY_WITH_CD
+  const auto& consumer_domain = consumer_cd->axes();
+  // consumer ids we need to match in producer
+  std::vector<IterDomain*> consumer_CA_ids(
+      consumer_domain.begin(),
+      consumer_domain.begin() + cd_pos);
+#else
   const auto& consumer_domain = consumer->domain();
-
   // consumer ids we need to match in producer
   std::vector<IterDomain*> consumer_CA_ids(
       consumer_domain.begin(),
       consumer_domain.begin() + td_pos);
+#endif
 
   std::cerr << "consumer CA IDs: " << consumer_CA_ids << std::endl;
 
-  // Figure out all inputs required to generate the compute_at dimensions
+  // Figure out all inputs required to generate the compute_at
+  // dimensions
+  // TODO (CD): This will include extra IDs for ComputeDomain as axes
+  // of ComputeDomain consist of multiple TensorDomains. This is
+  // probably fine in terms of correctness, but should be addressed.
   std::unordered_set<Val*> consumer_CA_root_vals = IterVisitor::getInputsTo(
       std::vector<Val*>(consumer_CA_ids.begin(), consumer_CA_ids.end()));
 
@@ -411,6 +423,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   std::cerr << "Producer root: " << producer_root << std::endl;
   auto producer_contig = producer->contiguity();
   std::vector<bool> ca_placeholder = producer->placeholder();
+#if 0
   bool placeholder_inserted = insertMissingDomains(
       producer_root,
       producer_contig,
@@ -418,21 +431,43 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
       consumer->getRootDomain(),
       getRootCAIDs(consumer->domain(), td_pos),
       true, producer->hasRFactor());
+#else
+  const bool placeholder_inserted = false;
+#endif
 
   // Map of consumer_CA_root_ids to related producer_CA_ids
+#if 0
   auto replay_root_map =
       consumer_cd->mapRootDomain(producer_root, consumer_CA_root_ids);
+#endif
 
+#ifdef REPLAY_WITH_CD
+  auto root_map = consumer_cd->mapToProducer(producer);
+  auto replay_root_map_view = ir_utils::filterView(root_map,
+                                                   [&consumer_CA_root_ids](const auto& kv) {
+                                                     return consumer_CA_root_ids.find(kv.first) != consumer_CA_root_ids.end();
+                                                   });
+  std::unordered_map<IterDomain*, IterDomain*> replay_root_map(replay_root_map_view.begin(),
+                                                               replay_root_map_view.end());
+#else
+  auto replay_root_map =
+      TensorDomain::mapRootCtoP(consumer, producer, consumer_CA_root_ids);
+#endif
+
+#if 1
   // Reduction IDs can't be shared.
+  // When this happens?
   for (auto it = replay_root_map.begin(); it != replay_root_map.end();) {
     IterDomain* producer_root_id = it->second;
     if (producer_root_id->isReduction()) {
+      TORCH_INTERNAL_ASSERT(false, "reduction IDs in CA: ", producer_root_id);
       DEBUG("Remove reduction ID from CA root mapping: ", producer_root_id);
       it = replay_root_map.erase(it);
     } else {
       ++it;
     }
   }
+#endif
 
   // Track which root axes in producer we will send to replay
   std::unordered_set<IterDomain*> producer_roots4replay;
@@ -469,12 +504,17 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   }
 
   auto leaf_ids(replay_PasC.getUnorderedLeafIDs());
-  auto crossover_map(replay_PasC.getLeafMap());
+  ReplayInfoForComputeDomain replay_info;
+  replay_info.crossover_map_ = replay_PasC.getLeafMap();
+  replay_info.incomplete_merge_ = replay_PasC.getIncompleteMerge();
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
 #if 1
   for (auto c_id : consumer_CA_ids) {
+#ifdef REPLAY_WITH_CD
+    c_id = consumer_cd->getAxisForReplay(c_id);
+#endif
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
       TORCH_INTERNAL_ASSERT(
@@ -539,11 +579,13 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
 
   std::vector<IterDomain*> new_IDs;
   std::unordered_set<IterDomain*> used_IDs;
-  std::vector<size_t> td2cd_map;
   // Add axes in (1)
 #if 1
   for (size_t i = 0; i < consumer_CA_ids.size(); ++i) {
     auto c_id = consumer_CA_ids[i];
+#ifdef REPLAY_WITH_CD
+    c_id = consumer_cd->getAxisForReplay(c_id);
+#endif
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
       TORCH_INTERNAL_ASSERT(
@@ -557,14 +599,18 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
     std::cerr << "(1): " << replayed_id << std::endl;
     new_IDs.push_back(replayed_id);
     used_IDs.emplace(replayed_id);
-    td2cd_map.push_back(i);
+#ifdef REPLAY_WITH_CD
+    replay_info.td2cd_map_.push_back(i);
+#else
+    replay_info.td2cd_map_.push_back(consumer_cd->getComputeDomainAxisIndex(i));
+#endif
   }
 #else
   for (auto replayed_id: replayMapFind(replay_PasC.getReplay(), consumer_CA_ids)) {
     std::cerr << "(1): " << replayed_id << std::endl;
     new_IDs.push_back(replayed_id.first);
     used_IDs.emplace(replayed_id.first);
-    td2cd_map.push_back(replayed_id.second);
+    replay_info.td2cd_map_.push_back(replayed_id.second);
   }
 #endif
 
@@ -572,6 +618,9 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   // Add axes in (2)
 #if 1
   for (auto c_id : consumer_domain) {
+#ifdef REPLAY_WITH_CD
+    c_id = consumer_cd->getAxisForReplay(c_id);
+#endif
     auto it = replay_PasC.getReplay().find(c_id);
     if (it != replay_PasC.getReplay().end()) {
       auto id = it->second;
@@ -605,6 +654,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
 #endif
 
   // Add axes in (3)
+#ifdef REPLAY_WITH_CD
   for (auto id : producer->domain()) {
     if (producer_replayed_leaves.getUnorderedLeafIDs().find(id) !=
         producer_replayed_leaves.getUnorderedLeafIDs().end()) {
@@ -615,6 +665,18 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
       }
     }
   }
+#else
+  for (auto id : producer->domain()) {
+    if (producer_replayed_leaves.getUnorderedLeafIDs().find(id) !=
+        producer_replayed_leaves.getUnorderedLeafIDs().end()) {
+      if (used_IDs.find(id) == used_IDs.end()) {
+        std::cerr << "(3): " << id << std::endl;
+        new_IDs.push_back(id);
+        used_IDs.emplace(id);
+      }
+    }
+  }
+#endif
 
   // Add axes in (4)
   for (auto id : producer_replayed_leaves.getLeafIDs())
@@ -634,7 +696,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
         new_IDs,
         producer_contig,
         ca_placeholder,
-        crossover_map);
+        replay_info.crossover_map_);
   } else {
     replayed = new TensorDomain(
         producer->getRootDomain(),
@@ -642,16 +704,15 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
         new_IDs,
         producer->contiguity(),
         ca_placeholder,
-        crossover_map);
+        replay_info.crossover_map_);
   }
   std::cerr << "replayPasC done: " << replayed
             << ", num shared axes: " << num_shared_axes
             << std::endl;
-  return {replayed, num_shared_axes, td2cd_map, crossover_map};
+  return {replayed, num_shared_axes, replay_info};
 }
 
-std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
-           std::unordered_map<IterDomain*, IterDomain*>> TransformReplay::replayCasP(
+std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformReplay::replayCasP(
     const TensorDomain* consumer,
     const TensorDomain* producer,
     const ComputeDomain* producer_cd,
@@ -668,9 +729,11 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   auto td_pos = producer_cd->getTensorDomainPos(cd_pos);
 #endif
 
+#if 1
   // Can't share reduction axes
   for (int i = 0; i < td_pos; ++i) {
     if (producer->axis(i)->isReduction()) {
+      TORCH_INTERNAL_ASSERT(false, "Can't share reduction axis: ", i);
       td_pos = i;
       cd_pos = producer_cd->getComputeDomainPos(td_pos);
       DEBUG("Moved compute-at position to ", i, " because the producer axis at ",
@@ -678,6 +741,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
       break;
     }
   }
+#endif
 
   std::cerr << "replayCasP: consumer: " << consumer
             << ", producer: " << producer << ", producer_cd: " << *producer_cd
@@ -690,13 +754,19 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
       (unsigned int)cd_pos <= producer_cd->nDims(),
       "Invalid axis in transform replayCasP.");
 
-  //const auto& producer_domain = producer_cd->axes();
+#ifdef REPLAY_WITH_CD
+  const auto& producer_domain = producer_cd->axes();
+  // producer ids we need to match in consumer
+  std::vector<IterDomain*> producer_CA_ids(
+      producer_domain.begin(),
+      producer_domain.begin() + cd_pos);
+#else
   const auto& producer_domain = producer->domain();
-
   // producer ids we need to match in consumer
   std::vector<IterDomain*> producer_CA_ids(
       producer_domain.begin(),
       producer_domain.begin() + td_pos);
+#endif
 
   //producer_CA_ids = TensorDomain::noReductions(producer_CA_ids);
 
@@ -707,12 +777,48 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   std::cerr << "Consumer root: " << consumer_root << std::endl;
   auto consumer_contig = consumer->contiguity();
   std::vector<bool> ca_placeholder = consumer->placeholder();
+#if 0
   bool placeholder_inserted = insertMissingDomains(consumer_root, consumer_contig, ca_placeholder,
                                                    producer->getRootDomain(),
                                                    getRootCAIDs(producer->domain(), td_pos),
                                                    false, consumer->hasRFactor());
+#else
+  bool placeholder_inserted = false;
+#endif
 
-#if 1
+#ifdef REPLAY_WITH_CD
+  auto root_map = producer_cd->mapToConsumer(consumer);
+#if 0
+  for (auto kv: root_map) {
+    std::cerr << "root_map: ";
+    if (kv.first == nullptr) {
+      std::cerr << "null";
+    } else {
+      std::cerr << kv.first;
+    }
+    std::cerr << " -> ";
+    if (kv.second == nullptr) {
+      std::cerr << "null";
+    } else {
+      std::cerr << kv.second;
+    }
+    std::cerr << std::endl;
+  }
+#endif
+  auto all_ca_ids = producer_cd->getInputsTo(producer_CA_ids);
+#if 0
+  for (auto id: all_ca_ids) {
+    std::cerr << "All ca ID: " << id << std::endl;
+  }
+#endif
+  // Figure out which root IDs we need:
+  std::unordered_set<IterDomain*> producer_CA_root_ids;
+  for (const auto& kv : root_map) {
+    if (all_ca_ids.find(kv.first) != all_ca_ids.end()) {
+      producer_CA_root_ids.emplace(kv.first);
+    }
+  }
+#else
   // If producer has an rfactor root, that's what will match the consumer
   std::vector<IterDomain*> producer_root = producer->getMaybeRFactorDomain();
   // Figure out all inputs required to generate the compute_at dimensions. We
@@ -727,29 +833,31 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   for (IterDomain* id : producer_root) {
     if (all_CA_id_deps.find(id) != all_CA_id_deps.end()) {
       producer_CA_root_ids.emplace(id);
-      std::cerr << "producer CA root id: " << id << std::endl;
     }
-  }
-#else
-  auto input_ids = IterVisitor::getInputsTo(
-      std::vector<Val*>(producer_CA_ids.begin(), producer_CA_ids.end()));
-  std::unordered_set<IterDomain*> producer_CA_root_ids{
-    ir_utils::filterByType<IterDomain>(input_ids).begin(),
-    ir_utils::filterByType<IterDomain>(input_ids).end()};
-  for (const auto& id: producer_CA_root_ids) {
-    std::cerr << "producer CA root id: " << id << std::endl;
   }
 #endif
 
+  {
+    std::stringstream ss;
+    for (auto id: producer_CA_root_ids) {
+      ss << id << " ";
+    }
+    std::cerr << "producer_CA_root_ids: " << ss.str() << std::endl;
+  }
 
-#if 1
-  std::cerr << "mapRootPtoC: " << producer->getMaybeRFactorDomain()
-            << ", " << consumer->getRootDomain() << std::endl;
-  auto replay_root_map =
-      TensorDomain::mapRootPtoC(producer, consumer, producer_CA_root_ids);
+#ifdef REPLAY_WITH_CD
+  for (auto m: root_map) {
+    std::cerr << "mapToCD: " << m.first << " -> " << m.second << std::endl;
+  }
+  auto replay_root_map_view = ir_utils::filterView(root_map,
+                                                   [&producer_CA_root_ids](const auto& kv) {
+                                                     return producer_CA_root_ids.find(kv.first) != producer_CA_root_ids.end();
+                                                   });
+  std::unordered_map<IterDomain*, IterDomain*> replay_root_map(replay_root_map_view.begin(),
+                                                               replay_root_map_view.end());
 #else
   auto replay_root_map =
-      producer_cd->mapRootDomain(consumer_root, producer_CA_root_ids);
+      TensorDomain::mapRootPtoC(producer, consumer, producer_CA_root_ids);
 #endif
 
   // Track which root axes in producer we will send to replay
@@ -782,12 +890,17 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
   }
 
   auto leaf_ids(replay_CasP.getUnorderedLeafIDs());
-  auto crossover_map(replay_CasP.getLeafMap());
+  ReplayInfoForComputeDomain replay_info;
+  replay_info.crossover_map_ = replay_CasP.getLeafMap();
+  replay_info.incomplete_merge_ = replay_CasP.getIncompleteMerge();
 
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
 #if 1
   for (auto p_id : producer_CA_ids) {
+#ifdef REPLAY_WITH_CD
+    p_id = producer_cd->getAxisForReplay(p_id);
+#endif
     auto it = replay_CasP.getReplay().find(p_id);
     TORCH_INTERNAL_ASSERT(
         it != replay_CasP.getReplay().end(),
@@ -851,11 +964,13 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
 
   std::vector<IterDomain*> new_IDs;
   std::unordered_set<IterDomain*> used_IDs;
-  std::vector<size_t> td2cd_map;
   // Add axes in (1)
 #if 1
   for (size_t i = 0; i < producer_CA_ids.size(); ++i) {
     auto p_id = producer_CA_ids[i];
+#ifdef REPLAY_WITH_CD
+    p_id = producer_cd->getAxisForReplay(p_id);
+#endif
     auto it = replay_CasP.getReplay().find(p_id);
     TORCH_INTERNAL_ASSERT(
         it != replay_CasP.getReplay().end(),
@@ -865,13 +980,18 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
     auto replayed_id = it->second;
     new_IDs.push_back(replayed_id);
     used_IDs.emplace(replayed_id);
-    td2cd_map.push_back(i);
+    std::cerr << "(1): " << replayed_id << std::endl;
+#ifdef REPLAY_WITH_CD
+    replay_info.td2cd_map_.push_back(i);
+#else
+    replay_info.td2cd_map_.push_back(producer_cd->getComputeDomainAxisIndex(i));
+#endif
   }
 #else
   for (auto replayed_id: replayMapFind(replay_CasP.getReplay(), producer_CA_ids)) {
     new_IDs.push_back(replayed_id.first);
     used_IDs.emplace(replayed_id.first);
-    td2cd_map.push_back(replayed_id.second);
+    replay_info.td2cd_map_.push_back(replayed_id.second);
     std::cerr << "(1): " << replayed_id.first << std::endl;
   }
 #endif
@@ -880,7 +1000,10 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
 
   // Add axes in (2)
 #if 1
-  for (auto p_id : producer->domain()) {
+  for (auto p_id : producer_domain) {
+#ifdef REPLAY_WITH_CD
+    p_id = producer_cd->getAxisForReplay(p_id);
+#endif
     auto it = replay_CasP.getReplay().find(p_id);
     if (it != replay_CasP.getReplay().end()) {
       auto id = it->second;
@@ -891,6 +1014,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
       if (used_IDs.find(id) == used_IDs.end()) {
         new_IDs.push_back(id);
         used_IDs.emplace(id);
+        std::cerr << "(2): " << id << std::endl;
       }
     }
   }
@@ -944,7 +1068,7 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
         new_IDs,
         consumer_contig,
         ca_placeholder,
-        crossover_map);
+        replay_info.crossover_map_);
   } else {
     replayed = new TensorDomain(
         consumer->getRootDomain(),
@@ -952,18 +1076,17 @@ std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
         new_IDs,
         consumer->contiguity(),
         ca_placeholder,
-        crossover_map);
+        replay_info.crossover_map_);
   }
 
   std::cerr << "replayCasP done: " << replayed
             << ", num shared axes: " << num_shared_axes
             << std::endl;
 
-  return {replayed, num_shared_axes, td2cd_map, crossover_map};
+  return {replayed, num_shared_axes, replay_info};
 }
 
-std::tuple<TensorDomain*, unsigned int, std::vector<size_t>,
-           std::unordered_map<IterDomain*, IterDomain*>>
+std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain>
 TransformReplay::replay(
     const TensorDomain* td,
     const TensorDomain* reference,
@@ -1002,13 +1125,19 @@ TransformReplay::replay(TensorView* tv,
 
   auto replay = TransformReplay::replay(tv->domain(), reference->domain(), reference_cd, pos, is_producer);
   tv->setDomain(std::get<0>(replay));
+  const ReplayInfoForComputeDomain& replay_info = std::get<2>(replay);
   tv->getComputeDomain()->computeAt(tv->domain(),
-                                        std::get<1>(replay),
-                                        reference_cd, cd_pos,
-                                        std::get<2>(replay),
-                                        std::get<3>(replay));
+                                    std::get<1>(replay),
+                                    reference_cd, cd_pos,
+                                    replay_info.td2cd_map_,
+                                    replay_info.crossover_map_,
+                                    replay_info.incomplete_merge_);
   tv->getComputeDomain()->registerAsDependent(reference_cd);
   std::cerr << "new CD: " << *tv->getComputeDomain() << std::endl;
+  for (auto m: tv->getComputeDomain()->crossoverMap()) {
+    std::cerr << "crossover map: " << m.first << " -> " << m.second << std::endl;
+  }
+
   return {tv, std::get<1>(replay), tv->getComputeDomain()->getComputeAtPos()};
 }
 
