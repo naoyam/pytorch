@@ -517,11 +517,13 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 #endif
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
+#ifndef REPLAY_WITH_CD
       TORCH_INTERNAL_ASSERT(
           c_id->isBroadcast(),
           "Could not find axis, ",
           c_id,
           ", requested in replay.");
+#endif
       continue;
     }
     if (leaf_ids.find(it->second) != leaf_ids.end()) {
@@ -588,11 +590,13 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 #endif
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
+#ifndef REPLAY_WITH_CD
       TORCH_INTERNAL_ASSERT(
           c_id->isBroadcast(),
           "Could not find axis, ",
            c_id,
           ", requested in replay.");
+#endif
       continue;
     }
     auto replayed_id = it->second;
@@ -727,7 +731,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   auto td_pos = producer_cd->getTensorDomainPos(cd_pos);
 #endif
 
-#if 1
+#if 0
   // Can't share reduction axes
   for (int i = 0; i < td_pos; ++i) {
     if (producer->axis(i)->isReduction()) {
@@ -764,9 +768,8 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   std::vector<IterDomain*> producer_CA_ids(
       producer_domain.begin(),
       producer_domain.begin() + td_pos);
+  producer_CA_ids = TensorDomain::noReductions(producer_CA_ids);
 #endif
-
-  //producer_CA_ids = TensorDomain::noReductions(producer_CA_ids);
 
   std::cerr << "producer CA ids: " << producer_CA_ids << std::endl;
 
@@ -786,7 +789,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 
 #ifdef REPLAY_WITH_CD
   auto root_map = producer_cd->mapToConsumer(consumer);
-#if 0
+#if 1
   for (auto kv: root_map) {
     std::cerr << "root_map: ";
     if (kv.first == nullptr) {
@@ -900,11 +903,17 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     p_id = producer_cd->getAxisForReplay(p_id);
 #endif
     auto it = replay_CasP.getReplay().find(p_id);
+#ifdef REPLAY_WITH_CD
+    if (it == replay_CasP.getReplay().end()) {
+      continue;
+    }
+#else
     TORCH_INTERNAL_ASSERT(
         it != replay_CasP.getReplay().end(),
         "Could not find axis, ",
         p_id,
         ", requested in replay.");
+#endif
     auto replayed_id = it->second;
     if (leaf_ids.find(replayed_id) != leaf_ids.end()) {
       leaf_ids.erase(replayed_id);
@@ -970,11 +979,17 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     p_id = producer_cd->getAxisForReplay(p_id);
 #endif
     auto it = replay_CasP.getReplay().find(p_id);
+#ifdef REPLAY_WITH_CD
+    if (it == replay_CasP.getReplay().end()) {
+      continue;
+    }
+#else
     TORCH_INTERNAL_ASSERT(
         it != replay_CasP.getReplay().end(),
         "Could not find axis, ",
         p_id,
         ", requested in replay.");
+#endif
     auto replayed_id = it->second;
     new_IDs.push_back(replayed_id);
     used_IDs.emplace(replayed_id);

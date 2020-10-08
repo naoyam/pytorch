@@ -341,9 +341,11 @@ void ComputeAt::traverseForward() {
         DependencyCheck::getAllDependencyChains(producer_, common_consumer_));
   }
 
-  //unsigned int producer_pos =
-  //tv_data.at(producer_).getNewPosition();
+#ifdef COMPUTE_AT_USE_TD_POS
+  unsigned int producer_pos = tv_data.at(producer_).getNewPosition();
+#else
   const unsigned int producer_pos = producer_->getComputeDomain()->getComputeAtPos();
+#endif
 
   // propagate forward through all chains
   for (auto tv_dep_chain : chains) {

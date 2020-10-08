@@ -1934,6 +1934,16 @@ class ComputeDomainVisitor {
     }
   }
 
+  std::string toString(const IterDomain* id) const {
+    std::stringstream ss;
+    if (id) {
+      ss << id;
+    } else {
+      ss << "<null>";
+    }
+    return ss.str();
+  }
+
   void traverse() {
     exprs_.clear();
     cd2td_map_.clear();
@@ -1941,17 +1951,15 @@ class ComputeDomainVisitor {
     std::unordered_set<IterDomain*> frontier;
     for (size_t i = 0; i < cd_.nDims(); ++i) {
       IterDomain* cd_axis = cd_.getAxisForReplay(i);
-      //frontier.insert(cd_axis->as<Val>());
       frontier.insert(cd_axis);
-      //visited_vals.insert(cd_axis->as<Val>());
       visited_vals.insert(cd_axis);
+      IterDomain* td_axis = nullptr;
       if (cd_.isComputeDomainAxisUsed(i)) {
-        IterDomain* cd_axis = cd_.getAxisForReplay(i);
-        IterDomain* td_axis = cd_.getTensorDomainAxis(i);
-        cd2td_map_.insert({cd_axis, td_axis});
-        //DEBUG("Initial registering mapping from ",
-        //cd_axis, " to ", td_axis);
+        td_axis = cd_.getTensorDomainAxis(i);
       }
+      cd2td_map_.insert({cd_axis, td_axis});
+      DEBUG("Initial registering mapping from ",
+            cd_axis, " to ", toString(td_axis));
     }
 #if 0
     DEBUG("Traversal started for ", cd_);
@@ -2101,6 +2109,11 @@ class ComputeDomainVisitor {
         // traversal can proceed and all the IDs are saved in cd2td_map_.
         cd2td_map_.insert({merge_non_matching_in, nullptr});
         incomplete_merge_.erase(it);
+        // Remove the old mapping to td_out
+        auto out_it = cd2td_map_.find(merge->out());
+        TORCH_INTERNAL_ASSERT(out_it != cd2td_map_.end());
+        TORCH_INTERNAL_ASSERT(out_it->second == td_out);
+        cd2td_map_.erase(out_it);
         return;
       }
 #endif
