@@ -537,8 +537,7 @@ TensorDomain::TensorDomain(
     std::vector<IterDomain*> _rfactor_domain,
     std::vector<IterDomain*> _domain,
     std::vector<bool> _contiguity,
-    std::vector<bool> _placeholder,
-    std::unordered_map<IterDomain*, IterDomain*> _crossover_map)
+    std::vector<bool> _placeholder)
     : Val(ValType::TensorDomain, DataType::Null, false),
       root_domain_(std::move(_root_domain)),
       domain_(std::move(_domain)),

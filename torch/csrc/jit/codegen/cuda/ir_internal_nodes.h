@@ -382,8 +382,7 @@ class TORCH_CUDA_API TensorDomain : public Val {
       std::vector<IterDomain*> _rfactor_domain,
       std::vector<IterDomain*> _domain,
       std::vector<bool> _contiguity = std::vector<bool>(),
-      std::vector<bool> _placeholder = std::vector<bool>(),
-      std::unordered_map<IterDomain*, IterDomain*> _crossover_map = {});
+      std::vector<bool> _placeholder = std::vector<bool>());
 
   TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
 

@@ -695,16 +695,14 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
         producer->getRFactorDomain(),
         new_IDs,
         producer_contig,
-        ca_placeholder,
-        replay_info.crossover_map_);
+        ca_placeholder);
   } else {
     replayed = new TensorDomain(
         producer->getRootDomain(),
         producer->getRFactorDomain(),
         new_IDs,
         producer->contiguity(),
-        ca_placeholder,
-        replay_info.crossover_map_);
+        ca_placeholder);
   }
   std::cerr << "replayPasC done: " << replayed
             << ", num shared axes: " << num_shared_axes
@@ -1067,16 +1065,14 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
         consumer->getRFactorDomain(),
         new_IDs,
         consumer_contig,
-        ca_placeholder,
-        replay_info.crossover_map_);
+        ca_placeholder);
   } else {
     replayed = new TensorDomain(
         consumer->getRootDomain(),
         consumer->getRFactorDomain(),
         new_IDs,
         consumer->contiguity(),
-        ca_placeholder,
-        replay_info.crossover_map_);
+        ca_placeholder);
   }
 
   std::cerr << "replayCasP done: " << replayed

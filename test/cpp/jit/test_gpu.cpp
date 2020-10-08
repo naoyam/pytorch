@@ -5841,6 +5841,8 @@ void testGPU_FusionSmemBlockGemmCache() {
   // tv5 = (M, N)
   TensorView* tv6 = tv5->cache_before();
 
+  fusion.printMath();
+
   constexpr int BSX = 16;
   tv5->split(1, BSX);
   tv5->split(0, BSX);
@@ -5865,16 +5867,23 @@ void testGPU_FusionSmemBlockGemmCache() {
   tv0->computeAt(tv7, 3);
   tv1->computeAt(tv7, 3);
 
+#if 0
   tv2->setMemoryType(MemoryType::Shared);
   tv3->setMemoryType(MemoryType::Shared);
   tv4->setMemoryType(MemoryType::Shared);
   tv6->setMemoryType(MemoryType::Shared);
   tv7->setMemoryType(MemoryType::Shared);
+#endif
   // Memory Type
+
+  fusion.printMath();
+  fusion.printKernel();
 
   // Thread and Block binding
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
+
+#if 0
   tv5->axis(-2)->parallelize(ParallelType::TIDy);
   tv5->axis(-1)->parallelize(ParallelType::TIDx);
   // Manual Binding
@@ -5887,6 +5896,7 @@ void testGPU_FusionSmemBlockGemmCache() {
 
   tv6->axis(-2)->parallelize(ParallelType::TIDy);
   tv6->axis(-1)->parallelize(ParallelType::TIDx);
+#endif
 
   constexpr int M = 154, K = 45, N = 1524;
 
