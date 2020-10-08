@@ -1706,6 +1706,11 @@ void testGPU_FusionAdvancedComputeAt() {
 
     tv2->computeAt(tv3, 1);
     tv2->split(-1, 4); // Kernel will break without this split
+
+
+    fusion.printMath();
+    fusion.printKernel();
+
     tv3->axis(0)->parallelize(ParallelType::BIDx);
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
