@@ -1344,404 +1344,9 @@ IterDomain* getInputToSplit(IterDomain* split_id1, IterDomain* split_id2) {
   return split->in();
 }
 
-#define USE_CD_REPLAY
-
-kir::TensorIndex* getProducerIndex_impl2_rfactor(
-    TensorView* producer_tv,
-    TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
-  using Idx = std::shared_ptr<IdxGraphNode>;
-  const bool global = producer_tv->getMemoryType() == MemoryType::Global;
-
-  const ComputeDomain* consumer_cd = consumer_tv->getComputeDomain();
-  const std::vector<IterDomain*>& consumer_root = consumer_tv->getRootDomain();
-  const size_t alloc_pos = global ? 0 : producer_tv->getThisComputeAtAxis();
-
-  std::cerr << "getProducerIndex_impl2:\n"
-            << "\tproducer: " << producer_tv << "\n"
-            << "\tconsumer: " << consumer_tv << "\n"
-            << ", global?: " << global << "\n"
-            << ", alloc_pos: " << alloc_pos << "\n"
-            << "producer root: " << producer_tv->getRootDomain() << "\n"
-            << "producer maybe rfactor: "
-            << producer_tv->getMaybeRFactorDomain() << "\n"
-            << "consumer root: " << consumer_root << "\n"
-            << "consumer cd: " << *consumer_cd << std::endl;
-
-  // If the producer is computed at -1, no indexing is involved. This
-  // is optional; it just skips the rest of the analysis.
-  if (alloc_pos == producer_tv->nDims() && !global) {
-    return new kir::TensorIndex(producer_tv, {});
-  }
-
-  std::unordered_map<IterDomain*, IterDomainInfo> consumer_map;
-  for (size_t i = 0; i < consumer_tv->nDims(); ++i) {
-    DEBUG("idx: ", i);
-    IterDomain* dom = consumer_tv->axis(i);
-    DEBUG("dom: ", dom);
-    auto cd_axis_idx = consumer_cd->getComputeDomainAxisIndex(i);
-#ifdef USE_CD_REPLAY
-    IterDomain* cd_dom = consumer_cd->getAxisForReplay(cd_axis_idx);
-#else
-    IterDomain* cd_dom = consumer_cd->axis(cd_axis_idx);
-#endif
-    Val* extent = kir::lowerValue(cd_dom->extent());
-    bool is_ca = i < producer_tv->getRelativeComputeAtAxis() && !global;
-    std::shared_ptr<IdxGraphNode> ign;
-    if (is_ca) {
-      ign = std::make_shared<IdxGraphNode>(new kir::Int(0));
-    } else {
-      TORCH_INTERNAL_ASSERT(cd_axis_idx < loops.size());
-      Val* loop_idx = loops.at(cd_axis_idx)->index();
-      ign = std::make_shared<IdxGraphNode>(loop_idx);
-    }
-    std::cerr << "Initial entry: " << dom << ", cd axis: " << cd_dom << *ign
-              << std::endl;
-#ifdef USE_CD_REPLAY
-    consumer_map.insert({cd_dom, IterDomainInfo(ign, is_ca, extent, cd_dom)});
-#else
-    consumer_map.insert({dom, IterDomainInfo(ign, is_ca, extent, cd_dom)});
-#endif
-  }
-
-  std::cerr << "Initial consumer_idx_map\n";
-  for (auto k : consumer_map) {
-    std::cerr << k.first << " -> {" << k.second << "}\n";
-  }
-
-#ifdef USE_CD_REPLAY
-  const auto& cd_exprs = consumer_cd->getExprsToRoot();
-#else
-  std::vector<Val*> consumer_domain;
-  std::transform(
-      consumer_tv->domain()->domain().begin(),
-      consumer_tv->domain()->domain().end(),
-      std::back_inserter(consumer_domain),
-      [](IterDomain* id) { return static_cast<Val*>(id); });
-  auto cd_exprs = ExprSort::getExprs(consumer_tv->fusion(), consumer_domain);
-  std::reverse(cd_exprs.begin(), cd_exprs.end());
-#endif
-
-  DEBUG("Traversing consumer exprs upward");
-  for (auto it = cd_exprs.begin(); it != cd_exprs.end(); ++it) {
-    Expr* expr = *it;
-    DEBUG("Traversing ", expr);
-    if (std::any_of(
-            expr->outputs().begin(),
-            expr->outputs().end(),
-            [&consumer_map](Val* out) {
-              auto output_id = out->as<IterDomain>();
-              if (consumer_map.find(output_id) == consumer_map.end()) {
-                std::stringstream ss;
-                ss << output_id;
-                DEBUG("Output not found: ", ss.str());
-                return true;
-              } else {
-                return false;
-              }
-            })) {
-      TORCH_INTERNAL_ASSERT(false, "Invalid expr: ", expr);
-      continue;
-    }
-    if (expr->getExprType() == ExprType::Split) {
-      Split* split = expr->as<Split>();
-      IterDomain* outer = split->outer();
-      IterDomain* inner = split->inner();
-      auto outer_map = consumer_map.find(outer);
-      TORCH_INTERNAL_ASSERT(
-          outer_map != consumer_map.end(), "Outer ID not found: ", outer);
-      const IterDomainInfo& outer_info = outer_map->second;
-      auto inner_map = consumer_map.find(inner);
-      TORCH_INTERNAL_ASSERT(
-          inner_map != consumer_map.end(), "Inner ID not found: ", inner);
-      const IterDomainInfo& inner_info = inner_map->second;
-      const bool outer_ca = outer_info.isCA();
-      const bool inner_ca = inner_info.isCA();
-      // IterDomain* split_in =
-      // consumer_cd->getAxisForReplay(split->in());
-      IterDomain* split_in = split->in();
-
-      auto outer_idx = outer_info.idx();
-      auto inner_idx = inner_info.idx();
-
-      // Val* in_idx = addx(mulx(outer_idx, inner_extent), inner_idx);
-      IterDomainInfo in_info;
-      if (outer_ca || inner_ca) {
-        in_info = IterDomainInfo(
-            std::make_shared<IdxGraphNode>(outer_idx, inner_idx), true);
-      } else {
-        DEBUG("Split: none in CA");
-        // Val* inner_extent = kir::lowerValue(inner_info.cdDom()->extent());
-        // Val* inner_extent = extent_map.at(inner);
-        Val* inner_extent = inner_info.extent();
-        Val* outer_extent = outer_info.extent();
-        Val* in_extent = mulx(inner_extent, outer_extent);
-        auto in_idx = std::make_shared<IdxGraphNode>(
-            addx(mulx(outer_idx->idx(), inner_extent), inner_idx->idx()));
-        in_info = IterDomainInfo(
-            in_idx,
-            false,
-            in_extent,
-            getInputToSplit(outer_info.cdDom(), inner_info.cdDom()));
-      }
-      DEBUG("Inserting new map: ", split_in, " to ", in_info);
-      consumer_map.insert({split_in, in_info});
-      //consumer_map.erase(outer);
-      //consumer_map.erase(inner);
-    } else if (expr->getExprType() == ExprType::Merge) {
-      Merge* merge = expr->as<Merge>();
-      auto out_map = consumer_map.find(merge->out());
-      TORCH_INTERNAL_ASSERT(out_map != consumer_map.end());
-      const IterDomainInfo& out_info = out_map->second;
-      Idx out_idx = out_info.idx();
-
-      // IterDomain* outer_id =
-      // consumer_cd->getAxisForReplay(merge->outer());
-      IterDomain* outer_id = merge->outer();
-      // IterDomain* inner_id =
-      // consumer_cd->getAxisForReplay(merge->inner());
-      IterDomain* inner_id = merge->inner();
-      // Idx inner_idx, outer_idx;
-      IterDomainInfo inner_info, outer_info;
-      bool is_ca = out_map->second.isCA();
-      if (is_ca) {
-        DEBUG("Merge: out is in CA");
-        inner_info = IterDomainInfo(out_idx, true);
-        outer_info = IterDomainInfo(out_idx, true);
-      } else {
-        DEBUG("Merge: not in CA");
-        IterDomain* out_cd_dom = out_info.cdDom();
-        auto in_cd_dom = getInputToMerge(out_cd_dom);
-        Val* inner_extent = kir::lowerValue(in_cd_dom.second->extent());
-        Val* outer_extent = kir::lowerValue(in_cd_dom.first->extent());
-        auto inner_idx =
-            std::make_shared<IdxGraphNode>(modx(out_idx->idx(), inner_extent));
-        inner_info =
-            IterDomainInfo(inner_idx, false, inner_extent, in_cd_dom.second);
-        auto outer_idx =
-            std::make_shared<IdxGraphNode>(divx(out_idx->idx(), inner_extent));
-        outer_info =
-            IterDomainInfo(outer_idx, false, outer_extent, in_cd_dom.first);
-      }
-      DEBUG("Inserting new map: ", outer_id, " to ", outer_info);
-      consumer_map.insert({outer_id, outer_info});
-      consumer_map.insert({inner_id, inner_info});
-      DEBUG("Inserting new map: ", inner_id, " to ", inner_info);
-      //consumer_map.erase(merge->out());
-    } else {
-      TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
-    }
-  }
-
-  DEBUG("Root consumer_map");
-  std::unordered_map<IterDomain*, IterDomainInfo> consumer_td_map;
-  for (auto it = consumer_map.begin(); it != consumer_map.end(); ++it) {
-    DEBUG(const_cast<IterDomain*>(it->first), " -> ", it->second);
-#ifdef USE_CD_REPLAY
-    auto td_axis = consumer_cd->getTensorDomainAxisForDependentAxis(it->first);
-    if (td_axis == nullptr) {
-      DEBUG("Axis not exist in TD; must be a broadcast domain and safe to ignore: ",
-            const_cast<IterDomain*>(it->first));
-      continue;
-    }
-    consumer_td_map.insert({td_axis, it->second});
-    std::stringstream ss;
-    ss << td_axis;
-    DEBUG("Adding a root consumer map: ", ss.str());
-#endif
-  }
-
-  std::unordered_map<IterDomain*, IterDomainInfo> producer_map;
-#ifdef USE_CD_REPLAY
-  const auto root_mapping = consumer_cd->mapFromProducer(producer_tv->domain());
-#else
-  const auto root_mapping =
-      TensorDomain::mapRootPandC(producer_tv->domain(), consumer_tv->domain());
-#endif
-  auto root_ca_ids = getMaybeRFactorCAIDs(producer_tv);
-
-  // Propagate consumer root to producer toot
-  for (auto producer_root_id : producer_tv->getMaybeRFactorDomain()) {
-    DEBUG("Producer root: ", producer_root_id);
-    auto consumer_root_id = std::find_if(
-        root_mapping.begin(),
-        root_mapping.end(),
-        [producer_root_id](const auto& pair) {
-          return pair.first == producer_root_id;
-        });
-    if (consumer_root_id == root_mapping.end()) {
-      TORCH_INTERNAL_ASSERT(producer_root_id->isReduction());
-      continue;
-    }
-    DEBUG(
-        "Corresponding consumer TD root ID: ",
-        const_cast<IterDomain*>(consumer_root_id->second));
-#ifdef USE_CD_REPLAY
-    auto idx_map = consumer_map.find(consumer_root_id->second);
-    TORCH_INTERNAL_ASSERT(
-        idx_map != consumer_map.end(),
-        "Consumer root not found: ",
-        const_cast<IterDomain*>(consumer_root_id->second));
-#else
-    auto idx_map = consumer_map.find(consumer_root_id->second);
-    TORCH_INTERNAL_ASSERT(
-        idx_map != consumer_map.end(),
-        "Consumer root not found: ",
-        const_cast<IterDomain*>(consumer_root_id->second));
-#endif
-    const IterDomainInfo& info = idx_map->second;
-    Idx producer_idx = info.idx();
-    if (root_ca_ids.find(producer_root_id) == root_ca_ids.end() &&
-        producer_root_id->isBroadcast()) {
-      producer_idx = std::make_shared<IdxGraphNode>(new kir::Int(0));
-    }
-    IterDomainInfo producer_info{producer_idx};
-    std::cerr << "Producer root dom: " << producer_root_id << ", "
-              << producer_info << std::endl;
-    producer_map.insert({producer_root_id, producer_info});
-  }
-
-  if (global) {
-    const auto& producer_root = producer_tv->getMaybeRFactorDomain();
-    std::vector<Val*> strided_inds;
-    for (size_t i = 0; i < producer_root.size(); ++i) {
-      IterDomain* id = producer_root[i];
-      if (id->isReduction()) {
-        continue;
-      }
-      if (id->isBroadcast()) {
-        continue;
-      }
-      auto id_it = producer_map.find(id);
-      TORCH_INTERNAL_ASSERT(
-          id_it != producer_map.end(), "Not found in producer_map: ", id);
-      const IterDomainInfo& info = id_it->second;
-      const auto& idx = info.idx();
-      std::stringstream ss;
-      ss << "T" << producer_tv->name() << ".stride[" << i << "]";
-      strided_inds.push_back(
-          mulx(idx->idx(), new kir::NamedScalar(ss.str(), DataType::Int)));
-    }
-    auto ti = new kir::TensorIndex(producer_tv, strided_inds);
-    DEBUG("Generated TensorIndex: ", ti);
-    return ti;
-  }
-
-  // Transform to the original producer domain
-  std::vector<Val*> producer_domain;
-  std::transform(
-      producer_tv->domain()->domain().begin(),
-      producer_tv->domain()->domain().end(),
-      std::back_inserter(producer_domain),
-      [](IterDomain* dom) { return dom->as<Val>(); });
-
-  // auto producer_exprs = ExprSort::getExprs(producer_tv->fusion(),
-  // producer_domain);
-  auto producer_exprs = getExprsFromRFactorRoot(producer_tv, producer_domain);
-  MarkCAIDs producer_ca_ids(producer_tv, alloc_pos);
-
-  for (auto expr : producer_exprs) {
-    std::cerr << "Producer expr: " << expr;
-    if (expr->getExprType() == ExprType::Split) {
-      Split* split = expr->as<Split>();
-      IterDomain* in = split->in();
-      TORCH_INTERNAL_ASSERT(producer_map.find(in) != producer_map.end());
-      const auto& in_info = producer_map.find(in)->second;
-      TORCH_INTERNAL_ASSERT(in_info.idx() != nullptr);
-      Idx inner_idx;
-      Idx outer_idx;
-      if (producer_ca_ids.isCA(in)) {
-        outer_idx = in_info.idx()->getOuter();
-        inner_idx = in_info.idx()->getInner();
-      } else {
-        if (in->isBroadcast()) {
-          inner_idx = std::make_shared<IdxGraphNode>(new kir::Int(0));
-          outer_idx = std::make_shared<IdxGraphNode>(new kir::Int(0));
-        } else {
-          inner_idx = std::make_shared<IdxGraphNode>(
-              modx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
-          outer_idx = std::make_shared<IdxGraphNode>(
-              divx(in_info.idx()->idx(), kir::lowerValue(split->factor())));
-        }
-      }
-      producer_map.insert({split->outer(), IterDomainInfo(outer_idx)});
-      producer_map.insert({split->inner(), IterDomainInfo(inner_idx)});
-    } else if (expr->getExprType() == ExprType::Merge) {
-      Merge* merge = expr->as<Merge>();
-      TORCH_INTERNAL_ASSERT(
-          producer_map.find(merge->inner()) != producer_map.end(),
-          "Merge inner not found: ",
-          merge->inner());
-      TORCH_INTERNAL_ASSERT(
-          producer_map.find(merge->outer()) != producer_map.end(),
-          "Merge outer not found: ",
-          merge->outer());
-      const auto& inner = producer_map.find(merge->inner())->second;
-      const auto& outer = producer_map.find(merge->outer())->second;
-      // Val* out_idx = addx(mulx(outer.idx(), inner.extent()),
-      // inner.idx());
-      Idx out_idx;
-      if (producer_ca_ids.isCA(merge->out())) {
-        out_idx = inner.idx();
-        std::cerr << "inner.idx: " << *(inner.idx()) << std::endl;
-        std::cerr << "outer.idx: " << *(outer.idx()) << std::endl;
-        TORCH_INTERNAL_ASSERT(inner.idx() == outer.idx());
-      } else {
-        out_idx = std::make_shared<IdxGraphNode>(addx(
-            mulx(outer.idx()->idx(), kir::lowerValue(merge->inner()->extent())),
-            inner.idx()->idx()));
-      }
-      producer_map.insert({merge->out(), IterDomainInfo(out_idx)});
-    } else {
-      TORCH_INTERNAL_ASSERT(false, "Unexpected expr: ", expr);
-    }
-  }
-
-  std::vector<Val*> strided_inds;
-  const bool is_smem = producer_tv->getMemoryType() == MemoryType::Shared;
-  for (size_t i = alloc_pos; i < producer_tv->nDims(); ++i) {
-    IterDomain* prod_id = producer_tv->axis(i);
-    if (prod_id->isReduction()) {
-      // this should not appear at the consumer
-      continue;
-    }
-    if (prod_id->isBroadcast()) {
-      continue;
-    }
-    if (producer_map.find(prod_id) == producer_map.end()) {
-      // If the index is determined to be 0, no mapping entry is
-      // created.
-      TORCH_INTERNAL_ASSERT(false, "Mapping not detected for ", prod_id);
-      continue;
-    }
-    if (prod_id->isBlockDim() || (prod_id->isThreadDim() && !is_smem)) {
-      continue;
-    }
-    Idx idx = producer_map.find(prod_id)->second.idx();
-    TORCH_INTERNAL_ASSERT(idx->idx() != nullptr);
-    std::cerr << "Prod idx: " << idx->idx();
-    if (idx->idx()->getOrigin()) {
-      std::cerr << " (" << idx->idx()->getOrigin() << ")";
-    }
-    std::cerr << std::endl;
-    Val* extent = nullptr;
-    for (size_t j = i + 1; j < producer_tv->nDims(); ++j) {
-      IterDomain* id = producer_tv->axis(j);
-      if (id->isBlockDim() || (id->isThreadDim() && !is_smem) ||
-          id->isReduction() || id->isBroadcast()) {
-        continue;
-      }
-      extent = mulx(extent, kir::lowerValue(id->extent()));
-    }
-    strided_inds.push_back(mulx(idx->idx(), extent));
-  }
-
-  auto ti = new kir::TensorIndex(producer_tv, strided_inds);
-  DEBUG("Generated TensorIndex: ", ti);
-  return ti;
-}
-
 } // namespace
+
+#define REPLAY_WITH_CD
 
 kir::TensorIndex* Index::getProducerIndex_impl2(
     TensorView* producer_tv,
@@ -1750,13 +1355,6 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   using Idx = std::shared_ptr<IdxGraphNode>;
   const bool global = producer_tv->getMemoryType() == MemoryType::Global;
 
-  if (std::getenv("RFACTOR")) {
-    if (consumer_tv->hasRFactor()) {
-      return getProducerIndex_impl2_rfactor(
-          producer_tv, consumer_tv, loops);
-    }
-  }
-
   const ComputeDomain* consumer_cd = consumer_tv->getComputeDomain();
   const std::vector<IterDomain*>& consumer_root = consumer_tv->getRootDomain();
   const size_t alloc_pos = global ? 0 : producer_tv->getThisComputeAtAxis();
@@ -1784,7 +1382,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     IterDomain* dom = consumer_tv->axis(i);
     DEBUG("dom: ", dom);
     auto cd_axis_idx = consumer_cd->getComputeDomainAxisIndex(i);
-#ifdef USE_CD_REPLAY
+#ifdef REPLAY_WITH_CD
     IterDomain* cd_dom = consumer_cd->getAxisForReplay(cd_axis_idx);
 #else
     IterDomain* cd_dom = consumer_cd->axis(cd_axis_idx);
@@ -1801,7 +1399,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     }
     std::cerr << "Initial entry: " << dom << ", cd axis: " << cd_dom << *ign
               << std::endl;
-#ifdef USE_CD_REPLAY
+#ifdef REPLAY_WITH_CD
     consumer_map.insert({cd_dom, IterDomainInfo(ign, is_ca, extent, cd_dom)});
 #else
     consumer_map.insert({dom, IterDomainInfo(ign, is_ca, extent, cd_dom)});
@@ -1813,7 +1411,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     std::cerr << k.first << " -> {" << k.second << "}\n";
   }
 
-#ifdef USE_CD_REPLAY
+#ifdef REPLAY_WITH_CD
   const auto& cd_exprs = consumer_cd->getExprsToRoot();
 #else
   std::vector<Val*> consumer_domain;
@@ -1861,14 +1459,15 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       const IterDomainInfo& inner_info = inner_map->second;
       const bool outer_ca = outer_info.isCA();
       const bool inner_ca = inner_info.isCA();
-      // IterDomain* split_in =
-      // consumer_cd->getAxisForReplay(split->in());
+#ifdef REPLAY_WITH_CD
+      IterDomain* split_in = consumer_cd->getAxisForReplay(split->in());
+#else
       IterDomain* split_in = split->in();
+#endif
 
       auto outer_idx = outer_info.idx();
       auto inner_idx = inner_info.idx();
 
-      // Val* in_idx = addx(mulx(outer_idx, inner_extent), inner_idx);
       IterDomainInfo in_info;
       if (outer_ca || inner_ca) {
         in_info = IterDomainInfo(
@@ -1899,13 +1498,13 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       const IterDomainInfo& out_info = out_map->second;
       Idx out_idx = out_info.idx();
 
-      // IterDomain* outer_id =
-      // consumer_cd->getAxisForReplay(merge->outer());
+#ifdef REPLAY_WITH_CD
+      IterDomain* outer_id = consumer_cd->getAxisForReplay(merge->outer());
+      IterDomain* inner_id = consumer_cd->getAxisForReplay(merge->inner());
+#else
       IterDomain* outer_id = merge->outer();
-      // IterDomain* inner_id =
-      // consumer_cd->getAxisForReplay(merge->inner());
       IterDomain* inner_id = merge->inner();
-      // Idx inner_idx, outer_idx;
+#endif
       IterDomainInfo inner_info, outer_info;
       bool is_ca = out_map->second.isCA();
       if (is_ca) {
@@ -1937,26 +1536,8 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     }
   }
 
-  DEBUG("Root consumer_map");
-  std::unordered_map<IterDomain*, IterDomainInfo> consumer_td_map;
-  for (auto it = consumer_map.begin(); it != consumer_map.end(); ++it) {
-    DEBUG(const_cast<IterDomain*>(it->first), " -> ", it->second);
-#ifdef USE_CD_REPLAY
-    auto td_axis = consumer_cd->getTensorDomainAxisForDependentAxis(it->first);
-    if (td_axis == nullptr) {
-      DEBUG("Axis not exist in TD; must be a broadcast domain and safe to ignore: ",
-            const_cast<IterDomain*>(it->first));
-      continue;
-    }
-    consumer_td_map.insert({td_axis, it->second});
-    std::stringstream ss;
-    ss << td_axis;
-    DEBUG("Adding a root consumer map: ", ss.str());
-#endif
-  }
-
   std::unordered_map<IterDomain*, IterDomainInfo> producer_map;
-#ifdef USE_CD_REPLAY
+#ifdef REPLAY_WITH_CD
   const auto root_mapping = consumer_cd->mapFromProducer(producer_tv->domain());
 #else
   const auto root_mapping =
@@ -1980,7 +1561,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
     DEBUG(
         "Corresponding consumer TD root ID: ",
         const_cast<IterDomain*>(consumer_root_id->second));
-#ifdef USE_CD_REPLAY
+#ifdef REPLAY_WITH_CD
     auto idx_map = consumer_map.find(consumer_root_id->second);
     TORCH_INTERNAL_ASSERT(
         idx_map != consumer_map.end(),
