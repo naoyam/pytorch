@@ -134,7 +134,7 @@ void ReplayTransformations::handle(Merge* m) {
     std::stringstream ss;
     ss << it_inner->second << ", inner";
     DEBUG("Incomplete merge: ", ss.str());
-    incomplete_merge_.insert({it_inner->second, true});
+    incomplete_merge_.push_back({it_inner->second, true});
 #endif
     return;
   }
@@ -149,7 +149,7 @@ void ReplayTransformations::handle(Merge* m) {
     std::stringstream ss;
     ss << it_outer->second << ", outer";
     DEBUG("Incomplete merge: ", ss.str());
-    incomplete_merge_.insert({it_outer->second, false});
+    incomplete_merge_.push_back({it_outer->second, false});
 #endif
     return;
   }

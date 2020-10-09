@@ -7,6 +7,8 @@
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 
+#include <map>
+
 /*
  * Nodes in here should generally not be used by users. They should be behind
  * the scenes and users shouldn't have to be aware of what they do to use the
@@ -610,7 +612,9 @@ class TORCH_CUDA_API ComputeDomain {
 #ifdef INCOMPLETE_MERGE_EXPR
   using IncompleteMergeType = std::unordered_map<Merge*, bool>;
 #else
-  using IncompleteMergeType = std::unordered_map<IterDomain*, bool>;
+  //using IncompleteMergeType = std::unordered_map<IterDomain*, bool>;
+  //using IncompleteMergeType = std::multimap<IterDomain*, bool>;
+  using IncompleteMergeType = std::deque<std::pair<IterDomain*, bool>>;
 #endif
 
   void computeAt(const TensorDomain* td,
@@ -748,7 +752,7 @@ class TORCH_CUDA_API ComputeDomain {
 #ifdef INCOMPLETE_MERGE_EXPR
   std::unordered_map<Merge*, bool> incomplete_merge_;
 #else
-  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+  IncompleteMergeType incomplete_merge_;
 #endif
 
   mutable bool exprs_to_root_valid_ = false;

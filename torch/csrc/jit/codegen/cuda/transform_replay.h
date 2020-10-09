@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <vector>
 #include <unordered_map>
+#include <deque>
 
 namespace torch {
 namespace jit {
@@ -134,7 +135,9 @@ struct ReplayInfoForComputeDomain {
 #ifdef INCOMPLETE_MERGE_EXPR
   std::unordered_map<Merge*, bool> incomplete_merge_;
 #else
-  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+  //std::unordered_map<IterDomain*, bool> incomplete_merge_;
+  //std::multimap<IterDomain*, bool> incomplete_merge_;
+  std::deque<std::pair<IterDomain*, bool>> incomplete_merge_;
 #endif
 };
 

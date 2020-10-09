@@ -11,6 +11,7 @@
 #include <torch/csrc/jit/codegen/cuda/compute_at.h>
 
 #include <sstream>
+#include <map>
 
 namespace torch {
 namespace jit {
@@ -1643,6 +1644,7 @@ void ComputeDomain::reorder() {
   TORCH_INTERNAL_ASSERT(td_->nDims() == nDims());
   std::copy(td_->domain().begin(), td_->domain().end(),
             axes_.begin());
+  axes_rf_ = axes_;
 }
 
 namespace {
@@ -1745,8 +1747,12 @@ void ComputeDomain::computeAt(const TensorDomain* td,
     }
   }
 
-  crossover_map_ = crossover_map;
-  joinMap(crossover_map_, target->crossoverMap());
+  if (td_->hasRFactor()) {
+    crossover_map_.clear();
+  } else {
+    crossover_map_ = crossover_map;
+    joinMap(crossover_map_, target->crossoverMap());
+  }
   incomplete_merge_ = incomplete_merge;
 #ifdef INCOMPLETE_MERGE_EXPR
   joinMap(incomplete_merge_, target->incompleteMerge());
@@ -1925,6 +1931,9 @@ class ComputeDomainVisitor {
       exprs_(exprs),
       cd2td_map_(cd2td_map),
       incomplete_merge_(cd.incompleteMerge()) {
+    // incomplete_merge_ is in the order of their appearance. As we
+    // traverse bottom up, it needs to be reversed.
+    std::reverse(incomplete_merge_.begin(), incomplete_merge_.end());
     for (auto id: inputs_to_seed) {
       inputs_to_.insert(cd_.getAxisForReplay(id));
     }
@@ -2072,6 +2081,22 @@ class ComputeDomainVisitor {
     return ss.str();
   }
 
+#ifndef INCOMPLETE_MERGE_EXPR
+  bool isIncompleteMergeOut(IterDomain* id, bool& is_inner) {
+    TORCH_INTERNAL_ASSERT(id != nullptr);
+    auto it = std::find_if(incomplete_merge_.begin(), incomplete_merge_.end(),
+                           [id](const auto& kv) {
+                             return kv.first == id;
+                           });
+    if (it == incomplete_merge_.end()) {
+      return false;
+    }
+    is_inner = it->second;
+    incomplete_merge_.erase(it);
+    return true;
+  }
+#endif
+
   void handle(Expr* expr) {
     DEBUG("Appending ", expr);
     exprs_.push_back(expr);
@@ -2101,9 +2126,8 @@ class ComputeDomainVisitor {
         return;
       }
 #else
-      auto it = incomplete_merge_.find(td_out);
-      if (it != incomplete_merge_.end()) {
-        auto is_inner = it->second;
+      bool is_inner;
+      if (isIncompleteMergeOut(td_out, is_inner)) {
         auto merge_matching_in = is_inner ? merge->inner() : merge->outer();
         auto merge_non_matching_in = is_inner ? merge->outer() : merge->inner();
         merge_matching_in = cd_.getAxisForReplay(merge_matching_in);
@@ -2114,7 +2138,6 @@ class ComputeDomainVisitor {
         // Add an entry even for the non-matching one so that
         // traversal can proceed and all the IDs are saved in cd2td_map_.
         cd2td_map_.insert({merge_non_matching_in, nullptr});
-        incomplete_merge_.erase(it);
         // Remove the old mapping to td_out
         auto out_it = cd2td_map_.find(merge->out());
         TORCH_INTERNAL_ASSERT(out_it != cd2td_map_.end());
@@ -2161,7 +2184,9 @@ class ComputeDomainVisitor {
 #ifdef INCOMPLETE_MERGE_EXPR
   std::unordered_map<Merge*, bool> incomplete_merge_;
 #else
-  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+  //std::unordered_map<IterDomain*, bool> incomplete_merge_;
+  //std::multimap<IterDomain*, bool> incomplete_merge_;
+  std::deque<std::pair<IterDomain*, bool>> incomplete_merge_;
 #endif
 };
 
@@ -2218,10 +2243,12 @@ IterDomain* ComputeDomain::getAxisForReplay(IterDomain* id) const {
   TORCH_INTERNAL_ASSERT(id != nullptr);
   // Don't change if it's an axis for rfactor
   // TODO (CD): make this something more efficient
+#if 0
   if (std::find(axes_rf_.begin(), axes_rf_.end(), id) != axes_rf_.end() &&
       std::find(axes_.begin(), axes_.end(), id) == axes_.end()) {
     return id;
   }
+#endif
   //DEBUG("getAxisForReplay: ", id);
   auto original_id = id;
   std::unordered_set<IterDomain*> visited;

@@ -1442,7 +1442,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
                 return false;
               }
             })) {
-      TORCH_INTERNAL_ASSERT(false, "Invalid expr: ", expr);
+      //TORCH_INTERNAL_ASSERT(false, "Invalid expr: ", expr);
       continue;
     }
     if (expr->getExprType() == ExprType::Split) {
@@ -1558,6 +1558,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
       TORCH_INTERNAL_ASSERT(producer_root_id->isReduction());
       continue;
     }
+    TORCH_INTERNAL_ASSERT(consumer_root_id->second != nullptr);
     DEBUG(
         "Corresponding consumer TD root ID: ",
         const_cast<IterDomain*>(consumer_root_id->second));

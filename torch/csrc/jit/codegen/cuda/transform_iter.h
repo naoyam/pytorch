@@ -54,7 +54,8 @@ class TORCH_CUDA_API ReplayTransformations : public IterVisitor {
 #ifdef INCOMPLETE_MERGE_EXPR
   std::unordered_map<Merge*, bool> incomplete_merge_;
 #else
-  std::unordered_map<IterDomain*, bool> incomplete_merge_;
+  //std::unordered_map<IterDomain*, bool> incomplete_merge_;
+  std::deque<std::pair<IterDomain*, bool>> incomplete_merge_;
 #endif
   using IterVisitor::handle;
 
