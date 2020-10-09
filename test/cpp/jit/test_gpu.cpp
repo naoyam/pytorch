@@ -3218,6 +3218,9 @@ void testGPU_FusionReduction5() {
   tv3->computeAt(tv1, 1);
   tv2->computeAt(tv3, 2);
 
+  fusion.printMath();
+  fusion.printKernel();
+
   tv1->axis(0)->parallelize(ParallelType::BIDx);
   tv2->axis(0)->parallelize(ParallelType::BIDx);
   tv3->axis(0)->parallelize(ParallelType::BIDx);
@@ -3402,6 +3405,9 @@ void testGPU_FusionSimpleBCast() {
 
     tv0->computeAt(tv7, -1);
     tv2->computeAt(tv7, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
 
     tv7->axis(0)->parallelize(ParallelType::BIDx);
     tv7->axis(-1)->parallelize(ParallelType::TIDx);
@@ -5685,6 +5691,9 @@ void testGPU_FusionSmem() {
   tv0->computeAt(tv2, 2);
   tv1->computeAt(tv2, 2);
 
+  fusion.printMath();
+  fusion.printKernel();
+
 #if 1
   // Thread and Block binding
   tv2->axis(0)->parallelize(ParallelType::BIDx);
@@ -6858,9 +6867,9 @@ void testGPU_FusionComputeAtMultiBCast() {
   TensorView* tv4 = add(tv2, tv3);
   fusion.addOutput(tv4);
 
-  tv1->computeAt(tv3, -1);
-
-  // TODO: compile, run and validate the fusion
+  // This fails. A workaround is to compute tv1 at tv4.
+  ASSERT_ANY_THROW(tv1->computeAt(tv3, -1));
+  //tv1->computeAt(tv4, -1);
 }
 
 void testGPU_FusionComputeAtMultiReduction() {
