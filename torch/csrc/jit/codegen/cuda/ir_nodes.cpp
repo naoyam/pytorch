@@ -1584,14 +1584,57 @@ void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
             << std::endl;
 }
 
-void ComputeDomain::reorder() {
-  TORCH_INTERNAL_ASSERT(!computed_at_,
-                        "Reordering computed-at tensor not supported: ",
-                        *this);
-  TORCH_INTERNAL_ASSERT(td_->nDims() == nDims());
-  std::copy(td_->domain().begin(), td_->domain().end(),
-            axes_.begin());
-  axes_rf_ = axes_;
+void ComputeDomain::reorder(const std::unordered_map<int, int>& old2new) {
+  const auto td_ndims = td()->nDims();
+  // Normalize the mapping
+  std::vector<std::pair<size_t, size_t>> old2new_normalized;
+  std::transform(old2new.begin(), old2new.end(),
+                 std::back_inserter(old2new_normalized),
+                 [&](const auto& kv) {
+                   size_t old_normalized = kv.first < 0 ? kv.first + td_ndims : kv.first;
+                   size_t new_normalized = kv.second < 0 ? kv.second + td_ndims : kv.second;
+                   return std::make_pair(old_normalized, new_normalized);
+                 });
+  //DEBUG("Reordering CD: ", old2new_normalized);
+  // Reordering CA domains is invalid.
+  if (computed_at_) {
+    // Locate the outer-most axis that is reordered
+    auto first_reordered_td_axis = td_ndims;
+    for (const auto& kv: old2new_normalized) {
+      const auto old_axis = kv.first;
+      const auto new_axis = kv.second;
+      if (old_axis == new_axis) {
+        continue;
+      } else {
+        first_reordered_td_axis = std::min(first_reordered_td_axis, old_axis);
+      }
+    }
+    // The first-reordered axis must be outside of the CA position
+    if (first_reordered_td_axis < td_ndims) {
+      auto first_reordered_cd_axis = getComputeDomainAxisIndex(first_reordered_td_axis);
+      TORCH_INTERNAL_ASSERT(first_reordered_cd_axis >= getComputeAtPos());
+    }
+  }
+
+  // Reorder axes and axes_rf
+  std::deque<IterDomain*> new_axes(axes_.size());
+  std::deque<IterDomain*> new_axes_rf(axes_rf_.size());
+  for (const auto& kv: old2new_normalized) {
+    const auto old_td_idx = kv.first;
+    const auto new_td_idx = kv.second;
+    const auto old_cd_idx = getComputeDomainAxisIndex(old_td_idx);
+    const auto new_cd_idx = getComputeDomainAxisIndex(new_td_idx);
+    new_axes[new_cd_idx] = axes_[old_cd_idx];
+    new_axes_rf[new_cd_idx] = axes_rf_[old_cd_idx];
+    // Update the TD mapping
+    td_map_.at(new_td_idx) = new_cd_idx;
+  }
+  std::swap(axes_, new_axes);
+  std::swap(axes_rf_, new_axes_rf);
+
+  sanityCheck();
+
+  invalidateExprList();
 }
 
 namespace {
@@ -1651,6 +1694,8 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   TORCH_INTERNAL_ASSERT(this_pos <= target_pos);
   TORCH_INTERNAL_ASSERT((size_t)this_pos <= td->nDims());
   TORCH_INTERNAL_ASSERT((size_t)target_pos <= target->nDims());
+
+  sanityCheck();
 
   auto old_axes = axes_;
 
@@ -1855,16 +1900,6 @@ void ComputeDomain::registerDependent(ComputeDomain* dependent, size_t pos) {
   dependents_.push_back({pos, dependent});
 }
 
-#if 0
-void ComputeDomain::cacheBefore(const TensorDomain* new_td) {
-  if (td_ == new_td) {
-    // nothing has changed
-    return;
-  }
-
-
-}
-#endif
 std::ostream& ComputeDomain::print(std::ostream& os) const {
   os << "compute_domain(";
   auto map_it = td_map_.begin();

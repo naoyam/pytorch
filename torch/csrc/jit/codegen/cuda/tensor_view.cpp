@@ -457,7 +457,7 @@ TensorView* TensorView::reorder(const std::unordered_map<int, int>& old2new_) {
       !(nDims() == 0 && old2new_.size() > 0),
       "Tried to reorder a 0-dim TensorView");
   domain()->reorder(old2new_);
-  getComputeDomain()->reorder();
+  getComputeDomain()->reorder(old2new_);
   return this;
 }
 

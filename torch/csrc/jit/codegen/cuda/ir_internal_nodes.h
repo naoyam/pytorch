@@ -625,7 +625,7 @@ class TORCH_CUDA_API ComputeDomain {
 
   void merge(const TensorDomain* new_td, int axis_o, int axis_i);
 
-  void reorder();
+  void reorder(const std::unordered_map<int, int>& old2new);
 
   size_t getComputeAtPos() const {
     return pos_;
@@ -701,9 +701,6 @@ class TORCH_CUDA_API ComputeDomain {
   IterDomain* getCorrespondingComputeDomainID(IterDomain* td_id) const;
   IterDomain* getCorrespondingTensorDomainID(IterDomain* cd_id) const;
 
-#if 0
-  void cacheBefore();
-#endif
  private:
   void setAxis(size_t cd_axis, IterDomain* id);
   void insertAxis(size_t cd_axis, IterDomain* cd_id, size_t td_axis);
