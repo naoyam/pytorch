@@ -607,7 +607,8 @@ class TORCH_CUDA_API ComputeDomain {
                  int target_pos,
                  const std::vector<size_t>& td2cd_map,
                  const std::unordered_map<IterDomain*, IterDomain*>& crossover_map,
-                 const IncompleteMergeType& incomplete_merge);
+                 const IncompleteMergeType& incomplete_merge,
+                 bool as_producer);
 
   std::unordered_set<IterDomain*> getRootDomain() const;
   std::unordered_set<IterDomain*> getRFactorDomain() const;

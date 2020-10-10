@@ -237,6 +237,28 @@ auto getRootCAIDs(const std::vector<IterDomain*>& domain,
   return root_ca_ids;
 }
 
+template <typename MapT>
+void printRootMap(const MapT& root_map) {
+  std::stringstream ss;
+  ss << "Root map:\n";
+  for (auto kv: root_map) {
+    ss << "\tCD: ";
+    if (kv.first == nullptr) {
+      ss << "null";
+    } else {
+      ss << kv.first;
+    }
+    ss << " -> TD: ";
+    if (kv.second == nullptr) {
+      ss << "null";
+    } else {
+      ss << kv.second;
+    }
+    ss << "\n";
+  }
+  std::cerr << ss.str();
+}
+
 } // namespace
 
 #define REPLAY_WITH_CD
@@ -278,6 +300,15 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   std::vector<IterDomain*> consumer_CA_ids(
       consumer_domain.begin(),
       consumer_domain.begin() + cd_pos);
+  {
+    const auto& consumer_domain_2 = consumer_cd->axes();
+    // consumer ids we need to match in producer
+    std::vector<IterDomain*> consumer_CA_ids_2(
+        consumer_domain_2.begin(),
+        consumer_domain_2.begin() + cd_pos);
+    std::cerr << "consumer axes: " << consumer_CA_ids_2 << std::endl;
+  }
+
 #else
   const auto& consumer_domain = consumer->domain();
   // consumer ids we need to match in producer
@@ -311,14 +342,9 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
       producer->getMaybeRFactorDomain();
   std::cerr << "Producer root: " << producer_root << std::endl;
 
-  // Map of consumer_CA_root_ids to related producer_CA_ids
-#if 0
-  auto replay_root_map =
-      consumer_cd->mapRootDomain(producer_root, consumer_CA_root_ids);
-#endif
-
 #ifdef REPLAY_WITH_CD
   auto root_map = consumer_cd->mapToProducer(producer);
+  printRootMap(root_map);
   auto replay_root_map_view = ir_utils::filterView(root_map,
                                                    [&consumer_CA_root_ids](const auto& kv) {
                                                      return consumer_CA_root_ids.find(kv.first) != consumer_CA_root_ids.end();
@@ -614,23 +640,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 
 #ifdef REPLAY_WITH_CD
   auto root_map = producer_cd->mapToConsumer(consumer);
-#if 1
-  for (auto kv: root_map) {
-    std::cerr << "root_map: CD: ";
-    if (kv.first == nullptr) {
-      std::cerr << "null";
-    } else {
-      std::cerr << kv.first;
-    }
-    std::cerr << " -> consumer: ";
-    if (kv.second == nullptr) {
-      std::cerr << "null";
-    } else {
-      std::cerr << kv.second;
-    }
-    std::cerr << std::endl;
-  }
-#endif
+  printRootMap(root_map);
   auto producer_cd_root = producer_cd->getCompleteRootDomain();
   // Figure out all inputs required to generate the compute_at dimensions. We
   // need all deps because inputs on producer may be in getRootDomain, but we
@@ -899,8 +909,8 @@ TransformReplay::replay(
     const TensorDomain* reference,
     const ComputeDomain* reference_cd,
     int pos,
-    bool is_producer) {
-  if (is_producer) {
+    bool producer_as_consumer) {
+  if (producer_as_consumer) {
     return TransformReplay::replayPasC(td, reference, reference_cd, pos);
   } else {
     return TransformReplay::replayCasP(td, reference, reference_cd, pos);
@@ -910,7 +920,7 @@ TransformReplay::replay(
 std::tuple<TensorView*, unsigned int, unsigned int>
 TransformReplay::replay(TensorView* tv,
                         TensorView* reference,
-                        int pos, bool is_producer) {
+                        int pos, bool producer_as_consumer) {
   std::cerr << "replay TV: " << tv << " -> " << reference
             << " at " << pos << std::endl;
 
@@ -930,7 +940,8 @@ TransformReplay::replay(TensorView* tv,
   const auto td_pos = reference_cd->getTensorDomainPos(cd_pos);
 #endif
 
-  auto replay = TransformReplay::replay(tv->domain(), reference->domain(), reference_cd, pos, is_producer);
+  auto replay = TransformReplay::replay(tv->domain(), reference->domain(),
+                                        reference_cd, pos, producer_as_consumer);
   tv->setDomain(std::get<0>(replay));
   const ReplayInfoForComputeDomain& replay_info = std::get<2>(replay);
   const size_t td_this_pos = std::get<1>(replay);
@@ -940,7 +951,8 @@ TransformReplay::replay(TensorView* tv,
                                     reference_cd, cd_pos,
                                     replay_info.td2cd_map_,
                                     replay_info.crossover_map_,
-                                    replay_info.incomplete_merge_);
+                                    replay_info.incomplete_merge_,
+                                    producer_as_consumer);
   tv->getComputeDomain()->registerAsDependent(reference_cd);
   std::cerr << "new CD: " << *tv->getComputeDomain() << std::endl;
   for (auto m: tv->getComputeDomain()->crossoverMap()) {

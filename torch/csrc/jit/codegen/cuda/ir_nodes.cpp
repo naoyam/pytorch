@@ -1597,6 +1597,7 @@ void ComputeDomain::reorder() {
 namespace {
 size_t findFirstChangedAxisIndex(const std::deque<IterDomain*>& old_axes,
                                  const std::deque<IterDomain*>& new_axes) {
+#if 0
   std::stringstream old_ss;
   for (auto id: old_axes) {
     old_ss << id << " ";
@@ -1607,12 +1608,13 @@ size_t findFirstChangedAxisIndex(const std::deque<IterDomain*>& old_axes,
   }
   DEBUG("Finding first_changed_axis: ",
         old_ss.str(), ", ", new_ss.str());
+#endif
   for (size_t i = 0; i < std::min(old_axes.size(), new_axes.size()); ++i) {
     if (old_axes[i] != new_axes[i]) {
-      DEBUG("Differing axes: ", old_axes[i], ", ", new_axes[i]);
+      //DEBUG("Differing axes: ", old_axes[i], ", ", new_axes[i]);
       return i;
     } else {
-      DEBUG("same axis at ", i);
+      //DEBUG("same axis at ", i);
     }
   }
   return std::min(old_axes.size(), new_axes.size());
@@ -1624,6 +1626,9 @@ void joinMap(MapT& dest, const MapT& src) {
     dest[kv.first] = kv.second;
   }
 }
+
+
+
 } // namespace
 
 // Transform this compute domain so that it is computed under the
@@ -1635,10 +1640,12 @@ void ComputeDomain::computeAt(const TensorDomain* td,
                               int target_pos,
                               const std::vector<size_t>& td2cd_map,
                               const std::unordered_map<IterDomain*, IterDomain*>& crossover_map,
-                              const IncompleteMergeType& incomplete_merge) {
+                              const IncompleteMergeType& incomplete_merge,
+                              bool as_producer) {
   std::cerr << "computeAt: " << *target
             << " at " << target_pos
-            << ", td: " << td << " at " << this_pos << std::endl;
+            << ", td: " << td << " at " << this_pos << " as "
+            << (as_producer ? "producer" : "consumer") << std::endl;
   target_pos = normalizeComputeAtPos(target_pos, target->nDims());
   this_pos = normalizeComputeAtPos(this_pos, td->nDims());
   TORCH_INTERNAL_ASSERT(this_pos <= target_pos);
@@ -1667,9 +1674,6 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   std::copy(target->axes().begin(),
             target->axes().begin() + num_shared_axes,
             std::back_inserter(axes_));
-  std::copy(target->axesForRFactor().begin(),
-            target->axesForRFactor().begin() + num_shared_axes,
-            std::back_inserter(axes_rf_));
 
   pos_ = num_shared_axes;
 
@@ -1677,35 +1681,57 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   std::copy(td_->domain().begin() + this_pos,
             td_->domain().end(),
             std::back_inserter(axes_));
-  std::copy(td_->domain().begin() + this_pos,
-            td_->domain().end(),
-            std::back_inserter(axes_rf_));
+
+  const auto first_changed_axis = findFirstChangedAxisIndex(old_axes, axes_);
 
   std::iota(td_map_.begin() + this_pos, td_map_.end(),
             num_shared_axes);
 
-  if (td_->hasRFactor()) {
-    // Replace the rfactor ID with its own ID since the rfactor ID
-    // doesn't hold the expression history, which is necessary for
-    // indexing.
-    for (int i = 0; i < this_pos; ++i) {
-      auto cd_idx = td_map_[i];
-      axes_rf_.at(cd_idx) = td_->axis(i);
+  // If this is an consumer and the target is an rfactor tensor, don't
+  // propagate the RF axes.
+  if (!as_producer && target->td()->hasRFactor()) {
+    std::copy(td_->domain().begin(), td_->domain().end(),
+              std::back_inserter(axes_rf_));
+  } else {
+    std::copy(target->axesForRFactor().begin(),
+              target->axesForRFactor().begin() + num_shared_axes,
+              std::back_inserter(axes_rf_));
+
+    std::copy(td_->domain().begin() + this_pos,
+              td_->domain().end(),
+              std::back_inserter(axes_rf_));
+    if (as_producer && td_->hasRFactor()) {
+      // Replace the rfactor ID with its own ID since the rfactor ID
+      // doesn't hold the expression history, which is necessary for
+      // indexing.
+      for (int i = 0; i < this_pos; ++i) {
+        auto cd_idx = td_map_[i];
+        axes_rf_.at(cd_idx) = td_->axis(i);
+      }
     }
   }
 
-  if (td_->hasRFactor()) {
+  sanityCheck();
+
+  if (as_producer && td_->hasRFactor()) {
+    // When this is an rfactor tensor computed at the consumer,
+    // axes_rf should have the complete history. Replacing them with
+    // the consumer IDs with the target tensor IDs would fail to
+    // traverse back to the true root IDs since they lack the history.
     crossover_map_.clear();
+  } else if (!as_producer && target->td()->hasRFactor()) {
+    // Similarly, don't propagate the crossover map from the rfactor
+    // tensor, so do nothing here.
   } else {
-    crossover_map_ = crossover_map;
+    joinMap(crossover_map_, crossover_map);
     joinMap(crossover_map_, target->crossoverMap());
   }
+
   incomplete_merge_ = incomplete_merge;
 #ifdef INCOMPLETE_MERGE_EXPR
   joinMap(incomplete_merge_, target->incompleteMerge());
 #endif
 
-  auto first_changed_axis = findFirstChangedAxisIndex(old_axes, axes_);
   updateDependents(first_changed_axis);
 
   fixupPosition();
@@ -1858,6 +1884,10 @@ std::ostream& ComputeDomain::print(std::ostream& os) const {
     }
   }
   //os << ", " << td_map_;
+  os << ", RF: ";
+  for (size_t i = 0; i < axesForRFactor().size(); ++i) {
+    os << " " << axisForRFactor(i);
+  }
   os << " )";
   return os;
 }

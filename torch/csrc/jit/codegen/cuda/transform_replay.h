@@ -182,13 +182,13 @@ class TORCH_CUDA_API TransformReplay {
     const TensorDomain* reference,
     const ComputeDomain* reference_cd,
     int pos,
-    bool is_producer);
+    bool producer_as_consumer);
 
   static std::tuple<TensorView*, unsigned int, unsigned int> replay(
       TensorView* tv,
       TensorView* reference,
       int pos,
-      bool is_producer);
+      bool producer_as_consumer);
 };
 
 } // namespace fuser
