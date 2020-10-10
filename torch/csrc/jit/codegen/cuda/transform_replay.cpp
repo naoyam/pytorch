@@ -516,7 +516,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 #endif
 
   // Add axes in (3)
-#ifdef REPLAY_WITH_CD
   for (auto id : producer->domain()) {
     if (producer_replayed_leaves.getUnorderedLeafIDs().find(id) !=
         producer_replayed_leaves.getUnorderedLeafIDs().end()) {
@@ -527,18 +526,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
       }
     }
   }
-#else
-  for (auto id : producer->domain()) {
-    if (producer_replayed_leaves.getUnorderedLeafIDs().find(id) !=
-        producer_replayed_leaves.getUnorderedLeafIDs().end()) {
-      if (used_IDs.find(id) == used_IDs.end()) {
-        std::cerr << "(3): " << id << std::endl;
-        new_IDs.push_back(id);
-        used_IDs.emplace(id);
-      }
-    }
-  }
-#endif
 
   // Add axes in (4)
   for (auto id : producer_replayed_leaves.getLeafIDs())
