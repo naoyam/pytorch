@@ -417,7 +417,6 @@ void findTargetTensor(Expr* expr, TensorView*& target, unsigned& score) {
   while (target->hasComputeAt()) {
     if (target->getThisComputeAtAxis() < axis)
       break;
-    TORCH_INTERNAL_ASSERT(target->getThisComputeAtAxis() == axis);
     axis = target->getComputeAtRelPos(axis);
     target = target->getComputeAtView();
   }
