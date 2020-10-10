@@ -551,6 +551,7 @@ TensorView* TensorView::cache_before() {
     }
     consumer->setDomain(new TensorDomain(
         new_root_domain, std::vector<bool>(new_root_domain.size(), true)));
+    setDefaultComputeDomain();
   }
 
   // Insert producer - Cache_Before (CB) - before this TV.
