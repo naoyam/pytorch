@@ -368,7 +368,6 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
 
   DEBUG("ComputeAt: ", const_cast<const TensorView*>(this), " -> ",
         const_cast<const TensorView*>(consumer), " at ", axis);
-  //fusion()->printMath();
 
   // We support negative axes, so increment it by consumer->nDims() + 1 and make
   // sure the result is within consumer->nDims() + 1. being at consumer->nDims()
@@ -653,7 +652,7 @@ TensorView* TensorView::cache_after() {
     auto this_ca_pos = getThisComputeAtAxis();
     auto this_ca_view = getComputeAtView();
 
-    computeAt(consumer, this_ca_pos);
+    setComputeAt(consumer, this_ca_pos);
     consumer->setComputeAt(this_ca_view, rel_ca_pos);
   } else {
     // Check users of this TV for computeAt for cache_after on inputs

@@ -2190,6 +2190,36 @@ class ComputeDomainVisitor {
 #endif
 };
 
+class GetAllDependentIterDomains : public IterVisitor {
+ public:
+  void handle(IterDomain* id) override {
+    ids_.emplace(id);
+  }
+
+  void traverse(const std::vector<Val*>& from) {
+    if (from.empty()) {
+      return;
+    }
+    traverseFrom(from[0]->fusion(), from, false);
+  }
+
+  template <typename Iterator>
+  static std::unordered_set<IterDomain*> get(
+      Iterator first, Iterator last) {
+    if (first == last) {
+      return std::unordered_set<IterDomain*>();
+    }
+
+    GetAllDependentIterDomains all_ids;
+    std::vector<Val*> vals(first, last);
+    all_ids.traverse(vals);
+    return all_ids.ids_;
+  }
+
+ private:
+    std::unordered_set<IterDomain*> ids_;
+};
+
 } // namespace
 
 IterDomain* ComputeDomain::getCorrespondingTensorDomainID(IterDomain* cd_id) const {
@@ -2316,9 +2346,10 @@ std::unordered_set<IterDomain*> ComputeDomain::getMaybeRFactorDomain() const {
 }
 
 std::unordered_set<IterDomain*> ComputeDomain::getCompleteRootDomain() const {
-  buildExprListToRoot();
   std::unordered_set<IterDomain*> set;
   std::stringstream ss;
+#if 0
+  buildExprListToRoot();
   for (const auto& kv : getCD2TDMap()) {
     auto cd_axis = kv.first;
     if (cd_axis->getOrigin() == nullptr) {
@@ -2326,6 +2357,15 @@ std::unordered_set<IterDomain*> ComputeDomain::getCompleteRootDomain() const {
       ss << cd_axis << " ";
     }
   }
+#else
+  auto all_ids = GetAllDependentIterDomains::get(axes_rf_.begin(), axes_rf_.end());
+  for (const auto id: all_ids) {
+    if (id->getOrigin() == nullptr) {
+      set.insert(id);
+      ss << id << " ";
+    }
+  }
+#endif
   DEBUG("Complete root domain: ", ss.str());
   return set;
 }

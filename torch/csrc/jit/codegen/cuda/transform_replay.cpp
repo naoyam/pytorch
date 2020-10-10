@@ -706,7 +706,9 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
 #ifdef COMPUTE_AT_USE_TD_POS
   producer_compute_at_axis = normalizeComputeAtPos(producer_compute_at_axis, producer->nDims());
   auto td_pos = producer_compute_at_axis;
-  auto cd_pos = producer_cd->getComputeDomainPos(td_pos);
+  //auto cd_pos = producer_cd->getComputeDomainPos(td_pos);
+  auto cd_pos = std::max(producer_cd->getComputeAtPos(),
+                         producer_cd->getComputeDomainPos(td_pos));
 #else
   producer_compute_at_axis = normalizeComputeAtPos(producer_compute_at_axis, producer_cd->nDims());
   auto cd_pos = producer_compute_at_axis;
@@ -788,7 +790,14 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     std::cerr << std::endl;
   }
 #endif
-  auto all_ca_ids = producer_cd->getInputsTo(producer_CA_ids);
+  auto producer_cd_root = producer_cd->getCompleteRootDomain();
+  // Figure out all inputs required to generate the compute_at dimensions. We
+  // need all deps because inputs on producer may be in getRootDomain, but we
+  // may need in rFactorDomain
+  std::unordered_set<Val*> all_ca_ids = DependencyCheck::getAllValsBetween(
+      {producer_cd_root.begin(), producer_cd_root.end()},
+      {producer_CA_ids.begin(), producer_CA_ids.end()});
+  //auto all_ca_ids = producer_cd->getInputsTo(producer_CA_ids);
 #if 1
   for (auto id: all_ca_ids) {
     std::cerr << "All ca ID: " << id << std::endl;
@@ -797,7 +806,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   // Figure out which root IDs we need:
   std::unordered_set<IterDomain*> producer_CA_root_ids;
   for (const auto& kv : root_map) {
-    if (all_ca_ids.find(kv.first) != all_ca_ids.end()) {
+    if (all_ca_ids.find(kv.first->as<Val>()) != all_ca_ids.end()) {
       producer_CA_root_ids.emplace(kv.first);
     }
   }
@@ -1086,7 +1095,7 @@ TransformReplay::replay(TensorView* tv,
 #ifdef COMPUTE_AT_USE_TD_POS
   pos = normalizeComputeAtPos(pos, reference->nDims());
   const auto td_pos = pos;
-  const auto cd_pos = reference_cd->getComputeDomainPos(td_pos);
+  auto cd_pos = reference_cd->getComputeDomainPos(td_pos);
 #else
   pos = normalizeComputeAtPos(pos, reference_cd->nDims());
   const auto cd_pos = compute_at_axis;
@@ -1096,8 +1105,10 @@ TransformReplay::replay(TensorView* tv,
   auto replay = TransformReplay::replay(tv->domain(), reference->domain(), reference_cd, pos, is_producer);
   tv->setDomain(std::get<0>(replay));
   const ReplayInfoForComputeDomain& replay_info = std::get<2>(replay);
-  tv->getComputeDomain()->computeAt(tv->domain(),
-                                    std::get<1>(replay),
+  const size_t td_this_pos = std::get<1>(replay);
+  // TODO (CD): TD and CD positions should be tracked separately
+  cd_pos = std::max(td_this_pos, cd_pos);
+  tv->getComputeDomain()->computeAt(tv->domain(), td_this_pos,
                                     reference_cd, cd_pos,
                                     replay_info.td2cd_map_,
                                     replay_info.crossover_map_,

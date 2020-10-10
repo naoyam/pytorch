@@ -1344,6 +1344,25 @@ IterDomain* getInputToSplit(IterDomain* split_id1, IterDomain* split_id2) {
   return split->in();
 }
 
+Val* getLoopIndex(const ComputeDomain* cd, size_t axis_idx,
+                  const std::vector<kir::ForLoop*>& loops) {
+  size_t num_unrealized_axes = 0;
+  for (auto i = cd->getComputeDomainAxisIndex(0); i < axis_idx; ++i) {
+    if (!cd->isComputeDomainAxisUsed(i)) {
+      ++num_unrealized_axes;
+    }
+  }
+  TORCH_INTERNAL_ASSERT(axis_idx >= num_unrealized_axes);
+  auto loop_idx = axis_idx - num_unrealized_axes;
+  TORCH_INTERNAL_ASSERT(loop_idx >= 0);
+  TORCH_INTERNAL_ASSERT(loop_idx < loops.size(),
+                        "loop_idx: ", loop_idx,
+                        ", loops.size(): ", loops.size(),
+                        ", CD: ", *cd,
+                        ", axis_idx: ", axis_idx);
+  return loops.at(loop_idx)->index();
+}
+
 } // namespace
 
 #define REPLAY_WITH_CD
@@ -1389,12 +1408,11 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
 #endif
     Val* extent = kir::lowerValue(cd_dom->extent());
     bool is_ca = i < producer_tv->getRelativeComputeAtAxis() && !global;
+    Val* loop_idx = getLoopIndex(consumer_cd, cd_axis_idx, loops);
     std::shared_ptr<IdxGraphNode> ign;
     if (is_ca) {
       ign = std::make_shared<IdxGraphNode>(new kir::Int(0));
     } else {
-      TORCH_INTERNAL_ASSERT(cd_axis_idx < loops.size());
-      Val* loop_idx = loops.at(cd_axis_idx)->index();
       ign = std::make_shared<IdxGraphNode>(loop_idx);
     }
     std::cerr << "Initial entry: " << dom << ", cd axis: " << cd_dom << *ign
@@ -1946,27 +1964,13 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
 
   const ComputeDomain* cd = consumer_tv->getComputeDomain();
 
-  if (cd->nDims() != loops.size()) {
-    // TODO (CD): Is this an error?
-    // It happens when initializing reduction buffers. In that case,
-    // the number of loops should be equal to the number of
-    // non-reduction axes.
-    if (loops.size() == consumer_tv->domain()->noReductions().size()) {
-      return getConsumerIndexForReductionInit(consumer_tv, loops);
-    }
-    std::stringstream ss;
-    int i = 0;
-    for (auto loop : loops) {
-      ss << "loop[" << i++ << "]: " << loop->index() << ", "
-         << loop->iter_domain() << "\n";
-    }
-    std::cerr << ss.str();
-    TORCH_INTERNAL_ASSERT(
-        false,
-        "Invalid number of loops: ",
-        loops.size(),
-        ", whereas the ComputeDomain for the consumer TV is",
-        *cd);
+  // TODO (CD): More robust way to detect reduction init?
+  // It happens when initializing reduction buffers. In that case,
+  // the number of loops should be equal to the number of
+  // non-reduction axes.
+  if (cd->nDims() != loops.size() &&
+      loops.size() == consumer_tv->domain()->noReductions().size()) {
+    return getConsumerIndexForReductionInit(consumer_tv, loops);
   }
 
   // TODO (CD): TV compute-at position vs CD position
@@ -1981,7 +1985,6 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
   // size_t loop_idx = left_most_own_axis;
   for (size_t i = left_most_own_axis; i < cd->nDims(); ++i) {
     IterDomain* axis = cd->axis(i);
-    std::cerr << "CD axis at " << i << ": " << axis << std::endl;
     // Parallelized domain doesn't need offsetting
     if (axis->isBlockDim() || (axis->isThreadDim() && !is_smem))
       continue;
@@ -1991,22 +1994,10 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
     // Reduction domain doesn't contribute to offsetting
     if (axis->isReduction())
       continue;
-    kir::IterDomain* kir_axis = kir::lowerValue(axis)->as<kir::IterDomain>();
-    // loop_idx = i;
-    // TORCH_INTERNAL_ASSERT(loop_idx < loops.size());
-    TORCH_INTERNAL_ASSERT(i < loops.size());
-    kir::ForLoop* loop = loops.at(i);
-    Val* idx = loop->index();
-
-    std::cerr << "axis: " << axis << ", kir axis: " << kir_axis
-              << ", idx: " << idx << std::endl;
-
-    // Val* stride = nullptr;
+    Val* idx = getLoopIndex(cd, i, loops);
     Val* stride = new kir::Int(1);
     for (size_t j = i + 1; j < cd->nDims(); ++j) {
-      std::cerr << "j: " << j << std::endl;
       IterDomain* axis_j = cd->axis(j);
-      std::cerr << "axis_j: " << axis_j << std::endl;
       if (axis_j->isBlockDim() || (axis_j->isThreadDim() && !is_smem))
         continue;
       if (axis_j->isBroadcast())
@@ -2019,8 +2010,6 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
 
     strided_inds.push_back(mulx(idx, stride));
   }
-
-  std::cerr << "strided inds: " << strided_inds << std::endl;
 
   auto ti = new kir::TensorIndex(consumer_tv, strided_inds);
   DEBUG("Generated TI: ", ti);

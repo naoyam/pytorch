@@ -675,24 +675,57 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     std::cerr << "alloc point outside loops" << std::endl;
     return {nullptr, 0};
   }
-
+#if 0
   // TODO (CD): Note that CD compute-at position can be different from
   // TV compute-at position for now
   size_t loop_idx = cd->getComputeDomainAxisIndex(tv->getThisComputeAtAxis() - 1);
-  while (!cd->isComputeDomainAxisUsed(loop_idx)) {
-    TORCH_INTERNAL_ASSERT(loop_idx > 0);
-    --loop_idx;
-  }
+  DEBUG("tv->getThisComputeAtAxis(): ", tv->getThisComputeAtAxis(),
+        ", loop_idx: ", loop_idx);
   // If an axis is reduction, allocate outside the axis
   auto tv_axis_idx = cd->getTensorDomainAxisIndex(loop_idx);
+  DEBUG(tv_axis_idx);
   while (tv->axis(tv_axis_idx)->isReduction()) {
     if (tv_axis_idx == 0) {
       std::cerr << "All dims are reductions\n";
       return {nullptr, 0};
     }
+    std::cerr << "TD axis at " << tv_axis_idx << " is reduction\n";
     --tv_axis_idx;
     --loop_idx;
   }
+#if 0
+  while (!cd->isComputeDomainAxisUsed(loop_idx)) {
+    TORCH_INTERNAL_ASSERT(loop_idx > 0);
+    --loop_idx;
+  }
+#else
+  loop_idx = tv_axis_idx;
+#endif
+#else
+  // The first axis is always located at the offset of the compute
+  // domain axis, which means there can be unused axes outside of the
+  // first axis.
+  auto first_axis_loop = cd->getComputeDomainAxisIndex(0);
+  // Unused axes within the TensorDomain are not materialized, so the
+  // offset from first_axis_loop should be just the offset within
+  // TensorDomain.
+  auto tv_axis_idx = tv->getThisComputeAtAxis() - 1;
+  auto loop_idx = first_axis_loop + tv_axis_idx;
+  // Shift outward if reduction
+  while (tv->axis(tv_axis_idx)->isReduction()) {
+    std::cerr << "TD axis at " << tv_axis_idx << " is reduction\n";
+    if (tv_axis_idx == 0) {
+      std::cerr << "All dims are reductions\n";
+      if (loop_idx == 0) {
+        return {nullptr, 0};
+      }
+      break;
+    }
+    --tv_axis_idx;
+    --loop_idx;
+  }
+#endif
+  DEBUG(loop_idx);
   TORCH_INTERNAL_ASSERT(loop_idx < loops.size(), "num loops: ", loops.size(),
                         ", position: ", loop_idx);
 
