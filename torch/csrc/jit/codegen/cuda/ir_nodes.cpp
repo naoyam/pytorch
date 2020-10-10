@@ -1584,17 +1584,53 @@ void ComputeDomain::merge(const TensorDomain* new_td, int axis_o, int axis_i) {
             << std::endl;
 }
 
+namespace {
+std::vector<std::pair<size_t, size_t>> normalizeReorderMap(const TensorDomain* td,
+                                                           const std::unordered_map<int, int>& old2new) {
+  const auto td_ndims = td->nDims();
+  std::vector<std::pair<size_t, size_t>> old2new_normalized;
+  std::set<size_t> old_unused;
+  std::set<size_t> new_unused;
+  for (size_t i = 0; i < td_ndims; ++i) {
+    old_unused.insert(i);
+    new_unused.insert(i);
+  }
+  for (const auto& kv: old2new) {
+    size_t old_normalized = kv.first < 0 ? kv.first + td_ndims : kv.first;
+    size_t new_normalized = kv.second < 0 ? kv.second + td_ndims : kv.second;
+    old2new_normalized.push_back(std::make_pair(old_normalized, new_normalized));
+    old_unused.erase(old_normalized);
+    new_unused.erase(new_normalized);
+  }
+
+  // Fill in missing mapping
+  for (auto i: old_unused) {
+    auto new_it = new_unused.begin();
+    old2new_normalized.push_back(std::make_pair(i, *new_it));
+    new_unused.erase(new_it);
+  }
+
+  // sanity check
+  TORCH_INTERNAL_ASSERT(old2new_normalized.size() == td_ndims);
+
+  // Not necessary, but just to make it easier to read
+  std::sort(old2new_normalized.begin(), old2new_normalized.end(),
+            [](const auto& x, const auto& y) {
+              return x.first < y.first;
+            });
+
+  for (size_t i = 0; i < td_ndims; ++i) {
+    TORCH_INTERNAL_ASSERT(old2new_normalized[i].first == i);
+  }
+
+  return old2new_normalized;
+}
+
+} // namespace
+
 void ComputeDomain::reorder(const std::unordered_map<int, int>& old2new) {
   const auto td_ndims = td()->nDims();
-  // Normalize the mapping
-  std::vector<std::pair<size_t, size_t>> old2new_normalized;
-  std::transform(old2new.begin(), old2new.end(),
-                 std::back_inserter(old2new_normalized),
-                 [&](const auto& kv) {
-                   size_t old_normalized = kv.first < 0 ? kv.first + td_ndims : kv.first;
-                   size_t new_normalized = kv.second < 0 ? kv.second + td_ndims : kv.second;
-                   return std::make_pair(old_normalized, new_normalized);
-                 });
+  auto old2new_normalized = normalizeReorderMap(td(), old2new);
   //DEBUG("Reordering CD: ", old2new_normalized);
   // Reordering CA domains is invalid.
   if (computed_at_) {
