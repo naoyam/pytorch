@@ -5810,11 +5810,19 @@ void testGPU_FusionSmemBlockGemm() {
   tv6->setMemoryType(MemoryType::Shared);
 
   tv0->computeAt(tv5, 3);
+
+  fusion.printMath();
+  fusion.printKernel();
+
   tv1->computeAt(tv5, 3);
+
+  fusion.printMath();
+  fusion.printKernel();
 
   // Thread and Block binding
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
+
   tv5->axis(-2)->parallelize(ParallelType::TIDy);
   tv5->axis(-1)->parallelize(ParallelType::TIDx);
   // Manual Binding
@@ -5823,6 +5831,9 @@ void testGPU_FusionSmemBlockGemm() {
   tv4->axis(-1)->parallelize(ParallelType::TIDx);
   tv6->axis(-3)->parallelize(ParallelType::TIDy);
   tv6->axis(-2)->parallelize(ParallelType::TIDx);
+
+  fusion.printMath();
+  fusion.printKernel();
 
   constexpr int M = 154, K = 45, N = 1524;
 
@@ -5871,8 +5882,18 @@ void testGPU_FusionSmemBlockGemmCache() {
   tv5->reorder({{0, 0}, {1, 2}, {2, 1}, {3, 3}});
   // tv5 = M/BSX, N/BSX, MSX, NSX
 
+  fusion.printMath();
+  fusion.printKernel();
+
   tv6->computeAt(tv5, 2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
   tv6->computeAt(tv5, 2);
+
+  fusion.printMath();
+  fusion.printKernel();
 
   tv6->split(-1, BSX);
   // M/BSX, BSX, K/BSX, BSX, N/BSX, BSX
@@ -5888,13 +5909,11 @@ void testGPU_FusionSmemBlockGemmCache() {
   tv0->computeAt(tv7, 3);
   tv1->computeAt(tv7, 3);
 
-#if 0
   tv2->setMemoryType(MemoryType::Shared);
   tv3->setMemoryType(MemoryType::Shared);
   tv4->setMemoryType(MemoryType::Shared);
   tv6->setMemoryType(MemoryType::Shared);
   tv7->setMemoryType(MemoryType::Shared);
-#endif
   // Memory Type
 
   fusion.printMath();
@@ -5903,8 +5922,6 @@ void testGPU_FusionSmemBlockGemmCache() {
   // Thread and Block binding
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
-
-#if 0
   tv5->axis(-2)->parallelize(ParallelType::TIDy);
   tv5->axis(-1)->parallelize(ParallelType::TIDx);
   // Manual Binding
@@ -5917,7 +5934,6 @@ void testGPU_FusionSmemBlockGemmCache() {
 
   tv6->axis(-2)->parallelize(ParallelType::TIDy);
   tv6->axis(-1)->parallelize(ParallelType::TIDx);
-#endif
 
   constexpr int M = 154, K = 45, N = 1524;
 
