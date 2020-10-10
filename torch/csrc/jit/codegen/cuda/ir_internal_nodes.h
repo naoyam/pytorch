@@ -383,8 +383,7 @@ class TORCH_CUDA_API TensorDomain : public Val {
       std::vector<IterDomain*> _root_domain,
       std::vector<IterDomain*> _rfactor_domain,
       std::vector<IterDomain*> _domain,
-      std::vector<bool> _contiguity = std::vector<bool>(),
-      std::vector<bool> _placeholder = std::vector<bool>());
+      std::vector<bool> _contiguity = std::vector<bool>());
 
   TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
 
@@ -410,16 +409,6 @@ class TORCH_CUDA_API TensorDomain : public Val {
   const std::vector<bool>& contiguity() const {
     return contiguity_;
   }
-
-  const std::vector<bool>& placeholder() const {
-    return placeholder_;
-  }
-
-  const std::unordered_map<const IterDomain*, bool>& placeholder_map() const {
-    return placeholder_map_;
-  }
-
-  ir_utils::FilterView<std::vector<IterDomain*>::const_iterator> noPlaceholder() const;
 
   std::string getContiguityString() const {
     std::stringstream ss;
@@ -551,17 +540,12 @@ class TORCH_CUDA_API TensorDomain : public Val {
   std::pair<TensorDomain*, TensorDomain*> rFactor(const std::vector<int>& axes);
 
  private:
-  void updatePlaceholderMap();
-
- private:
   const std::vector<IterDomain*> root_domain_;
   std::vector<IterDomain*> domain_;
   std::vector<IterDomain*> no_bcast_domain_;
   std::vector<IterDomain*> no_reduction_domain_;
   const std::vector<IterDomain*> rfactor_domain_;
   const std::vector<bool> contiguity_;
-  const std::vector<bool> placeholder_;
-  std::unordered_map<const IterDomain*, bool> placeholder_map_;
 };
 
 class Merge;

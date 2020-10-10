@@ -468,24 +468,16 @@ TensorDomain::TensorDomain(
       root_domain_(std::move(_domain)),
       contiguity_(
           _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
-          : std::move(_contiguity)),
-      placeholder_(root_domain_.size(), false) {
+          : std::move(_contiguity)) {
   TORCH_CHECK(
       contiguity_.size() == root_domain_.size(),
       "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
       contiguity_.size(),
       " but needed one of size ",
       root_domain_.size());
-  TORCH_CHECK(
-      placeholder_.size() == root_domain_.size(),
-      "Invalid placeholder information provided, incorrect size. Recieved vector of size ",
-      placeholder_.size(),
-      " but needed one of size ",
-      root_domain_.size());
 
   domain_ = root_domain_;
   resetDomains();
-  updatePlaceholderMap();
 }
 
 TensorDomain::TensorDomain(
@@ -497,18 +489,11 @@ TensorDomain::TensorDomain(
       domain_(std::move(_domain)),
       contiguity_(
           _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
-          : std::move(_contiguity)),
-      placeholder_(root_domain_.size(), false) {
+          : std::move(_contiguity)) {
   TORCH_CHECK(
       contiguity_.size() == root_domain_.size(),
       "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
       contiguity_.size(),
-      " but needed one of size ",
-      root_domain_.size());
-  TORCH_CHECK(
-      placeholder_.size() == root_domain_.size(),
-      "Invalid placeholder information provided, incorrect size. Recieved vector of size ",
-      placeholder_.size(),
       " but needed one of size ",
       root_domain_.size());
 
@@ -530,35 +515,24 @@ TensorDomain::TensorDomain(
   resetDomains();
 
   name_ = fusion_->registerVal(this);
-  updatePlaceholderMap();
 }
 
 TensorDomain::TensorDomain(
     std::vector<IterDomain*> _root_domain,
     std::vector<IterDomain*> _rfactor_domain,
     std::vector<IterDomain*> _domain,
-    std::vector<bool> _contiguity,
-    std::vector<bool> _placeholder)
+    std::vector<bool> _contiguity)
     : Val(ValType::TensorDomain, DataType::Null, false),
       root_domain_(std::move(_root_domain)),
       domain_(std::move(_domain)),
       rfactor_domain_(std::move(_rfactor_domain)),
       contiguity_(
           _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
-          : std::move(_contiguity)),
-      placeholder_(
-          _placeholder.empty() ? std::vector<bool>(root_domain_.size(), false)
-          : std::move(_placeholder)) {
+          : std::move(_contiguity)) {
   TORCH_CHECK(
       contiguity_.size() == root_domain_.size(),
       "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
       contiguity_.size(),
-      " but needed one of size ",
-      root_domain_.size());
-  TORCH_CHECK(
-      placeholder_.size() == root_domain_.size(),
-      "Invalid placeholder information provided, incorrect size. Recieved vector of size ",
-      placeholder_.size(),
       " but needed one of size ",
       root_domain_.size());
 
@@ -589,7 +563,6 @@ TensorDomain::TensorDomain(
 
   resetDomains();
   name_ = fusion_->registerVal(this);
-  updatePlaceholderMap();
 }
 
 TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
@@ -599,9 +572,7 @@ TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
       no_bcast_domain_(ir_cloner->clone(src->no_bcast_domain_)),
       no_reduction_domain_(ir_cloner->clone(src->no_reduction_domain_)),
       rfactor_domain_(ir_cloner->clone(src->rfactor_domain_)),
-      contiguity_(src->contiguity()),
-      placeholder_(src->placeholder()) {
-  updatePlaceholderMap();
+      contiguity_(src->contiguity()) {
 }
 
 bool TensorDomain::operator==(const TensorDomain& other) const {
@@ -1050,24 +1021,6 @@ std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(
       TransformRFactor::runReplay2(this, axes)};
 }
 
-ir_utils::FilterView<std::vector<IterDomain*>::const_iterator> TensorDomain::noPlaceholder() const {
-  const auto& root = getRootDomain();
-  auto view = ir_utils::filterView(root, [this](const IterDomain* id) {
-    const auto& placeholder_map = this->placeholder_map();
-    TORCH_INTERNAL_ASSERT(placeholder_map.find(id) != placeholder_map.end());
-    return !placeholder_map.at(id);
-  });
-  return view;
-}
-
-void TensorDomain::updatePlaceholderMap() {
-  TORCH_INTERNAL_ASSERT(root_domain_.size() == placeholder_.size());
-  placeholder_map_.clear();
-  for (size_t i = 0; i < root_domain_.size(); ++i) {
-    placeholder_map_.insert({root_domain_.at(i), placeholder_.at(i)});
-  }
-}
-
 namespace {
 class BroadcastMapping: public BackwardVisitor {
  public:
@@ -1103,29 +1056,27 @@ class BroadcastMapping: public BackwardVisitor {
       if (input->getValType().value() != ValType::TensorView) continue;
       const TensorView* input_tv = input->as<TensorView>();
       const TensorView* output_tv = bop->output(0)->as<TensorView>();
-      auto input_view = input_tv->domain()->noPlaceholder();
-      auto output_view = output_tv->domain()->noPlaceholder();
+      const auto& input_view = input_tv->getRootDomain();
+      const auto& output_view = output_tv->getRootDomain();
       auto input_it = input_view.begin();
       auto output_it = output_view.begin();
       while (input_it != input_view.end() && output_it != output_view.end()) {
         IterDomain* concrete_id = nullptr;
         IterDomain* bcast_id = nullptr;
-        if (input_it->isReduction()) {
+        if ((*input_it)->isReduction()) {
           ++input_it;
           continue;
         }
-        if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+        if (!(*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
           TORCH_INTERNAL_ASSERT(false, "Unexpected expression: ", bop,
                                 ", input root: ", input_tv->getRootDomain(),
-                                ", input placeholder: ", input_tv->domain()->placeholder(),
-                                ", output root: ", output_tv->getRootDomain(),
-                                ", output placeholder: ", output_tv->domain()->placeholder());
+                                ", output root: ", output_tv->getRootDomain());
           //concrete_id = *input_it;
           //bcast_id = *output_it;
-        } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+        } else if ((*input_it)->isBroadcast() && !(*output_it)->isBroadcast()) {
           concrete_id = *output_it;
           bcast_id = *input_it;
-        } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+        } else if ((*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
           // Even if the output is broadcast, if it's a different
           // broadcast dom, mark them as equivalent.
           handleEquivalentBroadcastDomains(*input_it, *output_it);
@@ -1149,29 +1100,27 @@ class BroadcastMapping: public BackwardVisitor {
       if (input->getValType().value() != ValType::TensorView) continue;
       const TensorView* input_tv = input->as<TensorView>();
       const TensorView* output_tv = uop->output(0)->as<TensorView>();
-      auto input_view = input_tv->domain()->noPlaceholder();
-      auto output_view = output_tv->domain()->noPlaceholder();
+      const auto& input_view = input_tv->getRootDomain();
+      const auto& output_view = output_tv->getRootDomain();
       auto input_it = input_view.begin();
       auto output_it = output_view.begin();
       while (input_it != input_view.end() && output_it != output_view.end()) {
         IterDomain* concrete_id = nullptr;
         IterDomain* bcast_id = nullptr;
-        if (input_it->isReduction()) {
+        if ((*input_it)->isReduction()) {
           ++input_it;
           continue;
         }
-        if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+        if (!(*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
           TORCH_INTERNAL_ASSERT(false, "Unexpected expression: ", uop,
                                 ", input root: ", input_tv->getRootDomain(),
-                                ", input placeholder: ", input_tv->domain()->placeholder(),
-                                ", output root: ", output_tv->getRootDomain(),
-                                ", output placeholder: ", output_tv->domain()->placeholder());
+                                ", output root: ", output_tv->getRootDomain());
           //concrete_id = *input_it;
           //bcast_id = *output_it;
-        } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+        } else if ((*input_it)->isBroadcast() && !(*output_it)->isBroadcast()) {
           concrete_id = *output_it;
           bcast_id = *input_it;
-        } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+        } else if ((*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
           // Even if the output is broadcast, if it's a different
           // broadcast dom, mark them as equivalent.
           handleEquivalentBroadcastDomains(*input_it, *output_it);
@@ -1193,29 +1142,27 @@ class BroadcastMapping: public BackwardVisitor {
     if (!ir_utils::isTVOp(rop)) return;
     const TensorView* input_tv = rop->input(0)->as<TensorView>();
     const TensorView* output_tv = rop->output(0)->as<TensorView>();
-    auto input_view = input_tv->domain()->noPlaceholder();
-    auto output_view = output_tv->domain()->noPlaceholder();
+    const auto& input_view = input_tv->getRootDomain();
+    const auto& output_view = output_tv->getRootDomain();
     auto input_it = input_view.begin();
     auto output_it = output_view.begin();
     while (input_it != input_view.end() && output_it != output_view.end()) {
       IterDomain* concrete_id = nullptr;
       IterDomain* bcast_id = nullptr;
-      if (input_it->isReduction()) {
+      if ((*input_it)->isReduction()) {
         ++input_it;
         continue;
       }
-      if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+      if (!(*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
         TORCH_INTERNAL_ASSERT(false, "Unexpected expression: ", rop,
                               ", input root: ", input_tv->getRootDomain(),
-                              ", input placeholder: ", input_tv->domain()->placeholder(),
-                              ", output root: ", output_tv->getRootDomain(),
-                              ", output placeholder: ", output_tv->domain()->placeholder());
+                              ", output root: ", output_tv->getRootDomain());
         //concrete_id = *input_it;
         //bcast_id = *output_it;
-      } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+      } else if ((*input_it)->isBroadcast() && !(*output_it)->isBroadcast()) {
         concrete_id = *output_it;
         bcast_id = *input_it;
-      } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+      } else if ((*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
         // Even if the output is broadcast, if it's a different
         // broadcast dom, mark them as equivalent.
         handleEquivalentBroadcastDomains(*input_it, *output_it);
@@ -1239,14 +1186,14 @@ class BroadcastMapping: public BackwardVisitor {
     if (input->getValType().value() != ValType::TensorView) return;
     const TensorView* input_tv = input->as<TensorView>();
     const TensorView* output_tv = op->output(0)->as<TensorView>();
-    auto input_view = input_tv->domain()->noPlaceholder();
-    auto output_view = output_tv->domain()->noPlaceholder();
+    const auto& input_view = input_tv->getRootDomain();
+    const auto& output_view = output_tv->getRootDomain();
     auto input_it = input_view.begin();
     auto output_it = output_view.begin();
     while (input_it != input_view.end() && output_it != output_view.end()) {
       IterDomain* concrete_id = nullptr;
       IterDomain* bcast_id = nullptr;
-      if (input_it->isReduction()) {
+      if ((*input_it)->isReduction()) {
         ++input_it;
         continue;
       }
@@ -1255,13 +1202,13 @@ class BroadcastMapping: public BackwardVisitor {
         ++output_it;
         continue;
       }
-      if (!input_it->isBroadcast() && output_it->isBroadcast()) {
+      if (!(*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
         ++output_it;
         continue;
-      } else if (input_it->isBroadcast() && !output_it->isBroadcast()) {
+      } else if ((*input_it)->isBroadcast() && !(*output_it)->isBroadcast()) {
         concrete_id = *output_it;
         bcast_id = *input_it;
-      } else if (input_it->isBroadcast() && output_it->isBroadcast()) {
+      } else if ((*input_it)->isBroadcast() && (*output_it)->isBroadcast()) {
         // Even if the output is broadcast, if it's a different
         // broadcast dom, mark them as equivalent.
         handleEquivalentBroadcastDomains(*input_it, *output_it);
@@ -1363,8 +1310,8 @@ class MatchingIterDomainSearch: public IterVisitor {
     TORCH_INTERNAL_ASSERT(tv_x != nullptr);
     TORCH_INTERNAL_ASSERT(tv_y != nullptr);
     if (tv_x == tv_y) return;
-    auto root_x = tv_x->domain()->noPlaceholder();
-    auto root_y = tv_y->domain()->noPlaceholder();
+    const auto& root_x = tv_x->getRootDomain();
+    const auto& root_y = tv_y->getRootDomain();
     auto x_it = root_x.begin();
     auto y_it = root_y.begin();
     while (x_it != root_x.end() || y_it != root_y.end()) {
