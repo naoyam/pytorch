@@ -5059,9 +5059,18 @@ void testGPU_FusionBCastAfterReduce() {
   fusion.addOutput(tv5);
   tv5->split(1, tidx);
 
+  fusion.printMath();
+  fusion.printKernel();
+
   tv3->computeAt(tv5, 1);
 
+  fusion.printMath();
+  fusion.printKernel();
+
   tv2->split(1, tidx);
+
+  fusion.printMath();
+  fusion.printKernel();
 
   tv1->axis(-1)->parallelize(ParallelType::TIDx);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
@@ -6063,7 +6072,7 @@ void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
   FusionGuard fg(&fusion);
 
   // TODO (CD)
-  return;
+  //return;
 
   Int* sym_bsx = new Int();
   TensorView* tv0 = makeDummyTensor(2); // (M, K)
