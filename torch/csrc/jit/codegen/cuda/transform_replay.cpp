@@ -413,9 +413,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
   for (auto c_id : consumer_CA_ids) {
-#ifdef REPLAY_WITH_CD
-    c_id = consumer_cd->getAxisForReplay(c_id);
-#endif
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
 #ifndef REPLAY_WITH_CD
@@ -478,9 +475,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   // Add axes in (1)
   for (size_t i = 0; i < consumer_CA_ids.size(); ++i) {
     auto c_id = consumer_CA_ids[i];
-#ifdef REPLAY_WITH_CD
-    c_id = consumer_cd->getAxisForReplay(c_id);
-#endif
     auto it = replay_PasC.getReplay().find(c_id);
     if (it == replay_PasC.getReplay().end()) {
 #ifndef REPLAY_WITH_CD
@@ -737,9 +731,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   // Remove all ids that map to the compute at axis, we're going to replay the
   // rest
   for (auto p_id : producer_CA_ids) {
-#ifdef REPLAY_WITH_CD
-    p_id = producer_cd->getAxisForReplay(p_id);
-#endif
     auto it = replay_CasP.getReplay().find(p_id);
 #ifdef REPLAY_WITH_CD
     if (it == replay_CasP.getReplay().end()) {
@@ -804,9 +795,6 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   // Add axes in (1)
   for (size_t i = 0; i < producer_CA_ids.size(); ++i) {
     auto p_id = producer_CA_ids[i];
-#ifdef REPLAY_WITH_CD
-    p_id = producer_cd->getAxisForReplay(p_id);
-#endif
     auto it = replay_CasP.getReplay().find(p_id);
 #ifdef REPLAY_WITH_CD
     if (it == replay_CasP.getReplay().end()) {
