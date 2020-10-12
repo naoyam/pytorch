@@ -1633,23 +1633,21 @@ void ComputeDomain::reorder(const std::unordered_map<int, int>& old2new) {
   auto old2new_normalized = normalizeReorderMap(td(), old2new);
   //DEBUG("Reordering CD: ", old2new_normalized);
   // Reordering CA domains is invalid.
-  if (computed_at_) {
-    // Locate the outer-most axis that is reordered
-    auto first_reordered_td_axis = td_ndims;
-    for (const auto& kv: old2new_normalized) {
-      const auto old_axis = kv.first;
-      const auto new_axis = kv.second;
-      if (old_axis == new_axis) {
-        continue;
-      } else {
-        first_reordered_td_axis = std::min(first_reordered_td_axis, old_axis);
-      }
+  // Locate the outer-most axis that is reordered
+  auto first_reordered_td_axis = td_ndims;
+  for (const auto& kv: old2new_normalized) {
+    const auto old_axis = kv.first;
+    const auto new_axis = kv.second;
+    if (old_axis == new_axis) {
+      continue;
+    } else {
+      first_reordered_td_axis = std::min(first_reordered_td_axis, old_axis);
     }
-    // The first-reordered axis must be outside of the CA position
-    if (first_reordered_td_axis < td_ndims) {
-      auto first_reordered_cd_axis = getComputeDomainAxisIndex(first_reordered_td_axis);
-      TORCH_INTERNAL_ASSERT(first_reordered_cd_axis >= getComputeAtPos());
-    }
+  }
+  // The first-reordered axis must be outside of the CA position
+  if (first_reordered_td_axis < td_ndims) {
+    auto first_reordered_cd_axis = getComputeDomainAxisIndex(first_reordered_td_axis);
+    TORCH_INTERNAL_ASSERT(first_reordered_cd_axis >= getComputeAtPos());
   }
 
   // Reorder axes and axes_rf
@@ -1814,7 +1812,6 @@ void ComputeDomain::computeAt(const TensorDomain* td,
 
   fixupPosition();
   invalidateExprList();
-  computed_at_ = true;
   std::cerr << "computeAt done: " << *this << std::endl;
 }
 

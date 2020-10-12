@@ -712,7 +712,6 @@ class TORCH_CUDA_API ComputeDomain {
   const TensorDomain* td_ = nullptr;
   std::deque<IterDomain*> axes_;
   std::deque<IterDomain*> axes_rf_;
-  bool computed_at_ = false;
   // Mapping from TD IterDomain index to CD IterDomain index
   std::vector<size_t> td_map_;
   size_t pos_ = 0;
