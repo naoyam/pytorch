@@ -125,32 +125,18 @@ void ReplayTransformations::handle(Merge* m) {
   // to the non-broadcast dim.
   if (inner_found && !outer_found && outer_bcast) {
     id_map_[m->out()] = it_inner->second;
-#ifdef INCOMPLETE_MERGE_EXPR
-    incomplete_merge_.insert({m, true});
-    std::stringstream ss;
-    ss << m << ", inner";
-    DEBUG("Incomplete merge: ", ss.str());
-#else
     std::stringstream ss;
     ss << it_inner->second << ", inner";
     DEBUG("Incomplete merge: ", ss.str());
     incomplete_merge_.push_back({it_inner->second, true});
-#endif
     return;
   }
   if (outer_found && !inner_found && inner_bcast) {
     id_map_[m->out()] = it_outer->second;
-#ifdef INCOMPLETE_MERGE_EXPR
-    incomplete_merge_.insert({m, false});
-    std::stringstream ss;
-    ss << m << ", outer";
-    DEBUG("Incomplete merge: ", ss.str());
-#else
     std::stringstream ss;
     ss << it_outer->second << ", outer";
     DEBUG("Incomplete merge: ", ss.str());
     incomplete_merge_.push_back({it_outer->second, false});
-#endif
     return;
   }
 

@@ -123,22 +123,10 @@ class TensorView;
 class ComputeDomain;
 class IterDomain;
 
-// #define INCOMPLETE_MERGE_EXPR
-
-#ifdef INCOMPLETE_MERGE_EXPR
-class Merge;
-#endif
-
 struct ReplayInfoForComputeDomain {
   std::vector<size_t> td2cd_map_;
   std::unordered_map<IterDomain*, IterDomain*> crossover_map_;
-#ifdef INCOMPLETE_MERGE_EXPR
-  std::unordered_map<Merge*, bool> incomplete_merge_;
-#else
-  //std::unordered_map<IterDomain*, bool> incomplete_merge_;
-  //std::multimap<IterDomain*, bool> incomplete_merge_;
   std::deque<std::pair<IterDomain*, bool>> incomplete_merge_;
-#endif
 };
 
 class TORCH_CUDA_API TransformReplay {

@@ -548,14 +548,10 @@ class TORCH_CUDA_API TensorDomain : public Val {
   const std::vector<bool> contiguity_;
 };
 
-class Merge;
-
-//#ifndef INCOMPLETE_MERGE_EXPR
-//#define INCOMPLETE_MERGE_EXPR
-//#endif
-
 class TORCH_CUDA_API ComputeDomain {
  public:
+  using IncompleteMergeType = std::deque<std::pair<IterDomain*, bool>>;
+
   ComputeDomain() = default;
   explicit ComputeDomain(const TensorDomain* td);
 
@@ -592,14 +588,6 @@ class TORCH_CUDA_API ComputeDomain {
   const std::deque<IterDomain*>& axesForRFactor() const {
     return axes_rf_;
   }
-
-#ifdef INCOMPLETE_MERGE_EXPR
-  using IncompleteMergeType = std::unordered_map<Merge*, bool>;
-#else
-  //using IncompleteMergeType = std::unordered_map<IterDomain*, bool>;
-  //using IncompleteMergeType = std::multimap<IterDomain*, bool>;
-  using IncompleteMergeType = std::deque<std::pair<IterDomain*, bool>>;
-#endif
 
   void computeAt(const TensorDomain* td,
                  int this_pos,
@@ -731,11 +719,7 @@ class TORCH_CUDA_API ComputeDomain {
   std::vector<std::pair<size_t, ComputeDomain*>> dependents_;
 
   std::unordered_map<IterDomain*, IterDomain*> crossover_map_;
-#ifdef INCOMPLETE_MERGE_EXPR
-  std::unordered_map<Merge*, bool> incomplete_merge_;
-#else
   IncompleteMergeType incomplete_merge_;
-#endif
 
   mutable bool exprs_to_root_valid_ = false;
   mutable std::vector<Expr*> exprs_to_root_;

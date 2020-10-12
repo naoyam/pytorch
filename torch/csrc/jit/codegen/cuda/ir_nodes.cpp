@@ -1809,9 +1809,6 @@ void ComputeDomain::computeAt(const TensorDomain* td,
   }
 
   incomplete_merge_ = incomplete_merge;
-#ifdef INCOMPLETE_MERGE_EXPR
-  joinMap(incomplete_merge_, target->incompleteMerge());
-#endif
 
   updateDependents(first_changed_axis);
 
@@ -1920,9 +1917,6 @@ void ComputeDomain::updateDependents(size_t first_changed_axis) {
                 affected_cd->axes_rf_.begin());
     }
     joinMap(affected_cd->crossover_map_, crossover_map_);
-#ifdef INCOMPLETE_MERGE_EXPR
-    joinMap(affected_cd->incomplete_merge_, incomplete_merge_);
-#endif
     affected_cd->updateDependents(first_changed_axis);
     affected_cd->invalidateExprList();
   }
@@ -2129,7 +2123,6 @@ class ComputeDomainVisitor {
     return ss.str();
   }
 
-#ifndef INCOMPLETE_MERGE_EXPR
   bool isIncompleteMergeOut(IterDomain* id, bool& is_inner) {
     TORCH_INTERNAL_ASSERT(id != nullptr);
     auto it = std::find_if(incomplete_merge_.begin(), incomplete_merge_.end(),
@@ -2143,7 +2136,6 @@ class ComputeDomainVisitor {
     incomplete_merge_.erase(it);
     return true;
   }
-#endif
 
   void handle(Expr* expr) {
     DEBUG("Appending ", expr);
@@ -2156,24 +2148,6 @@ class ComputeDomainVisitor {
       TORCH_INTERNAL_ASSERT(td_out != nullptr);
       std::cerr << printIncompleteMerge();
       std::cerr << "TD out: " << td_out << std::endl;
-#ifdef INCOMPLETE_MERGE_EXPR
-      auto it = incomplete_merge_.find(merge);
-      if (it != incomplete_merge_.end()) {
-        auto is_inner = it->second;
-        auto merge_matching_in = is_inner ? merge->inner() : merge->outer();
-        auto merge_non_matching_in = is_inner ? merge->outer() : merge->inner();
-        merge_matching_in = cd_.getAxisForReplay(merge_matching_in);
-        merge_non_matching_in = cd_.getAxisForReplay(merge_non_matching_in);
-        DEBUG("Registering mapping for incomplete broadcast: ", merge_matching_in,
-              " to ", td_out);
-        cd2td_map_.insert({merge_matching_in, td_out});
-        // Add an entry even for the non-matching one so that
-        // traversal can proceed and all the IDs are saved in cd2td_map_.
-        cd2td_map_.insert({merge_non_matching_in, nullptr});
-        incomplete_merge_.erase(it);
-        return;
-      }
-#else
       bool is_inner;
       if (isIncompleteMergeOut(td_out, is_inner)) {
         auto merge_matching_in = is_inner ? merge->inner() : merge->outer();
@@ -2193,7 +2167,6 @@ class ComputeDomainVisitor {
         cd2td_map_.erase(out_it);
         return;
       }
-#endif
     }
 
     // Build mapping from ComputeDomain IDs to TensorDomain IDs
@@ -2229,13 +2202,7 @@ class ComputeDomainVisitor {
   std::vector<Expr*>& exprs_;
   std::unordered_map<IterDomain*, IterDomain*>& cd2td_map_;
   std::unordered_set<IterDomain*> inputs_to_;
-#ifdef INCOMPLETE_MERGE_EXPR
-  std::unordered_map<Merge*, bool> incomplete_merge_;
-#else
-  //std::unordered_map<IterDomain*, bool> incomplete_merge_;
-  //std::multimap<IterDomain*, bool> incomplete_merge_;
-  std::deque<std::pair<IterDomain*, bool>> incomplete_merge_;
-#endif
+  ComputeDomain::IncompleteMergeType incomplete_merge_;
 };
 
 class GetAllDependentIterDomains : public IterVisitor {
