@@ -159,6 +159,10 @@ namespace jit {
   _(GPU_FusionComputeAtCommonConsumer3)             \
   _(GPU_FusionComputeAtNoCommonConsumer)            \
   _(GPU_FusionScalarInputs)                         \
+  _(GPU_FusionBCastConcretizeBasic)                 \
+  _(GPU_FusionBCastConcretizeRfactor)               \
+  _(GPU_FusionProveIdEqBasic)                       \
+  _(GPU_FusionProveIdEqRfactor)                     \
   _(GPU_FusionRFactorReplay)                        \
   _(GPU_FusionReduction)                            \
   _(GPU_FusionReduction2)                           \
@@ -208,7 +212,8 @@ namespace jit {
   _(GPU_FusionSmemBlockGemmCache)                   \
   _(GPU_FusionSmemDynamicReductionSymbolic)         \
   _(GPU_FusionSmemDynamicReductionSymbolicArg)      \
-  _(GPU_FusionSmemDynamicPwiseMulSymbolicArg)       \
+  _(GPU_FusionSmemDynamicPwiseMulSymbolicArgWAR)    \
+  _(GPU_FusionSmemDynamicTiledGemm)                 \
   _(GPU_FusionGlobalIntermediate)                   \
   _(GPU_FusionGlobalIntermediateDefaultSchedule)    \
   _(GPU_FusionConstCheck)                           \
@@ -228,6 +233,8 @@ namespace jit {
   _(GPU_FusionThreadPredicate)                      \
   _(GPU_FusionLSTMCell)                             \
   _(GPU_FusionComputeAtMultiBCast)                  \
+  _(GPU_FusionReductionHalf)                        \
+  _(GPU_FusionInputsIdLookup)                       \
   _(GPU_FusionComputeAtMultiReduction)              \
   _(GPU_FusionComputeAtMultiReduction2)             \
   _(GPU_FusionComputeAtBCastReduction)              \

@@ -31,6 +31,7 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
       const std::string& name,
       int id,
       CompileOptions options = CompileOptions());
+
   void compileFusion(Fusion* fusion, CompileOptions options = CompileOptions());
 
   std::vector<at::Tensor> runFusion(
@@ -52,6 +53,10 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
     return fusion_id_ != -1;
   };
 
+  void evictCache(size_t cache_id) {
+    executor_entry_lookup_.erase(cache_id);
+  }
+
   // TODO: strides would also be important when we handle permutations in
   //       codegen.
   // struct used to hold necessary information to launch compiled kernel on a
@@ -67,6 +72,10 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
     std::vector<at::ScalarType> zero_buffer_types;
     uint64_t rand_offset;
   };
+
+  Kernel* kernel() const {
+    return lowered_.kernel();
+  }
 
  private:
   struct GlobalBuffers {
@@ -113,6 +122,7 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
   Fusion fusion_;
   Fusion* fusion_tmp_;
 
+  // TODO(kir): caching the values here is no longer needed
   bool has_block_reductions = false;
   bool has_grid_reductions = false;
   bool has_block_broadcasts = false;
@@ -124,9 +134,6 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
 
   // TensorViews actually used in the kernel.
   std::vector<TensorView*> used_tvs_;
-
-  // State of the fusion that's important
-  bool has_random_ = false;
 
   // Counter to be used for kernel name.
   int fusion_id_ = -1;

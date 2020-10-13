@@ -1,6 +1,7 @@
 #include <torch/csrc/jit/codegen/cuda/parser.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
@@ -507,6 +508,14 @@ class IrParser {
             // we don't support cast of output types yet;
             if (!node->inputs()[3]->type()->isSubtypeOf(
                     static_cast<c10::TypePtr>(NoneType::get()))) {
+              // We can only handle output as half and float;
+              if (const auto opt_ivalue = toIValue(node->input(3))) {
+                const auto scalar_type = opt_ivalue->toScalarType();
+                if (scalar_type == at::ScalarType::Float ||
+                    scalar_type == at::ScalarType::Half) {
+                  return true;
+                }
+              }
               return false;
             }
             // we don't support dynamic reduction axes;
@@ -661,6 +670,8 @@ bool isNodeParsible(const Node* node) {
 }
 
 std::unique_ptr<Fusion> parseJitIR(std::shared_ptr<Graph>& graph) {
+  FUSER_PERF_SCOPE("parseJitIR");
+
   IrParser parser(graph);
   return parser.parse();
 }

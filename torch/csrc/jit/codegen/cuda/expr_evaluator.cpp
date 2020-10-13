@@ -1,5 +1,6 @@
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
@@ -33,6 +34,8 @@ void StatefulExpressionEvaluator::safeBind(
   }
 
   if (lower != nullptr) {
+    // TODO(kir): we should not need to lower (or mutate the IR in any way)
+    //  during expression evaluation
     auto lowered_val = lower->getLowerValue(value);
     already_concrete_val = getValue(lowered_val);
 
@@ -57,6 +60,7 @@ void StatefulExpressionEvaluator::safeBind(
 
 c10::optional<Int::ScalarType> StatefulExpressionEvaluator::inferValue(
     Val* value) {
+  FUSER_PERF_SCOPE("inferValue");
   return maybeHandle(value);
 }
 

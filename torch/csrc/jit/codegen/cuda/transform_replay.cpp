@@ -1,6 +1,7 @@
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
@@ -130,6 +131,8 @@ class ReplaySelf : public ReplayTransformations {
 TensorDomain* TransformReplay::fullSelfReplay(
     const TensorDomain* new_self_root,
     const TensorDomain* self) {
+  FUSER_PERF_SCOPE("fullSelfReplay");
+
   TORCH_INTERNAL_ASSERT(
       new_self_root->nDims() == self->getRootDomain().size(),
       "Invalid number of IterDomains provided.");
@@ -273,6 +276,8 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     const TensorDomain* consumer,
     const ComputeDomain* consumer_cd,
     int consumer_compute_at_axis) {
+  FUSER_PERF_SCOPE("replayPasC");
+
   // producer_compute_at_axis is a position in the producer compute domain.
   //normalizeComputeAtPos(consumer_compute_at_axis,
   //consumer_cd->nDims());
@@ -572,6 +577,8 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     const TensorDomain* producer,
     const ComputeDomain* producer_cd,
     int producer_compute_at_axis) {
+  FUSER_PERF_SCOPE("replayCasP");
+
   // producer_compute_at_axis is a position in the producer compute
   // domain.
 #ifdef COMPUTE_AT_USE_TD_POS

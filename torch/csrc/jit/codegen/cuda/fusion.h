@@ -90,10 +90,10 @@ class TORCH_CUDA_API Fusion final {
   void removeVal(Val* val);
 
   // Register input as an input of the fusion
-  void addInput(Val* const input);
+  void addInput(Val* input);
 
   // Register output as an output of the fusion
-  void addOutput(Val* const output);
+  void addOutput(Val* output);
 
   // Check if stmt is properly registered with this fusion
   bool inFusion(const Statement* stmt) const;
@@ -144,10 +144,12 @@ class TORCH_CUDA_API Fusion final {
   StmtNameType registerStatement(Statement* stmt);
 
   // Lowered nodes
+  // TODO(kir): to be removed
   StmtNameType registerLoweredVal(Val* val);
   StmtNameType registerLoweredExpr(Expr* expr);
 
   // Lowered counterpart to inFusion()
+  // TODO(kir): to be removed
   bool inKernelIr(const Statement* stmt) const;
 
   // Check if val is used in this fusion. Not equivelent to DCE
@@ -168,14 +170,14 @@ class TORCH_CUDA_API Fusion final {
   Expr* origin(const Val* val) const;
 
   // Indicate to kernel to set itself up to generate random numbers
-  bool hasRNG();
+  bool isStochastic();
 
+  // TODO(kir): revisit to see how many of these are still needed
   bool hasReduction();
   bool hasBlockReduction();
   bool hasGridReduction();
   bool hasBlockBroadcast();
   bool hasBroadcast();
-  DataType getMaximumSmemDataType();
   size_t gridReductionTempBufferSize();
 
   const auto& inputs() const {

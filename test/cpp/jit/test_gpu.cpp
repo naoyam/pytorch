@@ -3,6 +3,7 @@
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
+#include <torch/csrc/jit/codegen/cuda/codegen.h>
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 #include <torch/csrc/jit/codegen/cuda/executor_launch_params.h>
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
@@ -11,6 +12,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_cache.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/scheduler.h>
@@ -30,7 +32,6 @@
 namespace torch {
 namespace jit {
 
-using namespace torch::jit::fuser;
 using namespace torch::jit::fuser;
 
 namespace {
@@ -361,8 +362,6 @@ void testGPU_FusionExprEvalPostLower() {
 
   // Lower
   GpuLower gpulw(&fusion);
-  std::stringstream kernel;
-  gpulw.printKernel(kernel);
 
   // 1. Create an evaluation context
   StatefulExpressionEvaluator evaluator(&fusion);
@@ -506,10 +505,12 @@ void testGPU_FusionCopy() {
   ASSERT_EQ(original_ir.str(), clone_ir.str());
 
   // Lower original fusion
-  std::stringstream original_kernel;
+  std::string original_kernel;
   {
-    GpuLower lower(&original_fusion);
-    lower.printKernel(original_kernel);
+    // TODO(kir): remove this guard once we implement the cuda codegen visitor
+    FusionGuard fg(&original_fusion);
+    original_kernel =
+        codegen::generateCudaKernel(GpuLower(&original_fusion).kernel());
   }
 
   // Make sure the "before lowering" clone was not mutated
@@ -530,12 +531,14 @@ void testGPU_FusionCopy() {
   ASSERT_EQ(original_lowered_ir.str(), clone_lowered_ir.str());
 
   // Lower the "before lowering" and compare kernels
-  std::stringstream clone_kernel;
+  std::string clone_kernel;
   {
-    GpuLower lower(&before_lowering);
-    lower.printKernel(clone_kernel);
+    // TODO(kir): remove this guard once we implement the cuda codegen visitor
+    FusionGuard fg(&before_lowering);
+    clone_kernel =
+        codegen::generateCudaKernel(GpuLower(&before_lowering).kernel());
   }
-  ASSERT_EQ(original_kernel.str(), clone_kernel.str());
+  ASSERT_EQ(original_kernel, clone_kernel);
 }
 
 void testGPU_FusionMove() {
@@ -594,9 +597,7 @@ void testGPU_FusionMove() {
   ASSERT_EQ(original_ir.str(), another_ir.str());
 
   // Lower the fusion IR
-  std::stringstream kernel;
   GpuLower lower(&another_fusion);
-  lower.printKernel(kernel);
 
   std::stringstream lowered_ir;
   lowered_ir << another_fusion;
@@ -1115,36 +1116,36 @@ void testGPU_FusionParser() {
   // 1. this can be moved to a dedicated "golden" file
   // 2. use a fuzzy compare (ignore non-significant whitespaces for example)
   const std::string expected_kernel = R"(
-__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){
+__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3) {
   float T2[1];
-  if ( ( ( ( ( ( blockIdx.x * 1 ) + ( 1 - 1 ) ) * 128 ) + threadIdx.x ) < T0.size[0] ) ) {
-    for(size_t i6 = 0; i6 < 1; ++i6 ) {
-      T2[ i6 ]
-         = T0[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ]
-         * T1[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ];
-      T3[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ]
-         = T2[ i6 ]
-         * T0[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ];
+  if ((((((blockIdx.x * 1) + (1 - 1)) * 128) + threadIdx.x) < T0.size[0])) {
+    for(size_t i6 = 0; i6 < 1; ++i6) {
+      T2[i6]
+        = T0[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)]
+        * T1[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)];
+      T3[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)]
+        = T2[i6]
+        * T0[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)];
     }
   } else {
-    for(size_t i6 = 0; i6 < 1; ++i6 ) {
-      if ( ( ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) < T0.size[0] ) ) {
-        T2[ i6 ]
-           = T0[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ]
-           * T1[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ];
+    for(size_t i6 = 0; i6 < 1; ++i6) {
+      if ((((((blockIdx.x * 1) + i6) * 128) + threadIdx.x) < T0.size[0])) {
+        T2[i6]
+          = T0[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)]
+          * T1[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)];
       }
-      if ( ( ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) < T0.size[0] ) ) {
-        T3[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ]
-           = T2[ i6 ]
-           * T0[ ( ( ( ( blockIdx.x * 1 ) + i6 ) * 128 ) + threadIdx.x ) ];
+      if ((((((blockIdx.x * 1) + i6) * 128) + threadIdx.x) < T0.size[0])) {
+        T3[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)]
+          = T2[i6]
+          * T0[((((blockIdx.x * 1) + i6) * 128) + threadIdx.x)];
       }
     }
   }
 }
 )";
 
-  std::string actual_kernel = GpuLower(fusion.get()).getKernel();
-  actual_kernel = "\n" + actual_kernel;
+  const std::string actual_kernel =
+      "\n" + codegen::generateCudaKernel(GpuLower(fusion.get()).kernel());
   if (expected_kernel.size() != actual_kernel.size() ||
       expected_kernel.compare(actual_kernel) != 0) {
     std::cerr
@@ -1547,11 +1548,7 @@ void testGPU_FusionAdvancedComputeAt() {
     fe.compileFusion(&fusion);
     auto outputs = fe.runFusion({t0});
 
-    GpuLower gpulw(&fusion);
-    std::stringstream actual_kernel;
-    gpulw.printKernel(actual_kernel);
-
-    TORCH_CHECK(at::allclose(outputs[0], t5), actual_kernel.str());
+    TORCH_CHECK(at::allclose(outputs[0], t5));
     TORCH_CHECK(at::allclose(outputs[1], t6));
   }
 
@@ -1607,11 +1604,7 @@ void testGPU_FusionAdvancedComputeAt() {
     fe.compileFusion(&fusion);
     fe.runFusion({t0, t1}, {kernel_tv3});
 
-    GpuLower gpulw(&fusion);
-    std::stringstream actual_kernel;
-    gpulw.printKernel(actual_kernel);
-
-    TORCH_CHECK(at::allclose(kernel_tv3, t3), actual_kernel.str());
+    TORCH_CHECK(at::allclose(kernel_tv3, t3));
   }
 
   // Case 4
@@ -1677,11 +1670,7 @@ void testGPU_FusionAdvancedComputeAt() {
     fe.compileFusion(&fusion);
     auto outputs = fe.runFusion({t0, t1, t2, t3});
 
-    GpuLower gpulw(&fusion);
-    std::stringstream actual_kernel;
-    gpulw.printKernel(actual_kernel);
-
-    TORCH_CHECK(at::allclose(outputs[0], t6), actual_kernel.str());
+    TORCH_CHECK(at::allclose(outputs[0], t6));
   }
 
   // Case 5
@@ -2118,6 +2107,159 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
   TORCH_CHECK(at::allclose(kernel_tv6, t6));
 }
 
+namespace {
+
+void checkConcretized(
+    TensorView* v0,
+    int a0,
+    TensorView* v1,
+    int a1,
+    bool should_concretize) {
+  if (should_concretize) {
+    TORCH_CHECK(
+        IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)));
+  } else {
+    TORCH_CHECK(
+        !IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)));
+  }
+}
+
+} // namespace
+
+void testGPU_FusionBCastConcretizeBasic() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // tv0: [I I]
+  TensorView* tv0 = makeDummyTensor(2);
+
+  // tv1: [I I I]
+  TensorView* tv1 = makeDummyTensor(3);
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+
+  // tv2*: [B I I]
+  auto tv2_0 = broadcast(tv0, {true, false, false});
+  auto tv2_1 = broadcast(tv0, {true, false, false});
+  auto tv2 = add(tv2_0, tv2_1);
+
+  // tv3: [I I I]
+  auto tv3 = add(tv2, tv1);
+
+  fusion.addOutput(tv3);
+
+  checkConcretized(tv2, 0, tv1, 0, true);
+  checkConcretized(tv2_0, 0, tv1, 0, true);
+  checkConcretized(tv2_1, 0, tv1, 0, true);
+  checkConcretized(tv2_0, 1, tv1, 0, false);
+  checkConcretized(tv2_0, 0, tv1, 1, false);
+}
+
+void testGPU_FusionBCastConcretizeRfactor() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // both tv0 and tv1 = [I, I]
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+
+  //[B,I,I]
+  auto tv2 = broadcast(tv1, {true, false, false});
+
+  //[B,I,R]
+  auto tv3 = sum(tv2, {2});
+
+  auto tv5 = add(tv3, tv1);
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv5);
+
+  // scheduling:
+  //[B,I,R0,R1=128], root = [B,I,R]
+  tv3->split(2, 128);
+
+  // root=[B,I,Irf], rfactor=[B,I,Irf,Rrf]
+  auto tv4 = tv3->rFactor({3});
+
+  checkConcretized(tv2, 0, tv5, 0, true);
+  checkConcretized(tv4, 0, tv5, 0, true);
+  checkConcretized(tv3, 0, tv5, 0, true);
+}
+
+namespace {
+
+void checkIdProvedEquivalent(
+    TensorView* v0,
+    int a0,
+    TensorView* v1,
+    int a1,
+    bool should_prove) {
+  if (should_prove) {
+    TORCH_CHECK(IterDomain::proveEquivalent(v0->axis(a0), v1->axis(a1)));
+  } else {
+    TORCH_CHECK(!IterDomain::proveEquivalent(v0->axis(a0), v1->axis(a1)));
+  }
+}
+
+} // namespace
+
+void testGPU_FusionProveIdEqBasic() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+  TensorView* tv2 = makeDummyTensor(3);
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  auto tv3 = broadcast(tv0, {true, false, false});
+  auto tv4 = broadcast(tv1, {false, true, false});
+  auto tv5 = add(tv3, tv4);
+  fusion.addOutput(tv5);
+
+  checkIdProvedEquivalent(tv0, 0, tv4, 1, true);
+  checkIdProvedEquivalent(tv1, 0, tv4, 0, true);
+  checkIdProvedEquivalent(tv1, 1, tv0, 1, true);
+  checkIdProvedEquivalent(tv0, 0, tv5, 1, true);
+  checkIdProvedEquivalent(tv1, 1, tv5, 2, true);
+  checkIdProvedEquivalent(tv0, 0, tv1, 0, false);
+  checkIdProvedEquivalent(tv0, 1, tv1, 0, false);
+  checkIdProvedEquivalent(tv0, 0, tv1, 1, false);
+}
+
+void testGPU_FusionProveIdEqRfactor() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // [I,I]
+  TensorView* tv0 = makeDummyTensor(2);
+  // [I,I,I]
+  TensorView* tv1 = makeDummyTensor(3);
+
+  //[I,I,R]
+  auto tv2 = sum(tv1, {2});
+
+  auto tv5 = add(tv2, tv0);
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv5);
+
+  // scheduling:
+  //[B,I,R0,R1=128], root = [B,I,R]
+  tv2->split(2, 128);
+
+  // root=[B,I,Irf], rfactor=[B,I,Irf,Rrf]
+  auto tv3 = tv2->rFactor({3});
+
+  checkIdProvedEquivalent(tv1, 0, tv0, 0, true);
+  checkIdProvedEquivalent(tv2, 0, tv0, 0, true);
+  checkIdProvedEquivalent(tv3, 0, tv0, 0, true);
+}
+
 void testGPU_FusionScalarInputs() {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -2202,11 +2344,7 @@ void testGPU_FusionScalarInputs() {
        at::Scalar(fl3)},
       {kernel_tv4});
 
-  GpuLower gpulw(&fusion);
-  std::stringstream actual_kernel;
-  gpulw.printKernel(actual_kernel);
-
-  TORCH_CHECK(at::allclose(kernel_tv4, t4), actual_kernel.str());
+  TORCH_CHECK(at::allclose(kernel_tv4, t4));
 }
 
 void testGPU_FusionLoopUnroll() {
@@ -2378,7 +2516,7 @@ void test_op(
       gen_aten_operand(op, blocks, threads, /*rand*/ false).toTensor();
   std::vector<at::Tensor> output_vect = {output};
   cudaDeviceSynchronize();
-  if (fusion.hasRNG())
+  if (fusion.isStochastic())
     at::manual_seed(0);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
@@ -2386,7 +2524,7 @@ void test_op(
   fe.runFusion(aten_inputs_ivalues, output_vect);
   cudaDeviceSynchronize();
 
-  if (fusion.hasRNG())
+  if (fusion.isStochastic())
     at::manual_seed(0);
   at::Tensor ref_output = af(aten_inputs);
   cudaDeviceSynchronize(); // This sync shouldn't be necessary;
@@ -2420,12 +2558,8 @@ void test_op(
       op_str,
       " -- had a mismatch.",
       aten_inputs_to_str(),
-      "\nJIT: ",
-      output,
-      "\nREF: ",
-      ref_output,
-      "\nDIFF: ",
-      diff,
+      "\nABS MAX DIFF: ",
+      output.sub(ref_output).abs().max(),
       "\n");
 }
 
@@ -2751,14 +2885,8 @@ void testGPU_FusionCastOps() {
       "\nOp Type: -- ",
       "cast FP16->FP32->FP16",
       " -- had a mismatch.\n",
-      "IN1 : ",
-      input1,
-      "\n",
-      "JIT: ",
-      outputs[0],
-      "\n",
-      "REF: ",
-      ref_output,
+      "\nABS MAX DIFF: ",
+      outputs[0].sub(ref_output).abs().max(),
       "\n");
 }
 
@@ -5118,13 +5246,9 @@ void testGPU_FusionReductionScheduler() {
   at::Tensor input = at::randn({bid_x, tid_x}, options);
 
   // Apply reduction heuristic
-  const at::ArrayRef<c10::IValue> inputs({input});
-
-  fusion.printMath();
-
-  TORCH_CHECK(
-      cuda::scheduleReduction(&fusion, inputs, tv1),
-      "Reduction schedule was not generated!");
+  auto reduction_params = cuda::getReductionHeuristics(&fusion, {input}, tv1);
+  TORCH_CHECK(reduction_params, "Reduction schedule was not generated!");
+  cuda::scheduleReduction(&fusion, reduction_params.value(), tv1, {});
 
   fusion.printMath();
   fusion.printKernel();
@@ -5132,7 +5256,7 @@ void testGPU_FusionReductionScheduler() {
   cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
   // no broadcasting needed, omitting the last optional argument;
-  auto outputs = fe.runFusion({input});
+  auto outputs = fe.runFusion({input}, reduction_params.value().lparams);
   auto aten_output = input.sum({red_dim});
 
   TORCH_CHECK(
@@ -5181,9 +5305,9 @@ void testGPU_FusionSymbolicReduction() {
   // How many threads to use for the block reduction
   int runtime_threadIdx_dim = 128;
 
-  torch::jit::fuser::cuda::FusionExecutor executor;
-  executor.compileFusion(&fusion);
-  auto outputs = executor.runFusion(
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(
       {input},
       torch::jit::fuser::cuda::LaunchParams(
           -1, -1, -1, runtime_threadIdx_dim, -1, -1));
@@ -5216,15 +5340,13 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   at::Tensor cg_output = at::empty(tensor_dims_out, options);
 
   // Apply reduction heuristic
-  const at::ArrayRef<c10::IValue> inputs({input});
-
-  TORCH_CHECK(
-      cuda::scheduleReduction(&fusion, inputs, tv1),
-      "Reduction schedule was not generated!");
+  auto reduction_params = cuda::getReductionHeuristics(&fusion, {input}, tv1);
+  TORCH_CHECK(reduction_params, "Reduction schedule was not generated!");
+  cuda::scheduleReduction(&fusion, reduction_params.value(), tv1, {});
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  auto outputs = fe.runFusion({input});
+  auto outputs = fe.runFusion({input}, reduction_params.value().lparams);
 
   auto aten_output = input.sum(red_dims64);
 
@@ -5256,13 +5378,13 @@ void testGPU_FusionReductionSchedulerMultiDimFastest() {
       at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::randn(tensor_dims_in, options);
 
-  TORCH_CHECK(
-      cuda::scheduleReduction(&fusion, {input}, tv1),
-      "Reduction schedule was not generated!");
+  auto reduction_params = cuda::getReductionHeuristics(&fusion, {input}, tv1);
+  TORCH_CHECK(reduction_params, "Reduction schedule was not generated!");
+  cuda::scheduleReduction(&fusion, reduction_params.value(), tv1, {});
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  auto outputs = fe.runFusion({input});
+  auto outputs = fe.runFusion({input}, reduction_params.value().lparams);
 
   auto aten_output = input.sum(red_dims64);
 
@@ -5273,7 +5395,7 @@ void testGPU_FusionReductionSchedulerMultiDimFastest() {
 }
 
 void testGPU_FusionReductionSchedulerDimShmoo() {
-  std::vector<bool> fp16_usage = {false};
+  std::vector<bool> fp16_usage = {true, false};
   std::vector<int> red_axis = {1, 0};
   std::vector<int> output_dims = {320, 640};
   std::vector<int> red_dims;
@@ -5320,37 +5442,28 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
               (axis ? at::randn({odim, rdim}, options)
                     : at::randn({rdim, odim}, options));
 
-          const at::ArrayRef<c10::IValue> inputs({input});
-
-          c10::optional<cuda::ReductionParams> rparams =
-              cuda::scheduleReduction(&fusion, inputs, tv1);
-          TORCH_CHECK(rparams != c10::nullopt, "Reduction is not found!");
+          std::vector<TensorView*> outputs_of_red;
           if (fp16) {
-            if (axis == 0) {
-              int tidx = rparams.value().lparams.bdimx();
-              tv1_cast->split(-1, tidx);
-              tv1_cast->axis(-1)->parallelize(ParallelType::TIDx);
-              tv1_cast->axis(-2)->parallelize(ParallelType::BIDx);
-            } else {
-              if (rparams.value().mul_reds_per_blk) {
-                int tidy = rparams.value().lparams.bdimy();
-                tv1_cast->split(0, tidy);
-                tv1_cast->axis(-1)->parallelize(ParallelType::TIDy);
-              }
-              tv1_cast->axis(0)->parallelize(ParallelType::BIDx);
-            }
+            outputs_of_red.push_back(tv1_cast);
           }
+
+          auto reduction_params =
+              cuda::getReductionHeuristics(&fusion, {input}, tv1);
+          TORCH_CHECK(reduction_params.has_value(), "Reduction is not found!");
+          cuda::scheduleReduction(
+              &fusion, reduction_params.value(), tv1, outputs_of_red);
 
           torch::jit::fuser::cuda::FusionExecutor fe;
           fe.compileFusion(&fusion);
 
-          auto cg_output = fe.runFusion({input});
+          auto outputs =
+              fe.runFusion({input}, reduction_params.value().lparams);
           auto aten_output = input.sum({axis});
 
           TORCH_CHECK(
-              aten_output.allclose(cg_output[0], 1e-03, 1e-03),
+              aten_output.allclose(outputs[0], 1e-03, 1e-03),
               "Error of: ",
-              aten_output.sub(cg_output[0]).abs().max());
+              aten_output.sub(outputs[0]).abs().max());
         }
       }
     }
@@ -5737,6 +5850,7 @@ void testGPU_FusionSmem() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 0);
 }
 
 void testGPU_FusionSmemReduce() {
@@ -5786,6 +5900,8 @@ void testGPU_FusionSmemReduce() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 1);
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.count(24) == 1);
 }
 
 void testGPU_FusionSmemBlockGemm() {
@@ -5859,6 +5975,7 @@ void testGPU_FusionSmemBlockGemm() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 0);
 }
 
 void testGPU_FusionSmemBlockGemmCache() {
@@ -5959,6 +6076,7 @@ void testGPU_FusionSmemBlockGemmCache() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 0);
 }
 
 void testGPU_FusionSmemDynamicReductionSymbolic() {
@@ -5995,9 +6113,9 @@ void testGPU_FusionSmemDynamicReductionSymbolic() {
   // How many threads to use for the block reduction
   constexpr int runtime_threadIdx_dim = 128;
 
-  torch::jit::fuser::cuda::FusionExecutor executor;
-  executor.compileFusion(&fusion);
-  auto outputs = executor.runFusion(
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(
       {input},
       torch::jit::fuser::cuda::LaunchParams(
           -1, -1, -1, runtime_threadIdx_dim, -1, -1));
@@ -6007,6 +6125,7 @@ void testGPU_FusionSmemDynamicReductionSymbolic() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 0);
 }
 
 void testGPU_FusionSmemDynamicReductionSymbolicArg() {
@@ -6053,9 +6172,9 @@ void testGPU_FusionSmemDynamicReductionSymbolicArg() {
   // How many threads to use for the block reduction
   constexpr int runtime_threadIdx_dim = 128;
 
-  torch::jit::fuser::cuda::FusionExecutor executor;
-  executor.compileFusion(&fusion);
-  auto outputs = executor.runFusion(
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(
       {t0, runtime_threadIdx_dim},
       torch::jit::fuser::cuda::LaunchParams(
           -1, -1, -1, runtime_threadIdx_dim, -1, -1));
@@ -6065,9 +6184,11 @@ void testGPU_FusionSmemDynamicReductionSymbolicArg() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 1);
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.count(24) == 1);
 }
 
-void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
+void testGPU_FusionSmemDynamicPwiseMulSymbolicArgWAR() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -6125,6 +6246,134 @@ void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 1);
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.count(22) == 1);
+}
+
+void testGPU_FusionSmemDynamicTiledGemm() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Symbolic integers we will use for runtime tiling
+  Int* symbolic_m_tile_dim = new Int(); // bound to threadIdx.z
+  Int* symbolic_split_k_tile_dim = new Int(); // bound to blockIdx.x
+  Int* symbolic_block_k_tile_dim = new Int(); // bound to threadIdx.x
+  // Compile-time integer for tiling
+  int n_smem_tile = 8; // bound to threadIdx.y
+
+  // Symbolic 2D tensors TV0[M, K], TV1[K, N]
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+
+  // Broadcast tv0 to [M, K, *]
+  TensorView* tv2 = broadcast(tv0, {false, false, true});
+  // Broadcast tv1 to [*, K, N]
+  TensorView* tv3 = broadcast(tv1, {true, false, false});
+
+  // Pointwise multiplication resulting in tv3[M, K, N]
+  TensorView* tv4 = mul(tv2, tv3);
+
+  // Turn the K-dimension of tv4 into a reduction dimension
+  TensorView* tv5 = sum(tv4, {1});
+
+  // Register inputs and outputs
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv5);
+
+  // Register runtime tile dims as inputs
+  fusion.addInput(symbolic_m_tile_dim);
+  fusion.addInput(symbolic_split_k_tile_dim);
+  fusion.addInput(symbolic_block_k_tile_dim);
+
+  // Make a 3D tile, mix of symbolic and constant, do in reverse order because
+  // dims are inserted
+  tv5->split(2, n_smem_tile);
+  tv5->split(1, symbolic_block_k_tile_dim);
+  tv5->split(1, symbolic_split_k_tile_dim);
+  tv5->split(0, symbolic_m_tile_dim);
+
+  // Reorder so all outer tiles are in the leftmost 3 positions
+  tv5->reorder({{1, 5}, {5, 1}});
+
+  // Factor out the outer reduction IterDomain, then run the inter-cta
+  // reduction, and intra-cta reduction
+  auto tv6 = tv5->rFactor({2});
+
+  // Scope computations
+  tv6->computeAt(tv5, 2);
+
+  // RFactor moves reduction axes around, reorder to match ordering of tv5
+  tv6->reorder({
+      {2, -2},
+      {3, -1},
+      {4, 2},
+      {5, 3},
+      {6, 4},
+  });
+
+  // Setup compute at schedule
+  tv0->computeAt(tv6, 3);
+  tv1->computeAt(tv6, 3);
+  tv4->computeAt(tv6, -1);
+  //
+  // T2[Mo,  bNo, Koo, Koi,  Kii,  Mi, bNi] CA(4, 3)
+  // T3[bMo,  No, Koo, Koi,  Kii, bMi,  Ni] CA(4, 3)
+  // T4[ Mo,  No, Koo, Koi,  Kii,  Mi,  Ni]
+  // T6[ Mo,  No, rKoo, Koi, Kii,  Mi,  Ni]
+  // T5[ Mo,  No,      rKoi, rKii, Mi,  Ni]
+
+  // Cache smem tiles
+  tv2->setMemoryType(MemoryType::Shared);
+  tv3->setMemoryType(MemoryType::Shared);
+  tv4->setMemoryType(MemoryType::Local);
+  tv6->setMemoryType(MemoryType::Local);
+
+  tv5->axis(0)->parallelize(ParallelType::BIDz);
+  tv5->axis(1)->parallelize(ParallelType::BIDy);
+
+  std::vector<TensorView*> tv_list = {tv2, tv3, tv4, tv5, tv6};
+  for (auto tv : tv_list) {
+    tv->axis(-2)->parallelize(ParallelType::TIDz);
+    tv->axis(-1)->parallelize(ParallelType::TIDy);
+  }
+  tv2->axis(3)->parallelize(ParallelType::TIDx);
+  tv3->axis(3)->parallelize(ParallelType::TIDx);
+  tv4->axis(3)->parallelize(ParallelType::TIDx);
+  tv6->axis(3)->parallelize(ParallelType::TIDx);
+  tv5->axis(2)->parallelize(ParallelType::TIDx);
+
+  tv2->axis(4)->parallelize(ParallelType::BIDx);
+  tv3->axis(4)->parallelize(ParallelType::BIDx);
+  tv4->axis(4)->parallelize(ParallelType::BIDx);
+  tv6->axis(4)->parallelize(ParallelType::BIDx);
+  tv5->axis(3)->parallelize(ParallelType::BIDx);
+
+  constexpr int M = 31, K = 65, N = 33;
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor A = at::randn({M, K}, options);
+  at::Tensor B = at::randn({K, N}, options);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  // Generate CUDA and compile with nvRTC
+  fe.compileFusion(&fusion);
+
+  // Runtime tiling
+  int m_tile = 4; // bound to threadIdx.z
+  int split_k = 7; // bound to blockIdx.x
+  int intra_cta = 8; // bound to threadIdx.x
+
+  auto fuser_outputs = fe.runFusion({A, B, m_tile, split_k, intra_cta});
+  auto C_fuser = fuser_outputs[0];
+
+  at::Tensor aten_C = mul(A.unsqueeze(2), B.unsqueeze(0)).sum(1);
+  TORCH_CHECK(
+      aten_C.allclose(C_fuser, 1e-5, 1e-5),
+      "Error of: ",
+      aten_C.sub(C_fuser).abs().max());
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.size() == 1);
+  TORCH_CHECK(fe.kernel()->summary().war_hazard_syncs.count(41) == 1);
 }
 
 void testGPU_FusionGlobalIntermediate() {
@@ -6161,9 +6410,9 @@ void testGPU_FusionGlobalIntermediate() {
   // How many threads to use for the block reduction
   constexpr int runtime_threadIdx_dim = 128;
 
-  torch::jit::fuser::cuda::FusionExecutor executor;
-  executor.compileFusion(&fusion);
-  auto outputs = executor.runFusion(
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(
       {input},
       torch::jit::fuser::cuda::LaunchParams(
           -1, -1, -1, runtime_threadIdx_dim, -1, -1));
@@ -8846,6 +9095,97 @@ void testGPU_FusionComputeAtMultiBroadcast2() {
 
   fusion.printKernel();
   return;
+}
+
+void testGPU_FusionReductionHalf() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(3, DataType::Half);
+  fusion.addInput(tv0);
+
+  auto tv1 = castOp(DataType::Float, tv0);
+  auto tv2 = add(tv1, new Float(1.0));
+  auto tv3 = sum(tv2, {2});
+  auto tv4 = castOp(DataType::Half, tv3);
+
+  fusion.addOutput(tv4);
+
+  const auto options =
+      at::TensorOptions().dtype(at::kHalf).device(at::kCUDA, 0);
+  at::Tensor input = at::randn({8, 8, 16}, options);
+
+  auto reduction_tv = tv3;
+
+  auto outputsOfReduction = DependencyCheck::getAllOutputsOf({reduction_tv});
+
+  // Grab only tensor views, though there shouldn't be any other type
+  auto tv_entries = ir_utils::filterByType<TensorView>(outputsOfReduction);
+
+  std::vector<TensorView*> tvOutputsOfReduction(
+      tv_entries.begin(), tv_entries.end());
+
+  auto reduction_params =
+      cuda::getReductionHeuristics(&fusion, {input}, reduction_tv);
+  TORCH_CHECK(reduction_params, "Reduction schedule was not generated!");
+  cuda::scheduleReduction(
+      &fusion, reduction_params.value(), reduction_tv, tvOutputsOfReduction);
+
+  TORCH_CHECK(reduction_params, "Reduction schedule was not generated!");
+
+  cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  // no broadcasting needed, omitting the last optional argument;
+  auto outputs = fe.runFusion({input}, reduction_params.value().lparams);
+
+  auto aten_output = input.to(c10::ScalarType::Float)
+                         .add(1.0)
+                         .sum({2})
+                         .to(c10::ScalarType::Half);
+
+  TORCH_CHECK(
+      aten_output.allclose(outputs[0], 1e-04, 1e-04),
+      "Error of: ",
+      aten_output.sub(outputs[0]).abs().max());
+}
+
+void testGPU_FusionInputsIdLookup() {
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({16, 8, 8}, options);
+  at::Tensor t1 = at::randn({8, 8}, options);
+  at::Tensor t2 = at::randn({6, 4}, options);
+
+  // create a cache with max size 2;
+  auto inputs_id_lookup = torch::jit::fuser::cuda::InputsIdLookup(2);
+
+  // testing basic function, same encoding for identical inputs
+  auto id_0 = inputs_id_lookup.lookupId({t0, t1, 5.0});
+  auto id_0_lookup = inputs_id_lookup.lookupId({t0, t1, 2.5});
+  TORCH_CHECK(id_0.id == id_0_lookup.id);
+  TORCH_CHECK(inputs_id_lookup.size() == 1);
+  TORCH_CHECK(id_0.eviction == false);
+
+  // new input (even tho same shape, but we have different signature because of
+  // missing scalar input
+  auto id_1 = inputs_id_lookup.lookupId({t0, t1});
+  auto id_1_lookup = inputs_id_lookup.lookupId({t0, t1});
+  TORCH_CHECK(id_1.id == id_1_lookup.id);
+  TORCH_CHECK(inputs_id_lookup.size() == 2);
+  TORCH_CHECK(id_1.eviction == false);
+
+  // eviction should happen at this point
+  auto id_2 = inputs_id_lookup.lookupId({t2, t1});
+  TORCH_CHECK(id_2.id != id_0.id);
+  TORCH_CHECK(id_2.id != id_1.id);
+  TORCH_CHECK(inputs_id_lookup.size() == 2);
+  TORCH_CHECK(id_2.eviction == true);
+  TORCH_CHECK(id_2.evict_id == id_0.id);
+
+  // look at input 1 again
+  auto id_1_relook = inputs_id_lookup.lookupId({t0, t1});
+  TORCH_CHECK(id_1_relook.id == id_1.id);
+  TORCH_CHECK(id_1_relook.eviction == false);
 }
 
 } // namespace jit

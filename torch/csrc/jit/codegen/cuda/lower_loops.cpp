@@ -1,8 +1,10 @@
+
 #include <torch/csrc/jit/codegen/cuda/lower_loops.h>
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
+#include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
@@ -12,6 +14,16 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+
+LoopNestGenerator::LoopNestGenerator(
+    Fusion* fusion,
+    ThreadPredicateMap& thread_predicates,
+    const std::vector<Expr*>& exprs)
+    : fusion_(fusion),
+      thread_predicates_(thread_predicates),
+      ir_builder_(GpuLower::current()->kernel()) {
+  generate(exprs);
+}
 
 // Create, place, and return the allocation for tv
 Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
@@ -50,35 +62,32 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
   // to get the total size
   Val* size = nullptr;
   if (alloc_dims.size() == 0) {
-    size = new kir::Int(1);
+    size = ir_builder_.create<kir::Int>(1);
   } else {
-    size = kir::lowerValue(alloc_dims[0]);
+    size = GpuLower::lowerValue(alloc_dims[0]);
     for (size_t i = 1; i < alloc_dims.size(); i++) {
-      size = kir::mulExpr(size, kir::lowerValue(alloc_dims[i]));
+      size = ir_builder_.mulExpr(size, GpuLower::lowerValue(alloc_dims[i]));
     }
   }
 
   // Create the allocation node
-  const auto lowered_tv = new kir::TensorView(tv);
-  const auto alloc =
-      new kir::Allocate(lowered_tv, lowered_tv->getMemoryType(), size);
+  const auto lowered_tv = ir_builder_.create<kir::TensorView>(tv);
+  const auto alloc = ir_builder_.create<kir::Allocate>(
+      lowered_tv, lowered_tv->memoryType(), size);
 
   // Track Shared Memory Allocation Nodes
-  bool hasDynamicSmemAlloc = false;
   if (tv->getMemoryType() == MemoryType::Shared) {
     if (!size->isConstScalar()) {
-      hasDynamicSmemAlloc = true;
       dynamic_smem_.push_front(alloc);
+      return nullptr;
     }
   }
 
   // Place the allocation
-  if (!hasDynamicSmemAlloc) {
-    if (alloc_loop != nullptr) {
-      alloc_loop->body().insert(0, alloc);
-    } else {
-      lowered_exprs.insert(lowered_exprs.begin(), alloc);
-    }
+  if (alloc_loop != nullptr) {
+    alloc_loop->body().insert(0, alloc);
+  } else {
+    lowered_exprs.insert(lowered_exprs.begin(), alloc);
   }
 
   return alloc;
@@ -105,10 +114,11 @@ void LoopNestGenerator::popFor() {
 }
 
 void LoopNestGenerator::pushBack(Expr* expr) {
-  if (for_loops.size() == 0)
+  if (for_loops.size() == 0) {
     lowered_exprs.push_back(expr);
-  else
+  } else {
     scope_utils::pushBack(for_loops.back(), expr);
+  }
 }
 
 // Update for loop structure based on this TensorView, if there's an allocation
@@ -134,7 +144,7 @@ void LoopNestGenerator::initReduction(
     IterDomain* dim = tv->getComputeAtAxis(i).first;
     if (dim->isReduction())
       continue;
-    ids.push_back(kir::lowerValue(dim)->as<kir::IterDomain>());
+    ids.push_back(GpuLower::lowerValue(dim)->as<kir::IterDomain>());
   }
 
   // Unsafe clone, as we want an exact replica of tv so we can create a UnaryOp
@@ -165,11 +175,14 @@ void LoopNestGenerator::initReduction(
       // If based on a thread, make sure we get the named Int right
       std::stringstream ss;
       ss << id->getParallelType();
-      new_fl = new kir::ForLoop(
-          new kir::NamedScalar(ss.str(), DataType::Int), id, {}, inner_fl);
+      new_fl = ir_builder_.create<kir::ForLoop>(
+          ir_builder_.create<kir::NamedScalar>(ss.str(), DataType::Int),
+          id,
+          inner_fl);
     } else {
       // Otherwise it's just a new int-
-      new_fl = new kir::ForLoop(new kir::Int(c10::nullopt), id, {}, inner_fl);
+      new_fl = ir_builder_.create<kir::ForLoop>(
+          ir_builder_.create<kir::Int>(c10::nullopt), id, inner_fl);
     }
 
     if (init_loop_nest == nullptr) {
@@ -234,8 +247,10 @@ void LoopNestGenerator::handle(Expr* expr) {
           " cannot lower ",
           out->getValType().value());
 
-      pushBack(new kir::Allocate(
-          kir::lowerValue(out), MemoryType::Local, new kir::Int(1)));
+      pushBack(ir_builder_.create<kir::Allocate>(
+          GpuLower::lowerValue(out),
+          MemoryType::Local,
+          ir_builder_.create<kir::Int>(1)));
     }
     pushBack(expr);
     return;
@@ -248,7 +263,7 @@ void LoopNestGenerator::handle(Expr* expr) {
   }
   if (shared_memory_sync) {
     // push Sync to the back of the last for loop
-    scope_utils::pushBack(for_loops.back(), new kir::Sync());
+    scope_utils::pushBack(for_loops.back(), ir_builder_.create<kir::Sync>());
     cleanSharedMemory();
   }
 
@@ -332,8 +347,8 @@ void LoopNestGenerator::handle(Expr* expr) {
       // Nothing to open
       break;
     }
-    if (kir::lowerValue(loops_to_open.front().first)->as<kir::IterDomain>() ==
-        existing_loop->iter_domain()) {
+    if (GpuLower::lowerValue(loops_to_open.front().first)
+            ->as<kir::IterDomain>() == existing_loop->iter_domain()) {
       loops_to_open.pop_front();
     }
   }
@@ -355,8 +370,9 @@ void LoopNestGenerator::handle(Expr* expr) {
   //  If this is a reduction, initialize the output (open for loops to inner
   //  most, predicate, initialize, place next after allocation if exists, close
   //  to computeAt)
-  if (out->hasReduction())
+  if (out->hasReduction()) {
     initReduction(out, expr->as<ReductionOp>()->init(), alloc_expr);
+  }
 
   //  Place the expression
   pushBack(expr);
@@ -373,7 +389,7 @@ void LoopNestGenerator::handle(Expr* expr) {
     auto ca_axis = out->getThisComputeAtAxis() - 1;
     while (for_loops.size() > 0 &&
            for_loops.back()->iter_domain() !=
-               kir::lowerValue(out->getComputeAtAxis(ca_axis).first)
+               GpuLower::lowerValue(out->getComputeAtAxis(ca_axis).first)
                    ->as<kir::IterDomain>()) {
       popFor();
     }
@@ -415,8 +431,9 @@ void findTargetTensor(Expr* expr, TensorView*& target, unsigned& score) {
   auto axis = out_tv->getRelativeComputeAtAxis();
   target = out_tv->getComputeAtView();
   while (target->hasComputeAt()) {
-    if (target->getThisComputeAtAxis() < axis)
+    if (target->getThisComputeAtAxis() < axis) {
       break;
+    }
     axis = target->getComputeAtRelPos(axis);
     target = target->getComputeAtView();
   }
