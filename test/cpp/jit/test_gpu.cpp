@@ -6998,12 +6998,12 @@ void testGPU_FusionComputeAtBCastReduction() {
   // IterDomain. Bug in loop nest generation?
   // Disabled for now.
   // TODO (CD) Enable this test.
-#if 0
   tv0->computeAt(tv5, 1);
 
   std::cerr << "After computeAt" << std::endl;
-
   fusion.printMath();
+
+#if 0
   fusion.printKernel();
 
   torch::jit::fuser::cuda::FusionExecutor fe;
@@ -8732,6 +8732,120 @@ void testGPU_FusionBCastMerge() {
   auto aten_t2 = aten_t1.unsqueeze(-1).expand({numel_x, numel_y, numel_z});
   auto aten_t4 = aten_t2 + t3;
   TORCH_CHECK(aten_t4.allclose(t4));
+}
+
+void testGPU_FusionComputeAtMultiBroadcast1() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // tv0 [i0]
+  auto tv0 = makeDummyTensor(1);
+  fusion.addInput(tv0);
+
+  // tv1 [i0]
+  auto tv1 = add(tv0, new Float(1));
+  // tv2 [B, i0]
+  auto tv2 = broadcast(tv1, {true, false});
+  // tv3 [B, i0]
+  auto tv3 = broadcast(tv1, {true, false});
+  // tv4 [i1, i0]
+  auto tv4 = makeDummyTensor(2);
+  fusion.addInput(tv4);
+  // tv5 [i1, i0]
+  auto tv5 = add(tv2, tv4);
+  fusion.addOutput(tv5);
+  // tv5 [i1, i0]
+  auto tv6 = add(tv3, tv4);
+  fusion.addOutput(tv6);
+
+  fusion.printMath();
+  // T1[ iS1{i1} ]
+  //     = T0[ iS0{i1} ]
+  //     + float(1);
+  // T2[ bS2{1}, iS1{i1} ] = broadcast( T1[ iS1{i1} ] )
+  // T5[ iS7{i8}, iS6{i1} ]
+  //     = T2[ bS2{1}, iS1{i1} ]
+  //     + T4[ iS4{i8}, iS5{i10} ];
+  // T3[ bS3{1}, iS1{i1} ] = broadcast( T1[ iS1{i1} ] )
+  // T6[ iS9{i8}, iS8{i1} ]
+  //     = T3[ bS3{1}, iS1{i1} ]
+  //     + T4[ iS4{i8}, iS5{i10} ];
+
+  tv1->computeAt(tv5, -1);
+
+  fusion.printMath();
+  // T1[ iS1{i1} ] compute_at( T2, 2 )
+  //     = T0[ iS0{i1} ]
+  //     + float(1);
+  // T2[ bS2{1}, iS1{i1} ] compute_at( T5, 2 ) = broadcast( T1[ iS1{i1} ] compute_at( T2, 2 ) )
+  // T5[ iS7{i8}, iS6{i1} ] compute_at( T6, 1 )
+  //     = T2[ bS2{1}, iS1{i1} ] compute_at( T5, 2 )
+  //     + T4[ iS4{i8}, iS5{i10} ];
+  // T3[ iS1{i1}, bS3{1} ] compute_at( T6, 1 ) = broadcast( T1[ iS1{i1} ] compute_at( T2, 2 ) )
+  // T6[ iS8{i1}, iS9{i8} ]
+  //     = T3[ iS1{i1}, bS3{1} ] compute_at( T6, 1 )
+  //     + T4[ iS4{i8}, iS5{i10} ];
+
+  return;
+}
+
+void testGPU_FusionComputeAtMultiBroadcast2() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // tv0 [i0]
+  auto tv0 = makeDummyTensor(1);
+  fusion.addInput(tv0);
+
+  // tv1 [i0]
+  auto tv1 = add(tv0, new Float(1));
+  // tv2 [B, i0]
+  auto tv2 = broadcast(tv1, {true, false});
+  // tv3 [B, i0]
+  auto tv3 = broadcast(tv1, {true, false});
+  // tv4 [i1, i0]
+  auto tv4 = makeDummyTensor(2);
+  fusion.addInput(tv4);
+  // tv5 [i1, i0]
+  auto tv5 = add(tv2, tv4);
+  fusion.addOutput(tv5);
+  // tv5 [i1, i0]
+  auto tv6 = add(tv3, tv4);
+  fusion.addOutput(tv6);
+
+  fusion.printMath();
+  // T1[ iS1{i1} ]
+  //     = T0[ iS0{i1} ]
+  //     + float(1);
+  // T2[ bS2{1}, iS1{i1} ] = broadcast( T1[ iS1{i1} ] )
+  // T5[ iS7{i8}, iS6{i1} ]
+  //     = T2[ bS2{1}, iS1{i1} ]
+  //     + T4[ iS4{i8}, iS5{i10} ];
+  // T3[ bS3{1}, iS1{i1} ] = broadcast( T1[ iS1{i1} ] )
+  // T6[ iS9{i8}, iS8{i1} ]
+  //     = T3[ bS3{1}, iS1{i1} ]
+  //     + T4[ iS4{i8}, iS5{i10} ];
+
+  tv5->merge(0);
+  tv5->split(0, 128);
+
+  tv1->computeAt(tv5, 1);
+
+  fusion.printMath();
+  // T1[ iS16{( ceilDiv(i1, 128) )}, iS17{128} ] compute_at( T2, 1 )
+  //     = T0[ iS0{i1} ]
+  //     + float(1);
+  // T2[ iS14{( ceilDiv(( 1 * i1 ), 128) )}, iS15{128} ] compute_at( T5, 1 ) = broadcast( T1[ iS16{( ceilDiv(i1, 128) )}, iS17{128} ] compute_at( T2, 1 ) )
+  // T5[ iS11{( ceilDiv(( i8 * i1 ), 128) )}, iS12{128} ] compute_at( T6, 1 )
+  //     = T2[ iS14{( ceilDiv(( 1 * i1 ), 128) )}, iS15{128} ] compute_at( T5, 1 )
+  //     + T4[ iS4{i8}, iS5{i10} ];
+  // T3[ iS22{( ceilDiv(i1, 128) )}, iS23{128}, bS3{1} ] compute_at( T6, 1 ) = broadcast( T1[ iS16{( ceilDiv(i1, 128) )}, iS17{128} ] compute_at( T2, 1 ) )
+  // T6[ iS24{( ceilDiv(i1, 128) )}, iS25{128}, iS9{i8} ]
+  //     = T3[ iS22{( ceilDiv(i1, 128) )}, iS23{128}, bS3{1} ] compute_at( T6, 1 )
+  //     + T4[ iS4{i8}, iS5{i10} ];
+
+  fusion.printKernel();
+  return;
 }
 
 } // namespace jit

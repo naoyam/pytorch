@@ -234,7 +234,9 @@ namespace jit {
   _(GPU_FusionComputeDomain)                        \
   _(GPU_FusionComputeDomainRfactor)                 \
   _(GPU_FusionComputeDomainReorder)                 \
-  _(GPU_FusionBCastMerge)
+  _(GPU_FusionBCastMerge)                           \
+  _(GPU_FusionComputeAtMultiBroadcast1)             \
+  _(GPU_FusionComputeAtMultiBroadcast2)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
   _(ArgumentSpec)               \
