@@ -12,6 +12,7 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+namespace cuda {
 
 class ThreadPredicateMap;
 
@@ -125,7 +126,7 @@ class ParallelTypeBitmap {
  private:
   ParallelTypeBitmap(const std::bitset<num_p_type>& bs) : bitset_(bs) {}
   std::bitset<num_p_type> bitset_;
-  const static std::unordered_map<ParallelType, int> pt_to_offset_;
+  const static std::unordered_map<ParallelType, int, TypeHash> pt_to_offset_;
   const static std::unordered_map<int, ParallelType> offset_to_pt_;
 };
 
@@ -179,7 +180,7 @@ IterDomain* getTermIDInMap(
     std::unordered_map<IterDomain*, IterDomain*> p2c_root_map);
 
 } // namespace loop_utils
-
+} // namespace cuda
 } // namespace fuser
 } // namespace jit
 } // namespace torch

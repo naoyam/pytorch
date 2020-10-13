@@ -7,7 +7,6 @@
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
-#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/compute_at.h>
 
 #include <sstream>
@@ -16,6 +15,7 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+namespace cuda {
 
 namespace {
 
@@ -598,6 +598,15 @@ bool TensorDomain::operator==(const TensorDomain& other) const {
       contiguity_ == other.contiguity_;
 }
 
+bool TensorDomain::operator==(const TensorDomain& other) const {
+  // Checks equality of each class field. Should not be necessary to
+  // check no_bcast_domain_ and no_reduction_domain_ as they are just
+  // derived from domain_.
+  return root_domain_ == other.root_domain_ && domain_ == other.domain_ &&
+      rfactor_domain_ == other.rfactor_domain_ &&
+      contiguity_ == other.contiguity_;
+}
+
 bool TensorDomain::sameAs(const TensorDomain* const other) const {
   if (nDims() != other->nDims())
     return false;
@@ -1036,6 +1045,7 @@ std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(
 }
 
 namespace {
+
 class BroadcastMapping: public BackwardVisitor {
  public:
   using BackwardVisitor::handle;
@@ -1512,7 +1522,7 @@ class DisjointSet {
   // Internal fixed point implementation:
   //  Returns the equivalent class that e belongs to
   int fixedPoint(int e) const {
-    TORCH_INTERNAL_ASSERT(set_map.size() > e);
+    TORCH_INTERNAL_ASSERT(static_cast<int>(set_map.size()) > e);
     while (set_map[e] != e) {
       // Chasing to fixed point
       e = set_map[e];
@@ -1611,6 +1621,8 @@ class ConcretizeDomain : private BackwardVisitor {
     bcast_domain_map_[id] = concretized(To);
   }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Woverloaded-virtual"
   void handle(ReductionOp* rop) override {
     concretizePwOp(rop);
   }
@@ -1626,6 +1638,7 @@ class ConcretizeDomain : private BackwardVisitor {
   void handle(TernaryOp* top) override {
     concretizePwOp(top);
   };
+#pragma clang diagnostic pop
 
  private:
   using MapType = std::unordered_map<IterDomain*, IterDomain*>;
@@ -1742,6 +1755,8 @@ class ProveValEqual : private IterVisitor {
     }
   }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Woverloaded-virtual"
   void handle(ReductionOp* rop) override {
     provePwOp(rop);
   }
@@ -1757,6 +1772,7 @@ class ProveValEqual : private IterVisitor {
   void handle(TernaryOp* top) override {
     provePwOp(top);
   }
+#pragma clang diagnostic pop
 
  private:
   ConcretizeDomain cd_;
@@ -1764,7 +1780,6 @@ class ProveValEqual : private IterVisitor {
 };
 
 } // namespace
-
 
 // API call to return the concretized axis of a broadcast axis
 const IterDomain* IterDomain::concretizeDomain(IterDomain* bcast_dom) {
@@ -2863,6 +2878,7 @@ c10::optional<ParallelType> NamedScalar::getParallelIndex() const {
   return c10::nullopt;
 }
 
+} // namespace cuda
 } // namespace fuser
 } // namespace jit
 } // namespace torch

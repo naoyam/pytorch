@@ -12,6 +12,7 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+namespace cuda {
 namespace codegen {
 
 namespace {
@@ -525,11 +526,15 @@ class CudaKernelGenerator : private OptInConstDispatch {
     indent() << kTab << genInline(node->reduction_op()->init()) << ");\n";
   }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Woverloaded-virtual"
+  // TODO(Kir): fix me
   void handle(const kir::Scope& scope) {
     for (auto expr : scope.exprs()) {
       handle(expr);
     }
   }
+#pragma clang diagnostic pop
 
   void handle(const kir::ForLoop* node) final {
     // TODO(kir): handle this during lowering
@@ -631,6 +636,7 @@ std::string generateCudaKernel(
 }
 
 } // namespace codegen
+} // namespace cuda
 } // namespace fuser
 } // namespace jit
 } // namespace torch

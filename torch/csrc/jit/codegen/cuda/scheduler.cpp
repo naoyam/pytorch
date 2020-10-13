@@ -91,7 +91,6 @@ bool scheduleFusion(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   TORCH_INTERNAL_ASSERT(
       !fusion->hasReduction(), "This scheduler only handles pointwise ops.");
   const bool disable_unroll = fusion->isStochastic();
-  bool fcd_reduction = false;
 
   for (auto out_val : fusion->outputs()) {
     auto out = out_val->as<TensorView>();
@@ -113,9 +112,7 @@ bool scheduleFusion(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
     out_tv->split(0, kPwThreadX);
     // Split by another 4 which will be our unroll factor
     auto ur_factor = disable_unroll ? 1 : kUnrollFactor;
-    if (!disable_unroll) {
-      out_tv->split(0, ur_factor);
-    }
+    out_tv->split(0, ur_factor);
   }
 
   for (auto output : fusion->outputs()) {
@@ -131,13 +128,6 @@ bool scheduleFusion(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
     out_tv->axis(2)->parallelize(ParallelType::TIDx);
   }
 
-  // Run through all values, unroll, and bind their axes
-  for (auto val : fusion->vals()) {
-    if (val->getValType().value() != ValType::TensorView ||
-        fusion->hasInput(val))
-      continue;
-    TensorView* tv = val->as<TensorView>();
-  }
   return true;
 }
 
@@ -357,9 +347,6 @@ void scheduleReduction(
     TensorView* red_tv,
     std::vector<TensorView*> outs_of_red) {
   FusionGuard fg(fusion);
-
-  const bool red_on_fastest_dim =
-      red_tv->axis(static_cast<int>(red_tv->nDims()) - 1)->isReduction();
 
   // We coalesc all reduction axes to the right;
   mergeReduction(red_tv);

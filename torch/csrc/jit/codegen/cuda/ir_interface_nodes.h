@@ -16,6 +16,7 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+namespace cuda {
 
 /*
  * A Bool value.
@@ -421,10 +422,11 @@ class TORCH_CUDA_API TensorView : public Val {
   // compute at axis in compute at view
   unsigned int relative_compute_at_axis_ = 0;
   unsigned int this_compute_at_axis_ = 0;
-  ComputeDomain* compute_domain_ = nullptr;
   MemoryType memory_type_ = MemoryType::Local;
+  ComputeDomain* compute_domain_ = nullptr;
 };
 
+} // namespace cuda
 } // namespace fuser
 } // namespace jit
 } // namespace torch

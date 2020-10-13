@@ -14,6 +14,17 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+namespace cuda {
+
+LoopNestGenerator::LoopNestGenerator(
+    Fusion* fusion,
+    ThreadPredicateMap& thread_predicates,
+    const std::vector<Expr*>& exprs)
+    : fusion_(fusion),
+      thread_predicates_(thread_predicates),
+      ir_builder_(GpuLower::current()->kernel()) {
+  generate(exprs);
+}
 
 LoopNestGenerator::LoopNestGenerator(
     Fusion* fusion,
@@ -737,6 +748,7 @@ bool LoopNestGenerator::isModifiedSharedMemory(Val* key) const {
   return false;
 }
 
+} // namespace cuda
 } // namespace fuser
 } // namespace jit
 } // namespace torch

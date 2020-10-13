@@ -14,6 +14,7 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+namespace cuda {
 
 class TensorDomain;
 class TensorView;
@@ -173,6 +174,7 @@ inline int normalizeComputeAtPos(int pos, size_t num_dimensions) {
   return pos;
 }
 
+} // namespace cuda
 } // namespace fuser
 } // namespace jit
 } // namespace torch

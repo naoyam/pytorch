@@ -13,6 +13,7 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+namespace cuda {
 
 using id_map = std::unordered_map<IterDomain*, IterDomain*>;
 
@@ -278,6 +279,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     int consumer_compute_at_axis) {
   FUSER_PERF_SCOPE("replayPasC");
 
+<<<<<<< HEAD
   // producer_compute_at_axis is a position in the producer compute domain.
   //normalizeComputeAtPos(consumer_compute_at_axis,
   //consumer_cd->nDims());
@@ -293,6 +295,10 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
             << ", CD pos: " << cd_pos
             << ", TD pos: " << td_pos << std::endl;
 
+=======
+  if (consumer_compute_at_axis < 0)
+    consumer_compute_at_axis += (int)consumer->nDims() + 1;
+>>>>>>> 20_9_25_devel
   TORCH_INTERNAL_ASSERT(
       consumer_compute_at_axis >= 0 &&
       (unsigned int)cd_pos <= consumer_cd->nDims() &&
@@ -505,12 +511,21 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
   auto num_shared_axes = new_IDs.size();
 
   // Add axes in (2)
+<<<<<<< HEAD
 #ifdef REPLAY_WITH_CD
   for (size_t i = 0; i < consumer_cd->nDims(); ++i) {
     auto c_id = consumer_cd->getAxisForReplay(i);
     auto it = replay_PasC.getReplay().find(c_id);
     if (it != replay_PasC.getReplay().end()) {
       auto id = it->second;
+=======
+  for (auto c_id : consumer->domain()) {
+    auto it = replay_PasC.getReplay().find(c_id);
+    if (it != replay_PasC.getReplay().end()) {
+      auto id = it->second;
+      // If the leaf id from ReplayTransformations is used to move
+      // forward in BestEffortReplay, it is not a final ID.
+>>>>>>> 20_9_25_devel
       if (producer_replayed_leaves.getUnorderedLeafIDs().find(id) ==
           producer_replayed_leaves.getUnorderedLeafIDs().end()) {
         continue;
@@ -579,6 +594,7 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     int producer_compute_at_axis) {
   FUSER_PERF_SCOPE("replayCasP");
 
+<<<<<<< HEAD
   // producer_compute_at_axis is a position in the producer compute
   // domain.
 #ifdef COMPUTE_AT_USE_TD_POS
@@ -611,6 +627,10 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
             << ", producer: " << producer << ", producer_cd: " << *producer_cd
             << ", CD pos: " << cd_pos
             << ", TD pos: " << td_pos << std::endl;
+=======
+  if (producer_compute_at_axis < 0)
+    producer_compute_at_axis += (int)producer->nDims() + 1;
+>>>>>>> 20_9_25_devel
 
   TORCH_INTERNAL_ASSERT(
       producer_compute_at_axis >= 0 &&
@@ -834,6 +854,8 @@ std::tuple<TensorDomain*, unsigned int, ReplayInfoForComputeDomain> TransformRep
     auto it = replay_CasP.getReplay().find(p_id);
     if (it != replay_CasP.getReplay().end()) {
       auto id = it->second;
+      // If the leaf id from ReplayTransformations is used to move
+      // forward in BestEffortReplay, it is not a final ID.
       if (consumer_replayed_leaves.getUnorderedLeafIDs().find(id) ==
           consumer_replayed_leaves.getUnorderedLeafIDs().end()) {
         continue;
@@ -978,6 +1000,7 @@ std::tuple<TensorView*, unsigned int, unsigned int> TransformReplay::replayCasP(
   return TransformReplay::replay(consumer, producer, compute_at_axis, false);
 }
 
+} // namespace cuda
 } // namespace fuser
 } // namespace jit
 } // namespace torch
