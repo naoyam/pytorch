@@ -9,6 +9,7 @@
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/predicate_compute.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir_printer.h>
 
 namespace torch {
 namespace jit {
@@ -77,7 +78,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
 
   auto unroll_pred = UnrollPredicate::get(for_loops, fl, p2c_root_map);
 
-  std::cerr << "unroll_pred: " << unroll_pred << std::endl;
+  std::cerr << "unroll_pred: " << kir::toString(unroll_pred) << std::endl;
 
   kir::ForLoop* parent_scope = for_loops.empty() ? nullptr : for_loops.back();
 

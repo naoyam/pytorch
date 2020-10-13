@@ -7,6 +7,7 @@
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir_printer.h>
 
 #include <algorithm>
 #include <numeric>
@@ -15,16 +16,6 @@ namespace torch {
 namespace jit {
 namespace fuser {
 namespace cuda {
-
-LoopNestGenerator::LoopNestGenerator(
-    Fusion* fusion,
-    ThreadPredicateMap& thread_predicates,
-    const std::vector<Expr*>& exprs)
-    : fusion_(fusion),
-      thread_predicates_(thread_predicates),
-      ir_builder_(GpuLower::current()->kernel()) {
-  generate(exprs);
-}
 
 LoopNestGenerator::LoopNestGenerator(
     Fusion* fusion,
@@ -179,7 +170,7 @@ void LoopNestGenerator::initReduction(
   // Work through the iter domains that we need to initialize on, outside to
   // inside, to construct the loop nest for the initialization.
   for (auto id : ids) {
-    std::cerr << "id: " << id << std::endl;
+    std::cerr << "id: " << kir::toString(id) << std::endl;
     kir::ForLoop* new_fl;
 
     if (id->isThread()) {

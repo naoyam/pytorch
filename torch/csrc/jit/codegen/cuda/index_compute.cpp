@@ -1568,7 +1568,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
           mulx(idx->idx(), ir_builder.create<kir::NamedScalar>(ss.str(), DataType::Int)));
     }
     auto ti = ir_builder.create<kir::TensorIndex>(producer_tv, strided_inds);
-    DEBUG("Generated TensorIndex: ", ti);
+    DEBUG("Generated TensorIndex: ", kir::toString(ti));
     return ti;
   }
 
@@ -1682,7 +1682,7 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
   }
 
   auto ti = ir_builder.create<kir::TensorIndex>(producer_tv, strided_inds);
-  DEBUG("Generated TensorIndex: ", ti);
+  DEBUG("Generated TensorIndex: ", kir::toString(ti));
   return ti;
 }
 
@@ -1894,7 +1894,7 @@ kir::TensorIndex* getConsumerIndexForReductionInit(
   }
   // return new kir::TensorIndex(consumer_tv, strided_inds);
   auto ti = ir_builder.create<kir::TensorIndex>(consumer_tv, strided_inds);
-  DEBUG("Generated TI: ", ti);
+  DEBUG("Generated TI: ", kir::toString(ti));
   return ti;
 }
 
@@ -1959,7 +1959,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl2(
   }
 
   auto ti = ir_builder.create<kir::TensorIndex>(consumer_tv, strided_inds);
-  DEBUG("Generated TI: ", ti);
+  DEBUG("Generated TI: ", kir::toString(ti));
   return ti;
 }
 

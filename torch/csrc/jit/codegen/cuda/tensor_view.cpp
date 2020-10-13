@@ -14,7 +14,7 @@
 
 TORCH_CUDA_API std::ostream& operator<<(
     std::ostream& os,
-    const torch::jit::fuser::Statement* stmt);
+    const torch::jit::fuser::cuda::Statement* stmt);
 
 namespace str_test {
 template <typename T>

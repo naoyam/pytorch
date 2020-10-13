@@ -91,6 +91,9 @@ void FusionExecutor::debugCompileFusionFromStr(
       fusion_id_ > 0, "assign a fusion_id_ <= 0 is not accepted.");
 }
 
+// TODO (CD): Temporary workaround
+#define fusion_ (*fusion_tmp_)
+
 void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   FUSER_PERF_SCOPE("compileFusion");
 
@@ -109,7 +112,7 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   fusion_ = *fusion;
   FusionGuard fg(&fusion_);
 #else
-  fusion_ = fusion;
+  fusion_tmp_ = fusion;
 #endif
   options_ = options;
 

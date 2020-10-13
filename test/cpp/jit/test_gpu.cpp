@@ -2904,6 +2904,8 @@ TEST(NVFuserTest, FusionCastOps_CUDA) {
 // We want split/merge/reorder all tested both on and off rfactor domains, also
 // want compute at into the rfactor domain, and into its consumer
 TEST(NVFuserTest, FusionRFactorReplay_CUDA) {
+  // TODO (CD): replayPasC/replayCasP need ComputeDomain.
+#if 0
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -2992,6 +2994,7 @@ TEST(NVFuserTest, FusionRFactorReplay_CUDA) {
               dom2.end(),
               [](IterDomain* id) { return id->isReduction(); }),
       "Error in rFactor, there seems to be something wrong in root domain.");
+#endif
 }
 
 // Start off simple, block on the outer dim
@@ -7151,6 +7154,1727 @@ TEST(NVFuserTest, FusionGroupGuardRelaxedCheck) {
   // passing with dynamic shape
   auto t1 = t0.slice(1, 0, 16, 2);
   TORCH_CHECK(complyWith(t1, tensor_type));
+}
+
+TEST(NVFuserTest, FusionComputeDomain) {
+  bool is_all = true;
+  int case_num_env = -1;
+  if (std::getenv("case")) {
+    is_all = false;
+    case_num_env = std::stoi(std::getenv("case"));
+    std::cerr << "Case " << case_num_env << std::endl;
+  }
+
+  auto check_case = [&](int x) {
+    bool ret = is_all || (case_num_env == x);
+    if (ret) {
+      std::cerr << "\nCase " << x << std::endl << std::endl;
+    }
+    return ret;
+  };
+
+  if (check_case(1)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t2 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(2)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    auto tv3 = add(tv2, new Float(3));
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->computeAt(tv2, 1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->computeAt(tv3, 1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(1)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::BIDx);
+    tv3->axis(1)->parallelize(ParallelType::BIDx);
+
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t3 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t3});
+
+    auto aten_output = t0 + 1.0 + 2.0 + 3.0;
+    TORCH_CHECK(aten_output.allclose(t3));
+  }
+
+  if (check_case(3)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    auto tv3 = add(tv1, tv2);
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv3, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    //int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t3});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1 + 2.0;
+    auto aten_t3 = aten_t1 + aten_t2;
+    TORCH_CHECK(aten_t3.allclose(t3));
+  }
+
+  if (check_case(4)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = broadcast(tv1, {true, false});
+    auto tv3 = makeDummyTensor(2);
+    fusion.addInput(tv3);
+    auto tv4 = add(tv2, tv3);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv4, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::rand({numel_y, numel_x}, options);
+    at::Tensor t4 = at::empty_like(t3, options);
+
+    fe.runFusion({t0, t3}, {t4});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.unsqueeze(0).expand({numel_y, numel_x});
+    auto aten_t4 = aten_t2 + t3;
+    TORCH_CHECK(aten_t4.allclose(t4));
+  }
+
+  if (check_case(5)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = broadcast(tv1, {false, true});
+    auto tv3 = makeDummyTensor(2);
+    fusion.addInput(tv3);
+    auto tv4 = add(tv2, tv3);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv4, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t4 = at::empty_like(t3, options);
+
+    fe.runFusion({t0, t3}, {t4});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.unsqueeze(1).expand({numel_x, numel_y});
+    auto aten_t4 = aten_t2 + t3;
+    TORCH_CHECK(aten_t4.allclose(t4));
+  }
+  // no common consumer
+  if (check_case(6)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    auto tv3 = add(tv2, new Float(3));
+    auto tv4 = add(tv1, new Float(4));
+    auto tv5 = add(tv4, new Float(5));
+    fusion.addOutput(tv3);
+    fusion.addOutput(tv5);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv3, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    //int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t3 = at::empty_like(t0, options);
+    at::Tensor t5 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t3, t5});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t3 = aten_t1 + 2.0 + 3.0;
+    auto aten_t5 = aten_t1 + 4.0 + 5.0;
+    TORCH_CHECK(aten_t3.allclose(t3));
+    TORCH_CHECK(aten_t5.allclose(t5));
+  }
+  // reduction
+  if (check_case(7)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(1));
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    tv2->computeAt(tv3, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t3 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t3});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.sum({1});
+    auto aten_t3 = aten_t2 + 1.0;
+    TORCH_CHECK(aten_t3.allclose(t3));
+  }
+  if (check_case(8)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(3));
+    auto tv4 = sum(tv1, {1});
+    auto tv5 = add(tv4, new Float(5));
+    fusion.addOutput(tv3);
+    fusion.addOutput(tv5);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -1);
+    fusion.printMath();
+
+    fusion.printKernel();
+
+    // Doesn't work yet
+#if 0
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t3 = at::empty({numel_x}, options);
+    at::Tensor t5 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t3, t5});
+
+    auto aten_t1 = t0 + 1.0;
+    auto aten_t2 = aten_t1.sum({1});
+    auto aten_t3 = aten_t2 + 3;
+    TORCH_CHECK(aten_t3.allclose(t3));
+    auto aten_t4 = aten_t1.sum({1});
+    auto aten_t5 = aten_t4 + 5;
+    TORCH_CHECK(aten_t5.allclose(t5));
+#endif
+  }
+
+  if (check_case(9)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    tv2->split(0, 4);
+    tv1->computeAt(tv2, 2);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+    tv1->axis(-1)->parallelize(ParallelType::BIDx);
+    tv2->axis(-1)->parallelize(ParallelType::BIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (check_case(10)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->split(0, 4);
+    tv2->split(2, 8);
+
+    tv1->split(1, 8);
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+    tv1->axis(-2)->parallelize(ParallelType::BIDx);
+    tv2->axis(-2)->parallelize(ParallelType::BIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (check_case(11)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->merge(0);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->computeAt(tv2, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (check_case(12)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    int numel_z = 100;
+
+    auto tv0 = makeConcreteTensor({numel_x, numel_y, numel_z});
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, 1);
+    tv1->merge(1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y, numel_z}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (check_case(13)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    int numel_z = 100;
+
+    auto tv0 = makeConcreteTensor({numel_x, numel_y, numel_z});
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->split(2, 4);
+    tv2->merge(1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y, numel_z}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (check_case(14)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    int numel_z = 100;
+
+    auto tv0 = makeConcreteTensor({numel_x, numel_y, numel_z});
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->split(2, 4);
+    tv2->merge(1);
+    tv2->merge(1);
+
+    tv1->merge(1);
+    tv1->split(1, 10);
+    tv1->split(1, 20);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y, numel_z}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (check_case(15)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    int numel_z = 100;
+
+    auto tv0 = makeConcreteTensor({numel_x, numel_y});
+    //auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+    auto tv1 = makeConcreteTensor({numel_x, numel_y, numel_z});
+    //auto tv1 = makeDummyTensor(3);
+    fusion.addInput(tv1);
+
+    auto tv2 = add(tv0, new Float(1));
+    auto tv3 = broadcast(tv2, {false, false, true});
+    auto tv4 = add(tv3, tv1);
+    fusion.addOutput(tv4);
+
+    std::cerr << "tv4->merge(1);\n";
+    tv4->merge(1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    std::cerr << "tv0->computeAt(tv4, 1)\n";
+
+    tv0->computeAt(tv4, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t1 = at::rand({numel_x, numel_y, numel_z}, options);
+    at::Tensor t4 = at::empty_like(t1, options);
+
+    fe.runFusion({t0, t1}, {t4});
+
+    auto aten_t2 = (t0 + 1.0).unsqueeze(-1).expand({numel_x, numel_y, numel_z});
+    auto aten_t4 = aten_t2 + t1;
+    TORCH_CHECK(aten_t4.allclose(t4));
+  }
+
+  if (check_case(16)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(1));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->split(0, 4);
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    //int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = t0 + 1.0 + 1.0;
+    TORCH_CHECK(aten_t2.allclose(t2));
+  }
+
+  if (check_case(17)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = add(tv2, new Float(3));
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    tv0->computeAt(tv3, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv0->computeAt(tv2, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t3 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t3});
+
+    auto aten_t3 = (t0 + 1.0).sum({1}) + 3.0;
+    TORCH_CHECK(aten_t3.allclose(t3));
+  }
+
+  if (check_case(18)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = sum(tv1, {1});
+    fusion.addOutput(tv2);
+
+    tv2->split(1, 4);
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, -2);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::TIDx);
+    tv2->axis(2)->parallelize(ParallelType::TIDy);
+    tv1->axis(2)->parallelize(ParallelType::TIDy);
+
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    int numel_y = 100;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_t2 = (t0 + 1.0).sum({1});
+    TORCH_CHECK(aten_t2.allclose(t2),
+                "Error of: ", aten_t2.sub(t2).abs().max());
+  }
+
+  if (check_case(19)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->merge(0);
+    tv2->split(0, 4);
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(-1)->parallelize(ParallelType::Unroll);
+    tv1->axis(-1)->parallelize(ParallelType::Unroll);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 80;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(20)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->merge(0);
+    tv2->split(0, 4);
+
+    tv1->computeAt(tv2, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(-1)->parallelize(ParallelType::Unroll);
+    tv1->axis(-1)->parallelize(ParallelType::Unroll);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 80;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(21)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(3);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->merge(0);
+    tv2->merge(0);
+    tv2->split(0, 4);
+    tv2->split(0, 8);
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(-1)->parallelize(ParallelType::TIDx);
+    tv1->axis(-1)->parallelize(ParallelType::TIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 80;
+    int numel_z = 4;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y, numel_z}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(22)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(1);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv2->split(0, 4);
+    tv2->split(0, 8);
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv2->axis(-1)->parallelize(ParallelType::TIDx);
+    tv1->axis(-1)->parallelize(ParallelType::TIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    std::cerr << "Compiling fusion" << std::endl;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 101;
+    //int numel_y = 80;
+    //int numel_z = 4;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(23)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int ndim = 3;
+    if (std::getenv("NDIM")) {
+      ndim = std::stoi(std::getenv("NDIM"));
+    }
+
+    std::cerr << "NDIM: " << ndim << std::endl;
+
+    int w = 3, x = 4, y = 7, z = 8;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    auto tv0 = makeDummyTensor(ndim);
+    auto tv1 = makeDummyTensor(ndim + 1);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    TensorView* tv2 = nullptr;
+    at::Tensor t0, t1;
+    if (ndim == 3) {
+      tv2 = broadcast(tv0, {true, false, false, false});
+      t0 = at::randn({x, y, z}, options);
+      t1 = at::randn({w, x, y, z}, options);
+    } else if (ndim == 2) {
+      tv2 = broadcast(tv0, {true, false, false});
+      t0 = at::randn({x, y}, options);
+      t1 = at::randn({w, x, y}, options);
+    } else if (ndim == 1) {
+      tv2 = broadcast(tv0, {true, false});
+      t0 = at::randn({z}, options);
+      t1 = at::randn({w, z}, options);
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unsupported NDIM");
+    }
+
+    auto tv3 = add(tv2, tv1);
+    fusion.addOutput(tv3);
+
+    fusion.printMath();
+
+    auto last_tensor = tv3;
+    last_tensor->merge(0);
+    if (ndim >= 2) {
+      last_tensor->merge(0);
+    }
+    if (ndim >= 3) {
+      last_tensor->merge(0);
+    }
+    last_tensor->split(0, 16);
+    last_tensor->split(0, 4);
+
+    tv2->computeAt(last_tensor, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    last_tensor->axis(0)->parallelize(ParallelType::BIDx);
+#if 1
+    last_tensor->axis(1)->parallelize(ParallelType::Unroll);
+    tv2->axis(1)->parallelize(ParallelType::Unroll);
+
+    last_tensor->axis(2)->parallelize(ParallelType::TIDx);
+    tv2->axis(2)->parallelize(ParallelType::TIDx);
+#endif
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t1});
+
+    auto t2 = t0;
+    auto t3 = t2.add(t1);
+
+    TORCH_CHECK(t3.allclose(outputs[0]),
+                "Error of: ", t3.sub(outputs[0]).abs().max());
+  }
+
+  if (check_case(24)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int ndim = 3;
+    if (std::getenv("NDIM")) {
+      ndim = std::stoi(std::getenv("NDIM"));
+    }
+
+    std::cerr << "NDIM: " << ndim << std::endl;
+
+    int w = 3, x = 4, y = 7, z = 19;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    auto tv0 = makeDummyTensor(ndim);
+    auto tv1 = makeDummyTensor(ndim + 1);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    auto tv2 = add(tv0, new Float(1.0));
+
+    TensorView* tv3 = nullptr;
+    at::Tensor t0, t1;
+    if (ndim == 3) {
+      tv3 = broadcast(tv2, {true, false, false, false});
+      t0 = at::randn({x, y, z}, options);
+      t1 = at::randn({w, x, y, z}, options);
+    } else if (ndim == 2) {
+      tv3 = broadcast(tv2, {true, false, false});
+      t0 = at::randn({x, y}, options);
+      t1 = at::randn({w, x, y}, options);
+    } else if (ndim == 1) {
+      tv3 = broadcast(tv2, {true, false});
+      t0 = at::randn({z}, options);
+      t1 = at::randn({w, z}, options);
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unsupported NDIM");
+    }
+
+    auto tv4 = add(tv3, tv1);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    auto last_tensor = tv4;
+    last_tensor->merge(0);
+    if (ndim >= 2) {
+      last_tensor->merge(0);
+    }
+    if (ndim >= 3) {
+      last_tensor->merge(0);
+    }
+    last_tensor->split(0, 16);
+    last_tensor->split(0, 4);
+
+    tv2->computeAt(last_tensor, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+#if 1
+    last_tensor->axis(0)->parallelize(ParallelType::BIDx);
+
+    last_tensor->axis(1)->parallelize(ParallelType::Unroll);
+    tv2->axis(1)->parallelize(ParallelType::Unroll);
+    tv3->axis(1)->parallelize(ParallelType::Unroll);
+
+    last_tensor->axis(2)->parallelize(ParallelType::TIDx);
+    tv2->axis(2)->parallelize(ParallelType::TIDx);
+    tv3->axis(2)->parallelize(ParallelType::TIDx);
+#endif
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t1});
+
+    auto t3 = t0 + 1;
+    auto t4 = t3.add(t1);
+
+    TORCH_CHECK(t4.allclose(outputs[0]),
+                "Error of: ", t4.sub(outputs[0]).abs().max());
+  }
+
+  // Similar to case 24 but with an additional bcast compute-at domain
+  if (check_case(25)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int ndim = 3;
+    if (std::getenv("NDIM")) {
+      ndim = std::stoi(std::getenv("NDIM"));
+    }
+
+    std::cerr << "NDIM: " << ndim << std::endl;
+
+    int v = 5, w = 3, x = 4, y = 7, z = 19;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    auto tv0 = makeDummyTensor(ndim);
+    auto tv1 = makeDummyTensor(ndim + 2);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    auto tv2 = add(tv0, new Float(1.0));
+
+    TensorView* tv3 = nullptr;
+    at::Tensor t0, t1;
+    if (ndim == 3) {
+      tv3 = broadcast(tv2, {true, true, false, false, false});
+      t0 = at::randn({x, y, z}, options);
+      t1 = at::randn({v, w, x, y, z}, options);
+    } else if (ndim == 2) {
+      tv3 = broadcast(tv2, {true, true, false, false});
+      t0 = at::randn({x, y}, options);
+      t1 = at::randn({v, w, x, y}, options);
+    } else if (ndim == 1) {
+      tv3 = broadcast(tv2, {true, true, false});
+      t0 = at::randn({z}, options);
+      t1 = at::randn({v, w, z}, options);
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unsupported NDIM");
+    }
+
+    auto tv4 = add(tv3, tv1);
+    fusion.addOutput(tv4);
+
+    //fusion.printMath();
+
+    auto last_tensor = tv4;
+    last_tensor->merge(1);
+    if (ndim >= 2) {
+      last_tensor->merge(1);
+    }
+    if (ndim >= 3) {
+      last_tensor->merge(1);
+    }
+    last_tensor->split(1, 16);
+    last_tensor->split(1, 4);
+
+    tv2->computeAt(last_tensor, 2);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    last_tensor->axis(0)->parallelize(ParallelType::BIDy);
+    last_tensor->axis(1)->parallelize(ParallelType::BIDx);
+
+    last_tensor->axis(-2)->parallelize(ParallelType::Unroll);
+    last_tensor->axis(-1)->parallelize(ParallelType::TIDx);
+
+    tv3->axis(-2)->parallelize(ParallelType::Unroll);
+    tv3->axis(-1)->parallelize(ParallelType::TIDx);
+
+    tv2->axis(-2)->parallelize(ParallelType::Unroll);
+    tv2->axis(-1)->parallelize(ParallelType::TIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t1});
+
+    auto t3 = t0 + 1;
+    auto t4 = t3.add(t1);
+
+    TORCH_CHECK(t4.allclose(outputs[0]),
+                "Error of: ", t4.sub(outputs[0]).abs().max());
+  }
+
+  if (check_case(26)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int ndim = 3;
+    if (std::getenv("NDIM")) {
+      ndim = std::stoi(std::getenv("NDIM"));
+    }
+
+    std::cerr << "NDIM: " << ndim << std::endl;
+
+    int v = 5, w = 3, x = 4, y = 7, z = 19;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    auto tv0 = makeDummyTensor(ndim);
+    auto tv1 = makeDummyTensor(ndim + 2);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    auto tv2 = add(tv0, new Float(1.0));
+
+    TensorView* tv3 = nullptr;
+    at::Tensor t0, t1;
+    if (ndim == 3) {
+      tv3 = broadcast(tv2, {true, false, false, false, true});
+      t0 = at::randn({x, y, z}, options);
+      t1 = at::randn({v, x, y, z, w}, options);
+    } else if (ndim == 2) {
+      tv3 = broadcast(tv2, {true, false, false, true});
+      t0 = at::randn({x, y}, options);
+      t1 = at::randn({v, x, y, w}, options);
+    } else if (ndim == 1) {
+      tv3 = broadcast(tv2, {true, false, true});
+      t0 = at::randn({z}, options);
+      t1 = at::randn({v, z, w}, options);
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unsupported NDIM");
+    }
+
+    auto tv4 = add(tv3, tv1);
+    fusion.addOutput(tv4);
+
+    fusion.printMath();
+
+    auto last_tensor = tv4;
+    last_tensor->merge(0);
+    if (ndim >= 2) {
+      last_tensor->merge(0);
+    }
+    if (ndim >= 3) {
+      last_tensor->merge(0);
+    }
+    last_tensor->split(0, 16);
+    last_tensor->split(0, 4);
+
+    tv2->computeAt(last_tensor, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+
+    last_tensor->axis(0)->parallelize(ParallelType::BIDx);
+    last_tensor->axis(1)->parallelize(ParallelType::Unroll);
+    last_tensor->axis(2)->parallelize(ParallelType::TIDx);
+
+    tv2->axis(1)->parallelize(ParallelType::Unroll);
+    tv2->axis(2)->parallelize(ParallelType::TIDx);
+
+    tv3->axis(1)->parallelize(ParallelType::Unroll);
+    tv3->axis(2)->parallelize(ParallelType::TIDx);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t1});
+
+    auto t3 = t0 + 1;
+    auto t4 = t3.unsqueeze(0).unsqueeze(-1).add(t1);
+
+    TORCH_CHECK(t4.allclose(outputs[0]),
+                "Error of: ", t4.sub(outputs[0]).abs().max());
+  }
+
+  // Extension of case 24. Multiple consumers.
+  if (check_case(27)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int ndim = 3;
+    if (std::getenv("NDIM")) {
+      ndim = std::stoi(std::getenv("NDIM"));
+    }
+
+    std::cerr << "NDIM: " << ndim << std::endl;
+
+    int w = 3, x = 4, y = 7, z = 19;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    auto tv0 = makeDummyTensor(ndim);
+    auto tv1 = makeDummyTensor(ndim + 1);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    auto tv2 = add(tv0, new Float(1.0));
+
+    TensorView* tv3 = nullptr;
+    at::Tensor t0, t1;
+    if (ndim == 3) {
+      tv3 = broadcast(tv2, {true, false, false, false});
+      t0 = at::randn({x, y, z}, options);
+      t1 = at::randn({w, x, y, z}, options);
+    } else if (ndim == 2) {
+      tv3 = broadcast(tv2, {true, false, false});
+      t0 = at::randn({x, y}, options);
+      t1 = at::randn({w, x, y}, options);
+    } else if (ndim == 1) {
+      tv3 = broadcast(tv2, {true, false});
+      t0 = at::randn({z}, options);
+      t1 = at::randn({w, z}, options);
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unsupported NDIM");
+    }
+
+    auto tv4 = add(tv3, tv1);
+    fusion.addOutput(tv4);
+
+    auto tv5 = add(tv2, new Float(5.0));
+    fusion.addOutput(tv5);
+
+    fusion.printMath();
+
+    auto last_tensor = tv4;
+    last_tensor->merge(0);
+    if (ndim >= 2) {
+      last_tensor->merge(0);
+    }
+    if (ndim >= 3) {
+      last_tensor->merge(0);
+    }
+    last_tensor->split(0, 16);
+    //last_tensor->split(0, 4);
+
+    tv2->computeAt(last_tensor, 1);
+
+    fusion.printMath();
+
+    // TODO (CD): fail at getGlobalConsumerIndex
+#if 0
+    fusion.printKernel();
+
+#if 1
+    last_tensor->axis(0)->parallelize(ParallelType::BIDx);
+
+    last_tensor->axis(1)->parallelize(ParallelType::Unroll);
+    tv2->axis(1)->parallelize(ParallelType::Unroll);
+    tv3->axis(1)->parallelize(ParallelType::Unroll);
+
+    last_tensor->axis(2)->parallelize(ParallelType::TIDx);
+    tv2->axis(2)->parallelize(ParallelType::TIDx);
+    tv3->axis(2)->parallelize(ParallelType::TIDx);
+#endif
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t1});
+
+    auto t2 = t0 + 1;
+    auto t4 = t2.add(t1);
+    auto t5 = t2 + 5;
+
+    TORCH_CHECK(t4.allclose(outputs[0]),
+                "Error of: ", t4.sub(outputs[0]).abs().max());
+    TORCH_CHECK(t5.allclose(outputs[1]),
+                "Error of: ", t5.sub(outputs[1]).abs().max());
+#endif
+  }
+}
+
+TEST(NVFuserTest, FusionComputeDomainRfactor) {
+  bool is_all = true;
+  int case_num_env = -1;
+  if (std::getenv("case")) {
+    is_all = false;
+    case_num_env = std::stoi(std::getenv("case"));
+    //std::cerr << "Case " << case_num_env << std::endl;
+  }
+
+  auto check_case = [&](int x) {
+    bool ret = is_all || (case_num_env == x);
+    if (ret) {
+      std::cerr << "\nCase " << x << std::endl << std::endl;
+    }
+    return ret;
+  };
+
+  if (check_case(1)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Set up your input tensor views
+    TensorView* tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    // tv1[I0, R1] = tv0[I0, I1]
+    TensorView* tv1 = sum(tv0, {1});
+    fusion.addOutput(tv1);
+
+    fusion.printMath();
+
+    tv1->split(1, 128);
+
+    TensorView* tv2 = tv1->rFactor({1});
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv0->computeAt(tv1, 1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(-1)->parallelize(ParallelType::TIDx);
+    tv2->axis(-1)->parallelize(ParallelType::TIDx);
+
+    int numel_x = 65000;
+    int numel_y = 1025;
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor input = at::rand({numel_x, numel_y}, options);
+    at::Tensor cg_output = at::empty({numel_x}, options);
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    fe.runFusion({input}, {cg_output});
+
+    auto aten_output = input.sum({1});
+    TORCH_CHECK(aten_output.allclose(cg_output));
+  }
+
+  if (check_case(2)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Set up your input tensor views
+    TensorView* tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    // tv1[I0, R1] = tv0[I0, I1]
+    TensorView* tv1 = sum(tv0, {1});
+    fusion.addOutput(tv1);
+
+    fusion.printMath();
+
+    tv1->split(1, 4);
+    tv1->split(1, 32);
+
+    TensorView* tv2 = tv1->rFactor({-1, -3});
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    std::cerr << "ComputeAt\n";
+
+    tv2->computeAt(tv1, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    return;
+
+    tv0->computeAt(tv1, 1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(-1)->parallelize(ParallelType::TIDx);
+    tv2->axis(-1)->parallelize(ParallelType::TIDx);
+
+    int numel_x = 65000;
+    int numel_y = 1025;
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor input = at::rand({numel_x, numel_y}, options);
+    at::Tensor cg_output = at::empty({numel_x}, options);
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    fe.runFusion({input}, {cg_output});
+
+    auto aten_output = input.sum({1});
+    TORCH_CHECK(aten_output.allclose(cg_output));
+  }
+}
+
+TEST(NVFuserTest, FusionComputeDomainReorder) {
+  bool is_all = true;
+  int case_num_env = -1;
+  if (std::getenv("case")) {
+    is_all = false;
+    case_num_env = std::stoi(std::getenv("case"));
+    //std::cerr << "Case " << case_num_env << std::endl;
+  }
+
+  auto check_case = [&](int x) {
+    bool ret = is_all || (case_num_env == x);
+    if (ret) {
+      std::cerr << "\nCase " << x << std::endl << std::endl;
+    }
+    return ret;
+  };
+
+  if (check_case(1)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->reorder({{0, 1}, {1, 0}});
+    tv2->reorder({{0, 1}, {1, 0}});
+
+    //tv1->computeAt(tv2, -1);
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(1)->parallelize(ParallelType::BIDy);
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::BIDy);
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 101;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(2)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    //tv1->reorder({{0, 1}, {1, 0}});
+    tv2->reorder({{0, 1}, {1, 0}});
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(1)->parallelize(ParallelType::BIDy);
+    tv2->axis(1)->parallelize(ParallelType::BIDx);
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 101;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(3)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(2);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->reorder({{0, 1}, {1, 0}});
+    //tv2->reorder({{0, 1}, {1, 0}});
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv1->axis(1)->parallelize(ParallelType::BIDy);
+    tv2->axis(1)->parallelize(ParallelType::BIDx);
+    tv2->axis(0)->parallelize(ParallelType::BIDy);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 101;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+    at::Tensor t2 = at::empty({numel_x, numel_y}, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+
+  if (check_case(4)) {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    auto tv0 = makeDummyTensor(3);
+    fusion.addInput(tv0);
+
+    auto tv1 = add(tv0, new Float(1));
+    auto tv2 = add(tv1, new Float(2));
+    fusion.addOutput(tv2);
+
+    fusion.printMath();
+
+    tv1->reorder({{1, 2}, {2, 1}});
+
+    fusion.printMath();
+
+    tv1->computeAt(tv2, 1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    tv1->axis(0)->parallelize(ParallelType::BIDx);
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+
+    tv1->axis(1)->parallelize(ParallelType::BIDy);
+    tv2->axis(1)->parallelize(ParallelType::BIDz);
+
+    tv1->axis(2)->parallelize(ParallelType::BIDz);
+    tv2->axis(2)->parallelize(ParallelType::BIDy);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+
+    int numel_x = 100;
+    int numel_y = 101;
+    int numel_z = 99;
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+    at::Tensor t0 = at::rand({numel_x, numel_y, numel_z}, options);
+    at::Tensor t2 = at::empty_like(t0, options);
+
+    fe.runFusion({t0}, {t2});
+
+    auto aten_output = t0 + 1.0 + 2.0;
+    TORCH_CHECK(aten_output.allclose(t2));
+  }
+}
+
+TEST(NVFuserTest, FusionBCastMerge) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  int numel_x = 3;
+  int numel_y = 4;
+  int numel_z = 5;
+
+  auto tv0 = makeConcreteTensor({numel_x, numel_y});
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Float(1));
+  auto tv2 = broadcast(tv1, {false, false, true});
+  auto tv3 = makeConcreteTensor({numel_x, numel_y, numel_z});
+  fusion.addInput(tv3);
+  auto tv4 = add(tv2, tv3);
+  fusion.addOutput(tv4);
+
+  // Works fine without merging but generates invalid code otherwise
+  tv2->merge(1);
+  tv4->merge(1);
+
+  tv1->computeAt(tv4, 1);
+  fusion.printMath();
+  fusion.printKernel();
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::rand({numel_x, numel_y}, options);
+  at::Tensor t3 = at::rand({numel_x, numel_y, numel_z}, options);
+  at::Tensor t4 = at::empty_like(t3, options);
+
+  fe.runFusion({t0, t3}, {t4});
+
+  auto aten_t1 = t0 + 1.0;
+  auto aten_t2 = aten_t1.unsqueeze(-1).expand({numel_x, numel_y, numel_z});
+  auto aten_t4 = aten_t2 + t3;
+  TORCH_CHECK(aten_t4.allclose(t4));
 }
 
 } // namespace jit

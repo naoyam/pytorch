@@ -3,6 +3,7 @@
 #include <torch/csrc/jit/codegen/cuda/index_compute.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_ir_builder.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir_printer.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/predicate_compute.h>
@@ -13,8 +14,6 @@ namespace torch {
 namespace jit {
 namespace fuser {
 namespace cuda {
-
-IndexLowering::IndexLowering() : ir_builder_(GpuLower::current()->kernel()) {}
 
 IndexLowering::IndexLowering() : ir_builder_(GpuLower::current()->kernel()) {}
 
@@ -183,11 +182,11 @@ void IndexLowering::handle(ReductionOp* rop) {
 
   kir::TensorIndex* out = Index::getConsumerIndex(out_tv, loops);
 
-  std::cerr << "consumer index: " << out << std::endl;
+  std::cerr << "consumer index: " << kir::toString(out) << std::endl;
   kir::TensorIndex* in = Index::getProducerIndex(
       ir_utils::asTV(rop->in()), ir_utils::asTV(rop->out()), loops);
 
-  std::cerr << "producer index: " << in << std::endl;
+  std::cerr << "producer index: " << kir::toString(in) << std::endl;
 
   kir::ReductionOp* block_reduction_op = nullptr;
   if (is_block_reduce) {

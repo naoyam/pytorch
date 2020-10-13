@@ -131,19 +131,7 @@ class FusionExecutorCache {
 
   //! Execute fusion graph with given inputs, create `FusionExecutor` as needed;
   std::vector<at::Tensor> runFusionWithInputs(
-      const at::ArrayRef<IValue>& inputs,
-      size_t unique_id);
-
-  // evict cached short cut entry in `code_to_fe_lookup_`;
-  inline void evictCache(size_t cache_id) {
-    auto iter = code_to_fe_lookup_.find(cache_id);
-    TORCH_INTERNAL_ASSERT(
-        iter != code_to_fe_lookup_.end(),
-        "evict cache failed to find an entry");
-    // evict nested lookup entry in nested FusionExecutor
-    (iter->second)->evictCache(cache_id);
-    code_to_fe_lookup_.erase(iter);
-  };
+      const at::ArrayRef<IValue>& inputs);
 
  private:
   //! evict cached short cut entry in `code_to_fe_lookup_` as well as cached

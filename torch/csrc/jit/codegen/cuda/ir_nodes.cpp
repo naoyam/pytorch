@@ -598,15 +598,6 @@ bool TensorDomain::operator==(const TensorDomain& other) const {
       contiguity_ == other.contiguity_;
 }
 
-bool TensorDomain::operator==(const TensorDomain& other) const {
-  // Checks equality of each class field. Should not be necessary to
-  // check no_bcast_domain_ and no_reduction_domain_ as they are just
-  // derived from domain_.
-  return root_domain_ == other.root_domain_ && domain_ == other.domain_ &&
-      rfactor_domain_ == other.rfactor_domain_ &&
-      contiguity_ == other.contiguity_;
-}
-
 bool TensorDomain::sameAs(const TensorDomain* const other) const {
   if (nDims() != other->nDims())
     return false;
