@@ -1288,62 +1288,6 @@ std::pair<IterDomain*, IterDomain*> getInputToMerge(IterDomain* merge_id) {
   return std::make_pair(merge->outer(), merge->inner());
 }
 
-Split* getSplitOrigin(IterDomain* id) {
-  Expr* origin = id->getOrigin();
-  if (origin == nullptr) {
-    return nullptr;
-  }
-  TORCH_INTERNAL_ASSERT(
-      origin->getExprType() == ExprType::Split,
-      "Unexpected expression type: ",
-      origin);
-  Split* split = origin->as<Split>();
-  return split;
-}
-
-IterDomain* getInputToSplit(IterDomain* split_id1, IterDomain* split_id2) {
-  Split* split1 = getSplitOrigin(split_id1);
-  Split* split2 = getSplitOrigin(split_id2);
-  Split* split = nullptr;
-  TORCH_INTERNAL_ASSERT(!(split1 == nullptr && split2 == nullptr));
-  if (split1 == nullptr) {
-    split = split2;
-  } else if (split2 == nullptr) {
-    split = split1;
-  } else if (split1 == split2) {
-    split = split1;
-  } else {
-    DEBUG("Crossover split: ", split_id1, " and ", split_id2);
-    DEBUG("Split1: ", split1, ", split2: ", split2);
-    TORCH_INTERNAL_ASSERT(split1->outputs().size() == 2);
-    if (std::all_of(
-            split1->outputs().begin(),
-            split1->outputs().end(),
-            [split_id1, split_id2](const Val* val) {
-              const IterDomain* id = val->as<IterDomain>();
-              return ComputeDomain::sameAxes(id, split_id1) ||
-                  ComputeDomain::sameAxes(id, split_id2);
-            })) {
-      // Move upward with split1
-      DEBUG("Chose split1: ", split1);
-      split = split1;
-    } else {
-      bool match = std::all_of(
-          split2->outputs().begin(),
-          split2->outputs().end(),
-          [split_id1, split_id2](const Val* val) {
-            const IterDomain* id = val->as<IterDomain>();
-            return ComputeDomain::sameAxes(id, split_id1) ||
-                ComputeDomain::sameAxes(id, split_id2);
-          });
-      TORCH_INTERNAL_ASSERT(match);
-      DEBUG("Chose split2: ", split2);
-      split = split2;
-    }
-  }
-  return split->in();
-}
-
 Val* getLoopIndex(const ComputeDomain* cd, size_t axis_idx,
                   const std::vector<kir::ForLoop*>& loops) {
   size_t num_unrealized_axes = 0;
@@ -1491,9 +1435,6 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
         in_info = IterDomainInfo(
             std::make_shared<IdxGraphNode>(outer_idx, inner_idx), true);
       } else {
-        DEBUG("Split: none in CA");
-        // Val* inner_extent = kir::lowerValue(inner_info.cdDom()->extent());
-        // Val* inner_extent = extent_map.at(inner);
         Val* inner_extent = inner_info.extent();
         Val* outer_extent = outer_info.extent();
         Val* in_extent = mulx(inner_extent, outer_extent);
@@ -1503,12 +1444,10 @@ kir::TensorIndex* Index::getProducerIndex_impl2(
             in_idx,
             false,
             in_extent,
-            getInputToSplit(outer_info.cdDom(), inner_info.cdDom()));
+            split_in);
       }
       DEBUG("Inserting new map: ", split_in, " to ", in_info);
       consumer_map.insert({split_in, in_info});
-      //consumer_map.erase(outer);
-      //consumer_map.erase(inner);
     } else if (expr->getExprType() == ExprType::Merge) {
       Merge* merge = expr->as<Merge>();
       auto out_map = consumer_map.find(merge->out());
