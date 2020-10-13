@@ -1414,72 +1414,16 @@ class MatchingIterDomainSearch: public IterVisitor {
   }
 };
 
-bool sameAs(Val* v1, Val* v2);
-
-Val* omitMul1(Expr* e) {
-  if (e->getExprType() == ExprType::BinaryOp) {
-    auto bop = e->as<BinaryOp>();
-    if (bop->getBinaryOpType() == BinaryOpType::Mul) {
-      if (bop->lhs()->isOneInt()) {
-        return bop->rhs();
-      } else if (bop->rhs()->isOneInt()) {
-        return bop->lhs();
-      }
-    }
-  }
-  return nullptr;
-}
-
-bool sameAs(const Expr* e1, const Expr* e2) {
-  //std::cerr << "Checking expr equivalence of " << e1 << " and " << e2 << std::endl;
-  if (e1 == nullptr || e2 == nullptr) return false;
-
-  if (e1->inputs().size() != e2->inputs().size() ||
-      e1->outputs().size() != e2->outputs().size() ||
-      e1->getExprType() != e2->getExprType()) {
-    return false;
-  }
-  for (size_t i = 0; i < e1->inputs().size(); ++i) {
-    if (!sameAs(e1->input(i), e2->input(i))) {
-      return false;
-    }
-  }
-  return true;
-}
-
 bool sameAs(Val* v1, Val* v2) {
   if (v1 == nullptr || v2 == nullptr) return false;
-
-  // TODO (CD): This is a temporary unsafe workaround. If a value is 1,
-  // assume it originates from a broadcast dimension and matches with
-  // any other given dimnsion. This is cheating and must be fixed.
-  // TODO (CD) Update: disabled. Is this still necessary?
-  if (v1->isOneInt() || v2->isOneInt()) {
-    //TORCH_INTERNAL_ASSERT(false, "should never happen");
-    //return true;
-  }
-
-  if (v1->getOrigin() && v2->getOrigin()) {
-    //TORCH_INTERNAL_ASSERT(false, "should never happen");
-    return sameAs(v1->getOrigin(), v2->getOrigin());
-  } else if (v1->getOrigin()) {
-    //TORCH_INTERNAL_ASSERT(false, "should never happen",
-    //v1, ", ", v2);
-    auto v = omitMul1(v1->getOrigin());
-    if (v) {
-      return sameAs(v, v2);
-    }
-  } else if (v2->getOrigin()) {
-    //TORCH_INTERNAL_ASSERT(false, "should never happen");
-    auto v = omitMul1(v2->getOrigin());
-    if (v) {
-      return sameAs(v1, v);
-    }
-  }
 
   if (ScalarCheck::sameAs(v1, v2)) {
     return true;
   }
+
+  // Only root domains are considered.
+  TORCH_INTERNAL_ASSERT(v1->getOrigin() == nullptr);
+  TORCH_INTERNAL_ASSERT(v2->getOrigin() == nullptr);
 
   return MatchingIterDomainSearch::isEquivalent(v1, v2);
 }
