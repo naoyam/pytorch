@@ -821,10 +821,9 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   int64_t stride_i = 0;
   std::vector<kir::Val*> strided_inds;
   for (size_t i = 0; i < root_dom.size(); i++) {
-    if (root_dom[i]->isReduction() ||
-        root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
+    if (root_dom[i]->isReduction()) {
       continue;
-    } else if (root_dom[i]->getIterType() == IterType::BroadcastWithStride) {
+    } else if (root_dom[i]->isBroadcast()) {
       stride_i++;
       continue;
     }
@@ -1048,10 +1047,9 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
   int64_t stride_i = 0;
   std::vector<kir::Val*> strided_inds;
   for (size_t i = 0; i < root_dom.size(); i++) {
-    if (root_dom[i]->isReduction() ||
-        root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
+    if (root_dom[i]->isReduction()) {
       continue;
-    } else if (root_dom[i]->getIterType() == IterType::BroadcastWithStride) {
+    } else if (root_dom[i]->isBroadcast()) {
       stride_i++;
       continue;
     }
