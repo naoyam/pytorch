@@ -8962,7 +8962,6 @@ TEST(NVFuserTest, FusionIssue363_CUDA) {
       aten_output.sub(outputs[0]).abs().max());
 }
 
-
 TEST(NVFuserTest, FusionIssue477_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -8980,6 +8979,40 @@ TEST(NVFuserTest, FusionIssue477_CUDA) {
 
   TORCH_CHECK(tv1->getThisComputeAtAxis() == 1);
   TORCH_CHECK(tv1->getRelativeComputeAtAxis() == 2);
+}
+
+TEST(NVFuserTest, FusionIssue484_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  //auto tv1 = sum(tv0, {1, 2, 3});
+  auto tv1 = sum(tv0, {1});
+  auto tv2 = add(tv1, new Float(0));
+  fusion.addOutput(tv2);
+
+  tv1->setMemoryType(MemoryType::Global);
+
+  fusion.printKernel();
+
+  constexpr int M = 100;
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::manual_seed(0);
+  //at::Tensor t0 = at::randn({M, M, M, M}, options);
+  at::Tensor t0 = at::randn({M, M}, options);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({t0});
+
+  //at::Tensor aten_output = t0.sum({1, 2, 3});
+  at::Tensor aten_output = t0.sum({1});
+  TORCH_CHECK(
+      aten_output.allclose(outputs[0], 1e-5, 1e-5),
+      "Error of: ",
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 } // namespace jit
