@@ -197,6 +197,11 @@ Statement* OptOutMutator::mutate(TransposeOp* top) {
   return top;
 }
 
+// TODO: shift. Why BroadcastOp and TODO also just return itself
+Statement* OptOutMutator::mutate(ShiftOp* sop) {
+  return sop;
+}
+
 } // namespace cuda
 } // namespace fuser
 } // namespace jit

@@ -14042,6 +14042,23 @@ TEST(NVFuserTest, FusionSingleElement_CUDA) {
       &fusion, {cg_output}, {input}, {aten_output}, __LINE__, __FILE__);
 }
 
+TEST(NVFuserTest, FusionShift1_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(1);
+  fusion.addInput(tv0);
+
+  auto tv1 = shift(tv0, {1});
+  fusion.addOutput(tv1);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)

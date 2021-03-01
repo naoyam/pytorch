@@ -266,6 +266,12 @@ TORCH_CUDA_CU_API TensorView* sum_to(
     TensorView* v1,
     const std::vector<int64_t>& sum_to_size);
 
+// Shift
+// Cf. torch.roll
+TORCH_CUDA_CU_API TensorView* shift(
+    TensorView* inp,
+    const std::vector<int>& offsets);
+
 } // namespace cuda
 } // namespace fuser
 } // namespace jit
