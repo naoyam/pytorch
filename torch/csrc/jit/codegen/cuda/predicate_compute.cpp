@@ -247,6 +247,7 @@ kir::Bool* PredicateCompute::getInlinePredicate(
 
   auto all_preds =
       PredicateCompute::computePredicates(out_tv, root_indices, buffer_init);
+
   // If we have thread predicates, add those
   if (thread_pred != nullptr) {
     all_preds.push_back(thread_pred);

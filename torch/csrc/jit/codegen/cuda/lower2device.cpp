@@ -10,6 +10,7 @@
 #include <torch/csrc/jit/codegen/cuda/lower_index.h>
 #include <torch/csrc/jit/codegen/cuda/lower_insert_syncs.h>
 #include <torch/csrc/jit/codegen/cuda/lower_loops.h>
+#include <torch/csrc/jit/codegen/cuda/lower_shift.h>
 #include <torch/csrc/jit/codegen/cuda/lower_thread_predicate.h>
 #include <torch/csrc/jit/codegen/cuda/lower_trivial_reductions.h>
 #include <torch/csrc/jit/codegen/cuda/lower_unroll.h>
@@ -161,8 +162,11 @@ void GpuLower::lower() {
   // Insert read after write smem syncs
   const auto raw_sync_exprs = insertRawThreadSynchronization(alloced_exprs);
 
+  // Insert shift predicates
+  const auto shift_pred_exprs = insertShiftPredicates(raw_sync_exprs);
+
   const auto unrolled_loops =
-      UnrollPass::runPass(fusion_, raw_sync_exprs, preds);
+      UnrollPass::runPass(fusion_, shift_pred_exprs, preds);
 
   // Reuse memory locations if:
   // TensorView is dynamic shared memory

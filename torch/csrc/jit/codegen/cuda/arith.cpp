@@ -1151,10 +1151,12 @@ TensorView* sum_to(TensorView* in, const std::vector<int64_t>& sum_to_size) {
 }
 
 TensorView* shift(TensorView* inp, const std::vector<int>& offsets) {
-  TORCH_CHECK(TensorDomain::noReductions(inp->getRootDomain()).size() == offsets.size(),
-              "Invalid shift offsets, number of entries in offsets expected to be ",
-              TensorDomain::noReductions(inp->getRootDomain()).size(),
-              " but received ", offsets.size());
+  TORCH_CHECK(
+      TensorDomain::noReductions(inp->getRootDomain()).size() == offsets.size(),
+      "Invalid shift offsets, number of entries in offsets expected to be ",
+      TensorDomain::noReductions(inp->getRootDomain()).size(),
+      " but received ",
+      offsets.size());
 
   auto out = newValLike(inp, inp->getDataType().value())->as<TensorView>();
   new ShiftOp(out, inp, offsets);

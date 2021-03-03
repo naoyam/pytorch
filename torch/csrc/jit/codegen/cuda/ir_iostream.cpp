@@ -346,7 +346,8 @@ void IrPrinter::handle(const TransposeOp* top) {
 
 void IrPrinter::handle(const ShiftOp* sop) {
   indent();
-  os_ << sop->out() << " = shift( " << sop->in() << ", {" << sop->offsets() << "} )\n";
+  os_ << sop->out() << " = shift( " << sop->in() << ", {" << sop->offsets()
+      << "} )\n";
 }
 
 void IrPrinter::handle(const Split* s) {

@@ -729,7 +729,10 @@ void IndexSwizzle::handle(Expr* e) {
 
 namespace {
 
-kir::Val* shiftProducerIndex(size_t dim, kir::Val* idx, const TensorView* consumer) {
+kir::Val* shiftProducerIndex(
+    size_t dim,
+    kir::Val* idx,
+    const TensorView* consumer) {
   auto shift_expr = dynamic_cast<ShiftOp*>(consumer->definition());
 
   if (shift_expr == nullptr) {
@@ -737,9 +740,18 @@ kir::Val* shiftProducerIndex(size_t dim, kir::Val* idx, const TensorView* consum
   }
 
   auto offset = shift_expr->offset(dim);
+
+  if (offset == 0) {
+    return idx;
+  }
+
   kir::IrBuilder ir_builder(GpuLower::current()->kernel());
-  auto shifted_idx = ir_builder.subExpr(idx, ir_builder.create<kir::Int>(offset));
-  return shifted_idx;
+
+  if (offset > 0) {
+    return ir_builder.subExpr(idx, ir_builder.create<kir::Int>(offset));
+  } else {
+    return ir_builder.addExpr(idx, ir_builder.create<kir::Int>(-offset));
+  }
 }
 
 } // namespace

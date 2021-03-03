@@ -13102,6 +13102,9 @@ TEST(NVFuserTest, FusionOmitPredicate1_CUDA) {
   // Predicate is not needed with no split of dynamic sizes
   tv9->merge(0)->merge(0);
 
+  fusion.printMath();
+  fusion.printKernel();
+
   GpuLower gpulw(&fusion);
 
   auto is_predicated = [&](TensorView* tv) {
@@ -14046,10 +14049,10 @@ TEST(NVFuserTest, FusionShift1_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  auto tv0 = makeSymbolicTensor(1);
+  auto tv0 = makeSymbolicTensor(2);
   fusion.addInput(tv0);
 
-  auto tv1 = shift(tv0, {1});
+  auto tv1 = shift(tv0, {-1, 1});
   fusion.addOutput(tv1);
 
   fusion.printMath();
@@ -14057,6 +14060,50 @@ TEST(NVFuserTest, FusionShift1_CUDA) {
 
   FusionExecutor fe;
   fe.compileFusion(&fusion);
+}
+
+TEST(NVFuserTest, FusionShift2_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {-1, 0});
+  auto tv3 = shift(tv1, {0, -1});
+  auto tv4 = shift(tv1, {1, 0});
+  auto tv5 = shift(tv1, {0, 0});
+  auto tv6 = add(tv2, tv3);
+  auto tv7 = add(tv6, tv4);
+  auto tv8 = add(tv7, tv5);
+  fusion.addOutput(tv8);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  // FusionExecutor fe;
+  // fe.compileFusion(&fusion);
+}
+
+TEST(NVFuserTest, FusionShift3_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = add(tv1, new Double(1));
+  auto tv3 = shift(tv2, {-1, 0});
+  auto tv4 = add(tv3, new Double(1));
+  fusion.addOutput(tv4);
+
+  tv0->computeAt(tv4, -1);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  // FusionExecutor fe;
+  // fe.compileFusion(&fusion);
 }
 
 } // namespace jit

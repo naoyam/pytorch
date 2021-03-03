@@ -7,6 +7,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_ir_builder.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir_printer.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/predicate_compute.h>
@@ -83,8 +84,10 @@ void UnrollPass::handle(kir::Expr* expr) {
         out_tv->memoryType() == MemoryType::Global ||
         out_tv->memoryType() == MemoryType::Shared;
     if (!should_predicate) {
+      // std::cerr << "should not predicate: TV" << out_tv->name() << std::endl;
       return;
     }
+    // std::cerr << "should predicate: TV" << out_tv->name() << std::endl;
     kir::IrBuilder ir_builder(GpuLower::current()->kernel());
     const auto thread_pred = isReductionInitExpr(expr)
         ? ir_builder.create<kir::Bool>(true)
@@ -93,6 +96,8 @@ void UnrollPass::handle(kir::Expr* expr) {
         PredicateCompute::getInlinePredicate(expr, for_loops_, thread_pred);
 
     TORCH_INTERNAL_ASSERT(pred != nullptr);
+
+    // std::cerr << "pred: " << kir::toString(pred) << std::endl;
 
     // If we need a predicate, put expr inside an if then else
     if (!pred->isConst() || !(pred->isConst() && pred->value().value())) {

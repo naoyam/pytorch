@@ -377,6 +377,10 @@ class TORCH_CUDA_CU_API ComputeAtRootDomainMapBuilder
     mapPointwiseOrReductionOp(wop);
   }
 
+  void handle(ShiftOp* wop) override {
+    mapPointwiseOrReductionOp(wop);
+  }
+
   void handle(BroadcastOp* op) override;
 
   void handle(TransposeOp* op) override;
