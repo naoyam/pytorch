@@ -727,6 +727,23 @@ void IndexSwizzle::handle(Expr* e) {
   }
 }
 
+namespace {
+
+kir::Val* shiftProducerIndex(size_t dim, kir::Val* idx, const TensorView* consumer) {
+  auto shift_expr = dynamic_cast<ShiftOp*>(consumer->definition());
+
+  if (shift_expr == nullptr) {
+    return idx;
+  }
+
+  auto offset = shift_expr->offset(dim);
+  kir::IrBuilder ir_builder(GpuLower::current()->kernel());
+  auto shifted_idx = ir_builder.subExpr(idx, ir_builder.create<kir::Int>(offset));
+  return shifted_idx;
+}
+
+} // namespace
+
 std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
     TensorView* producer_tv,
     const TensorView* consumer_tv,
@@ -886,6 +903,11 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
         kir::toString(kir_root_dom_i));
 
     auto root_ind = producer_indexing.indexMap().at(kir_root_dom_i);
+
+    if (consumer_tv->definition()->isA<ShiftOp>()) {
+      root_ind = shiftProducerIndex(i, root_ind, consumer_tv);
+    }
+    
     if (root_ind->isZeroInt()) {
       continue;
     } else {
@@ -1137,7 +1159,11 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
         " id: ",
         kir::toString(kir_root_dom_i));
 
-    const auto root_ind_i = index_map.at(kir_root_dom_i);
+    auto root_ind_i = index_map.at(kir_root_dom_i);
+
+    if (consumer_tv->definition()->isA<ShiftOp>()) {
+      root_ind_i = shiftProducerIndex(i, root_ind_i, consumer_tv);
+    }
 
     if (root_ind_i->isZeroInt()) {
       continue;
