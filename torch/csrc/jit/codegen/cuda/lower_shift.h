@@ -49,6 +49,11 @@ class HaloInfo {
     return ss.str();
   }
 
+  bool hasHalo() const {
+    return std::any_of(
+        widths_.begin(), widths_.end(), [](auto w) { return w != 0; });
+  }
+
  private:
   std::array<unsigned int, 2> widths_;
 };

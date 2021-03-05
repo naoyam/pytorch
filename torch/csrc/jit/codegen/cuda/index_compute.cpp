@@ -754,15 +754,33 @@ kir::Val* shiftProducerIndex(
   }
 }
 
+std::vector<kir::ForLoop*> removeHaloLoops(
+    const std::vector<kir::ForLoop*>& loop_structure) {
+  std::vector<kir::ForLoop*> out;
+  const auto& halo_iter_map = GpuLower::current()->haloIterMap();
+  for (auto fl : loop_structure) {
+    std::cerr << "Filtering? " << kir::toString(fl) << std::endl;
+    if (halo_iter_map.find(fl->iter_domain()) == halo_iter_map.end()) {
+      out.push_back(fl);
+      std::cerr << "Not found\n";
+    } else {
+      std::cerr << "Found\n";
+    }
+  }
+  return out;
+}
+
 } // namespace
 
 std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
     TensorView* producer_tv,
     const TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops_all) {
   FUSER_PERF_SCOPE("getGlobalProducerIndex");
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
+
+  const auto loops = removeHaloLoops(loops_all);
 
   // Get a reference tensor replayed as existing loop structure
   auto reference = IndexReferenceReplay::getReference(loops);
@@ -989,9 +1007,11 @@ std::unordered_map<kir::ForLoop*, kir::Val*> indexMapFromTV(
 std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
     TensorView* producer_tv,
     const TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops_all) {
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
+
+  const auto loops = removeHaloLoops(loops_all);
 
   // Get a reference tensor replayed as existing loop structure
   auto reference = IndexReferenceReplay::getReference(loops);
@@ -1226,10 +1246,12 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
 
 std::vector<kir::Val*> Index::getGlobalConsumerStridedIndices(
     const TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops_all) {
   FUSER_PERF_SCOPE("getGlobalConsumerIndex");
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
+
+  const auto loops = removeHaloLoops(loops_all);
 
   // Get a reference tensor replayed as existing loop structure
   auto reference = IndexReferenceReplay::getReference(loops);
@@ -1373,9 +1395,11 @@ std::vector<kir::Val*> Index::getGlobalConsumerStridedIndices(
 // Consumer index for either shared or local memory
 std::vector<kir::Val*> Index::getNonGlobalConsumerStridedIndices(
     const TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops_all) {
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
+
+  const auto loops = removeHaloLoops(loops_all);
 
   // Get a reference tensor replayed as existing loop structure
   auto reference = IndexReferenceReplay::getReference(loops);
@@ -1606,10 +1630,12 @@ kir::TensorIndex* Index::getConsumerIndex(
 //
 std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
     const kir::TensorView* kir_consumer_tv,
-    const std::vector<kir::ForLoop*>& loops,
+    const std::vector<kir::ForLoop*>& loops_all,
     const std::vector<bool>& root_contiguity,
     bool unswitch) {
   FUSER_PERF_SCOPE("Index::getConsumerRootPredIndices");
+
+  const auto loops = removeHaloLoops(loops_all);
 
   auto consumer_tv = kir_consumer_tv->fuserTv();
 

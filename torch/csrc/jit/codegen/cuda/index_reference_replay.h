@@ -36,7 +36,7 @@ class IndexReferenceReplay : public OptInDispatch {
   using OptInDispatch::handle;
 
  private:
-  const std::vector<kir::ForLoop*>& loop_structure_;
+  const std::vector<kir::ForLoop*> loop_structure_;
 
   // Replay map
   std::unordered_map<IterDomain*, IterDomain*> concrete_to_id_;

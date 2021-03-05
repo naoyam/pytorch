@@ -133,6 +133,8 @@ void GpuLower::lower() {
 
   validateParallelize(fusion_);
 
+  halo_map_.build();
+
   // Compute thread predicates
   ThreadPredicateMap preds(fusion_);
 
