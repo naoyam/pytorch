@@ -102,6 +102,10 @@ namespace loop_utils {
 // that local axis and above.
 // TODO: Only remaining use of this is in index compute, remove use from there,
 // or refactor and use in lower_allocation
+size_t getAllocPoint(
+    const TensorView* tv,
+    const std::unordered_map<IterDomain*, IterDomain*>& id_map = {});
+
 std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     const TensorView* tv,
     const std::vector<kir::ForLoop*>& loops,

@@ -108,6 +108,8 @@ void LoopNestGenerator::handle(const Expr* expr) {
   std::deque<IterDomain*> loop_structure;
   std::deque<IterDomain*> loop_structure_halo;
 
+  auto alloc_pos = loop_utils::getAllocPoint(out_tv);
+
   // Fill the entire loop structure by Looking at each axis
   // individually in out's domain
   for (size_t out_i = 0; out_i < out_tv->nDims(); out_i++) {
@@ -122,15 +124,15 @@ void LoopNestGenerator::handle(const Expr* expr) {
     auto concrete_id =
         gpu_lower->caParallelMap().getConcreteMappedID(out_tv->axis(out_i));
     loop_structure.push_back(concrete_id);
-    if (out_i < out_tv->getComputeAtPosition()) {
+    if (out_i < alloc_pos) {
       auto halo_info = gpu_lower->haloMap().get(out_tv->axis(out_i));
       if (halo_info.hasHalo()) {
         IterDomain* halo_id = new IterDomain(
-            new Int(-halo_info.width(0)), new Int(halo_info.width(1) + 1));
+            new Int(0), new Int(halo_info.width(0) + halo_info.width(1) + 1));
         loop_structure_halo.push_back(halo_id);
         gpu_lower->haloIterMap().insert(
             {gpu_lower->lowerValue(halo_id)->as<kir::IterDomain>(),
-             out_tv->axis(out_i)});
+             concrete_id});
       }
     }
   }

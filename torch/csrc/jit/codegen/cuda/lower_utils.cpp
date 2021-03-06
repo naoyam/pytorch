@@ -173,6 +173,37 @@ ParallelTypeBitmap getParallelBroadcastDomains(
 
 namespace loop_utils {
 
+// TODO: Refactor the multiple versions of getAllocPoint
+size_t getAllocPoint(
+    const TensorView* tv,
+    const std::unordered_map<IterDomain*, IterDomain*>& id_map) {
+  const auto gpu_lower = GpuLower::current();
+
+  // If in global memory, it can be all the way outside the loops.
+  if (tv->getMemoryType() == MemoryType::Global) {
+    return 0;
+  }
+
+  // Look at each axis individually in out's domain
+  for (size_t tv_i = 0; tv_i < tv->getComputeAtPosition(); tv_i++) {
+    // Grab the axis ID
+
+    auto local_id = tv->axis(tv_i);
+    auto id_it = id_map.find(local_id);
+    if (id_it != id_map.end()) {
+      local_id = id_it->second;
+    }
+
+    auto p_type =
+        gpu_lower->caLoopMap().getConcreteMappedID(local_id)->getParallelType();
+    if (p_type == ParallelType::Unroll) {
+      return tv_i;
+    }
+  }
+
+  return tv->getComputeAtPosition();
+}
+
 // TODO: Clean this up, Naoya added a mechanism we should be able to reuse.
 std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     const TensorView* tv,

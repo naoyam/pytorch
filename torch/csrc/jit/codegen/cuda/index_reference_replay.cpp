@@ -256,28 +256,52 @@ IndexCompute getReferenceIndexing(
   // This is only applicable to global memory buffers.
   std::unordered_map<kir::IterDomain*, kir::Val*> initial_index_map;
 
-  TORCH_INTERNAL_ASSERT(loop_structure.size() <= reference_tensor->nDims());
+  auto non_halo_loops = removeHaloLoops(loop_structure);
+  TORCH_INTERNAL_ASSERT(non_halo_loops.size() <= reference_tensor->nDims());
+
+  const auto& halo_iter_map = GpuLower::current()->haloIterMap();
+  size_t non_halo_loop_i = 0;
   for (size_t loop_i = 0; loop_i < loop_structure.size(); loop_i++) {
-    auto lowered_id = gpu_lower->lowerValue(reference_tensor->axis(loop_i))
-                          ->as<kir::IterDomain>();
-    initial_index_map[lowered_id] = loop_structure[loop_i]->index();
-    if (loop_structure[loop_i]->iter_domain()->parallelType() ==
-        ParallelType::Vectorize) {
-      initial_index_map[lowered_id] = ir_builder.create<kir::Int>(0);
+    auto idx = loop_structure[loop_i]->index();
+    auto it = halo_iter_map.find(loop_structure[loop_i]->iter_domain());
+    if (it != halo_iter_map.end()) {
+      kir::IterDomain* expanded_axis =
+          gpu_lower->lowerValue(it->second)->as<kir::IterDomain>();
+      bool expanded_axis_found = false;
+      for (auto kv : initial_index_map) {
+        if (gpu_lower->caLoopMap().areMapped(kv.first, expanded_axis)) {
+          auto actual_idx = ir_builder.addExpr(kv.second, idx);
+          initial_index_map[kv.first] = actual_idx;
+          expanded_axis_found = true;
+          break;
+        }
+      }
+      TORCH_INTERNAL_ASSERT(expanded_axis_found);
+    } else {
+      auto lowered_id =
+          gpu_lower->lowerValue(reference_tensor->axis(non_halo_loop_i))
+              ->as<kir::IterDomain>();
+      initial_index_map[lowered_id] = idx;
+      if (loop_structure[loop_i]->iter_domain()->parallelType() ==
+          ParallelType::Vectorize) {
+        initial_index_map[lowered_id] = ir_builder.create<kir::Int>(0);
+      }
+      ++non_halo_loop_i;
     }
   }
 
   // Send to the other version of reference indexing that directly takes the
   // index map
   return getReferenceIndexing(
-      loop_structure, reference_tensor, initial_index_map, {});
+      non_halo_loops, reference_tensor, initial_index_map, {});
 }
 
 IndexCompute getReferenceIndexing(
     const std::vector<kir::ForLoop*>& loop_structure,
     TensorDomain* reference_tensor,
     std::unordered_map<kir::IterDomain*, kir::Val*> index_map,
-    std::unordered_set<IterDomain*> preferred_paths) {
+    std::unordered_set<IterDomain*> preferred_paths,
+    std::unordered_map<kir::IterDomain*, kir::Val*> extent_map) {
   auto gpu_lower = GpuLower::current();
 
   // I thought this might be necesasry, but turns out it's not. I think it's
@@ -321,7 +345,7 @@ IndexCompute getReferenceIndexing(
       index_map, // NOLINT
       // reference_extent_map, // Seems this is not necessary, see comment above
       // in this function
-      {},
+      extent_map,
       std::unordered_set<kir::IterDomain*>(),
       reference_tensor->contiguity(),
       kir_preferred_path);

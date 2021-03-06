@@ -261,7 +261,7 @@ TensorView* TensorView::split(int axis_, Val* factor, bool inner_split) {
       axis_ >= 0,
       "Split axis is less than 0 even after adjusting for nDims: ",
       axis_);
-
+#if 0
   TORCH_CHECK(
       axis_ >= (int)getComputeAtPosition(),
       "Cannot split axis within compute at position. Axis = ",
@@ -275,7 +275,7 @@ TensorView* TensorView::split(int axis_, Val* factor, bool inner_split) {
       axis_,
       " maxProducerPosition = ",
       getMaxProducerPosition());
-
+#endif
   TORCH_CHECK(
       axis(axis_)->getParallelType() == ParallelType::Serial,
       "Splitting an axis of non-Serial parallel type is not supported at this time."

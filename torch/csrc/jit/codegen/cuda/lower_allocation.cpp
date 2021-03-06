@@ -169,6 +169,8 @@ class AllocationInserter : public kir::MutableIrVisitor {
           isParallelTypeThreadDim(concrete_id->parallelType());
       const bool is_thread = isParallelTypeThread(concrete_id->parallelType());
 
+      kir::Val* alloc_extent = nullptr;
+      auto halo_info = gpu_lower->haloMap().get(fuser_tv->axis(axis_i));
       if (axis_i < info.alloc_pos) {
         // Even when the axis is outside the allocation position, if the
         // tensor is shared with respect to the axis, the buffer size
@@ -178,7 +180,8 @@ class AllocationInserter : public kir::MutableIrVisitor {
         // with the axis parallelized by TIDs or BIDs.
         if (!((memory_type == MemoryType::Shared && is_thread_dim) ||
               (memory_type == MemoryType::Global && is_thread))) {
-          continue;
+        } else {
+          alloc_extent = concrete_id->rawExtent();
         }
       } else {
         if (
@@ -187,10 +190,23 @@ class AllocationInserter : public kir::MutableIrVisitor {
             // If local memory, don't use any IDs bound to a grid or block
             // dimension
             (memory_type == MemoryType::Local && is_thread)) {
-          continue;
+          // continue;
+        } else {
+          alloc_extent = concrete_id->rawExtent();
         }
       }
-      alloc_dims.push_back(concrete_id->rawExtent());
+      if (halo_info.hasHalo()) {
+        if (alloc_extent == nullptr) {
+          alloc_extent = ir_builder.create<kir::Int>(1);
+        }
+        alloc_extent = ir_builder.addExpr(
+            alloc_extent,
+            ir_builder.create<kir::Int>(
+                halo_info.width(0) + halo_info.width(1)));
+      }
+      if (alloc_extent != nullptr) {
+        alloc_dims.push_back(alloc_extent);
+      }
     }
 
     // Multiply all the dimensions we're going to use for the allocation

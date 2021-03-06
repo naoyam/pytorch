@@ -84,12 +84,20 @@ class TORCH_CUDA_CU_API PairwiseRootDomainMap : public RootDomainMap {
       const TensorView* producer,
       const TensorView* consumer);
 
+  //! \param producer The producer tensor of a producer-consumer pair.
+  //! \param consumer The consumer tensor of a producer-consumer pair.
+  explicit PairwiseRootDomainMap(const Expr* definition);
+
   const TensorView* producer() const {
     return producer_tv_;
   }
 
   const TensorView* consumer() const {
     return consumer_tv_;
+  }
+
+  const Expr* definition() const {
+    return definition_;
   }
 
  protected:
@@ -108,6 +116,7 @@ class TORCH_CUDA_CU_API PairwiseRootDomainMap : public RootDomainMap {
  private:
   const TensorView* producer_tv_ = nullptr;
   const TensorView* consumer_tv_ = nullptr;
+  const Expr* definition_ = nullptr;
 };
 
 std::string toString(const PairwiseRootDomainMap& root_map);

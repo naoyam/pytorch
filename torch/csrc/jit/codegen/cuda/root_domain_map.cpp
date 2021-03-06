@@ -59,7 +59,11 @@ PairwiseRootDomainMap::PairwiseRootDomainMap(
       producer,
       ", ",
       consumer);
+  definition_ = consumer_tv_->definition();
 }
+
+PairwiseRootDomainMap::PairwiseRootDomainMap(const Expr* definition)
+    : definition_(definition) {}
 
 std::unordered_map<IterDomain*, IterDomain*> PairwiseRootDomainMap::map(
     const TensorDomain* producer,
@@ -69,17 +73,18 @@ std::unordered_map<IterDomain*, IterDomain*> PairwiseRootDomainMap::map(
   // Sanity check that the given producer and consumer domains are
   // really the TensorDomains of the producer and consumer TensorViews
   // given to the constructor.
-  TORCH_INTERNAL_ASSERT(producer_tv_->domain() == producer);
-  TORCH_INTERNAL_ASSERT(consumer_tv_->domain() == consumer);
+  TORCH_INTERNAL_ASSERT(
+      producer_tv_ == nullptr || producer_tv_->domain() == producer);
+  TORCH_INTERNAL_ASSERT(
+      consumer_tv_ == nullptr || consumer_tv_->domain() == consumer);
 
-  if (consumer_tv_->definition()->isA<TransposeOp>()) {
+  if (definition_->isA<TransposeOp>()) {
     return mapTranspose(
         producer, consumer, root_dims_to_map, producer_to_consumer);
   }
 
   std::vector<bool> broadcast_flags;
-  if (BroadcastOp* bop =
-          dynamic_cast<BroadcastOp*>(consumer_tv_->definition())) {
+  if (auto bop = dynamic_cast<const BroadcastOp*>(definition_)) {
     broadcast_flags = bop->getBroadcastDimFlags();
   }
 
@@ -127,7 +132,7 @@ std::unordered_map<IterDomain*, IterDomain*> PairwiseRootDomainMap::
 
   std::unordered_map<IterDomain*, IterDomain*> dom_map;
 
-  TransposeOp* top = dynamic_cast<TransposeOp*>(consumer_tv_->definition());
+  auto top = dynamic_cast<const TransposeOp*>(definition_);
   TORCH_INTERNAL_ASSERT(top != nullptr);
 
   const auto& new2old = top->new2old();
@@ -146,8 +151,20 @@ std::unordered_map<IterDomain*, IterDomain*> PairwiseRootDomainMap::
 
 std::string toString(const PairwiseRootDomainMap& root_map) {
   std::stringstream ss;
-  ss << "{producer: " << root_map.producer()
-     << ", consumer: " << root_map.consumer() << "}";
+  ss << "{";
+  ss << "producer: ";
+  if (root_map.producer()) {
+    ss << root_map.producer();
+  } else {
+    ss << "null";
+  }
+  ss << ", consumer: ";
+  if (root_map.consumer()) {
+    ss << root_map.consumer();
+  } else {
+    ss << "null";
+  }
+  ss << ", definition: " << root_map.definition() << "}";
   return ss.str();
 }
 

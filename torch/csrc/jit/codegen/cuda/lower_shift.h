@@ -78,6 +78,9 @@ class HaloMap {
   std::unordered_map<IterDomain*, HaloInfo> map_;
 };
 
+std::vector<kir::ForLoop*> removeHaloLoops(
+    const std::vector<kir::ForLoop*>& loops);
+
 } // namespace cuda
 } // namespace fuser
 } // namespace jit

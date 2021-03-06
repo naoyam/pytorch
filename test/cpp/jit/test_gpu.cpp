@@ -14052,14 +14052,23 @@ TEST(NVFuserTest, FusionShift1_CUDA) {
   auto tv0 = makeSymbolicTensor(2);
   fusion.addInput(tv0);
 
-  auto tv1 = shift(tv0, {-1, 1});
+  auto tv1 = shift(tv0, {-1, 0});
   fusion.addOutput(tv1);
+
+  auto tv2 = shift(tv0, {0, 1});
+  fusion.addOutput(tv2);
+
+  auto tv3 = shift(tv0, {2, 2});
+  fusion.addOutput(tv3);
+
+  auto tv4 = shift(tv0, {-2, -2});
+  fusion.addOutput(tv4);
 
   fusion.printMath();
   fusion.printKernel();
 
-  FusionExecutor fe;
-  fe.compileFusion(&fusion);
+  //FusionExecutor fe;
+  //fe.compileFusion(&fusion);
 }
 
 TEST(NVFuserTest, FusionShift2_CUDA) {
@@ -14099,6 +14108,88 @@ TEST(NVFuserTest, FusionShift3_CUDA) {
 
   tv0->computeAt(tv4, -1);
 
+  fusion.printMath();
+  fusion.printKernel();
+
+  // FusionExecutor fe;
+  // fe.compileFusion(&fusion);
+}
+
+TEST(NVFuserTest, FusionShift4_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, 1});
+  auto tv3 = add(tv2, new Double(1));
+  fusion.addOutput(tv3);
+
+  tv0->computeAt(tv3, -1);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  // FusionExecutor fe;
+  // fe.compileFusion(&fusion);
+}
+
+TEST(NVFuserTest, FusionShift5_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = shift(tv0, {-1, 1});
+  auto tv2 = shift(tv1, {-1, 1});
+  fusion.addOutput(tv2);
+
+  tv0->computeAt(tv2, -1);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  // FusionExecutor fe;
+  // fe.compileFusion(&fusion);
+}
+
+TEST(NVFuserTest, FusionShift5_1_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = shift(tv0, {1, -1});
+  auto tv2 = shift(tv1, {1, -1});
+  fusion.addOutput(tv2);
+
+  tv0->computeAt(tv2, -1);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  // FusionExecutor fe;
+  // fe.compileFusion(&fusion);
+}
+
+TEST(NVFuserTest, FusionShift6_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(3);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = add(tv1, new Double(1));
+  fusion.addOutput(tv2);
+
+  //tv0->computeAt(tv2, -1);
+
+  //tv1->split(-1, 4);
+  //tv2->reorder({{0, 2}, {2, 0}});
+  tv0->computeAt(tv2, 1);
+  tv1->reorder({{1, 2}, {2, 1}});  
+  
   fusion.printMath();
   fusion.printKernel();
 

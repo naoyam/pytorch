@@ -241,7 +241,7 @@ kir::Bool* PredicateCompute::getInlinePredicate(
 
   // Don't generate predicates unless needed. This is just for
   // potential performance benefit.
-  if (IterationDomainAnalysis::canOmitPredicate(out_tv)) {
+  if (false && IterationDomainAnalysis::canOmitPredicate(out_tv)) {
     return thread_pred;
   }
 

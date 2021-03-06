@@ -234,6 +234,17 @@ class Index {
       const std::vector<kir::ForLoop*>& loops,
       const std::vector<bool>& root_contiguity,
       bool unswitch = false);
+
+  static std::vector<kir::Val*> getProducerRootPredIndices(
+      const TensorView* producer,
+      const TensorView* consumer,
+      const std::vector<kir::ForLoop*>& loops);
+
+  static int getProducerHaloOffset(
+      size_t axis,
+      TensorDomain* producer_td,
+      TensorDomain* consumer_td,
+      Expr* definition);
 };
 
 } // namespace cuda
