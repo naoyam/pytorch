@@ -322,10 +322,6 @@ std::vector<kir::Expr*> insertShiftPredicates(
     const std::vector<kir::Expr*>& exprs) {
   FUSER_PERF_SCOPE("insertShiftPredicates");
 
-  HaloMap halo_map;
-  halo_map.build();
-  std::cerr << halo_map.toString() << std::endl;
-
   return ShiftPredicateInserter::insert(exprs);
 }
 

@@ -14045,6 +14045,41 @@ TEST(NVFuserTest, FusionSingleElement_CUDA) {
       &fusion, {cg_output}, {input}, {aten_output}, __LINE__, __FILE__);
 }
 
+TEST(NVFuserTest, FusionShift0_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+
+  auto tv1 = shift(tv0, {0, 1});
+  fusion.addOutput(tv1);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  at::manual_seed(0);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0.roll(1, 1);
+  t1.index({"...", 0}) = 0;
+
+  //std::cout << "t0: " << t0 << std::endl;
+  //std::cout << "t1: " << t1 << std::endl;
+
+  testValidate(&fusion, outputs, inputs, {t1}, __LINE__, __FILE__);
+}
+
 TEST(NVFuserTest, FusionShift1_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -14188,8 +14223,8 @@ TEST(NVFuserTest, FusionShift6_CUDA) {
   //tv1->split(-1, 4);
   //tv2->reorder({{0, 2}, {2, 0}});
   tv0->computeAt(tv2, 1);
-  tv1->reorder({{1, 2}, {2, 1}});  
-  
+  tv1->reorder({{1, 2}, {2, 1}});
+
   fusion.printMath();
   fusion.printKernel();
 

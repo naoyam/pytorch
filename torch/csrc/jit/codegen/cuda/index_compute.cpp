@@ -909,7 +909,7 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
       root_ind = ir_builder.addExpr(
           root_ind, ir_builder.create<kir::Int>(shift_offset));
     }
-    
+
     if (root_ind->isZeroInt()) {
       continue;
     } else {
@@ -1042,11 +1042,11 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
   // memory
   std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_ind_map;
 
-  std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_extent_map;  
+  std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_extent_map;
 
   std::cerr << "getProducerIndex_impl: "
             << "TV" << producer_tv->name() << std::endl;
-  
+
 #if 0
   // Due to rfactor/initialization reference_domain may be bigger than loop nest
   // structure, ignore IterDomains that aren't present in the loop nest when
@@ -1071,7 +1071,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
         if (gpu_lower->caLoopMap().areMapped(kv.first, expanded_axis)) {
           auto actual_idx = ir_builder.addExpr(kv.second, halo_idx);
           ref_id_to_ind_map[kv.first] = actual_idx;
-          ref_id_to_extent_map[kv.first] = loops_all[loop_i]->iter_domain()->rawExtent();          
+          ref_id_to_extent_map[kv.first] = loops_all[loop_i]->iter_domain()->rawExtent();
           expanded_axis_found = true;
           std::cerr << "Actual idx: " << kir::toString(actual_idx)
                     << ", extent: " << kir::toString(ref_id_to_extent_map[kv.first])
@@ -1208,7 +1208,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
         i, producerAsC, consumer_tv->domain(), consumer_tv->definition());
 
     std::cerr << "shift offset for " << i << ": " << shift_offset << std::endl;
-    
+
     if (shift_offset != 0) {
       root_ind_i = ir_builder.addExpr(
           root_ind_i, ir_builder.create<kir::Int>(shift_offset));
@@ -1241,7 +1241,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
       auto root_ext_j = extent_map.find(kir_root_dom_j) == extent_map.end()
           ? kir_root_dom_j->extent()
           : extent_map.at(kir_root_dom_j);
-      
+
       int shift_offset_j = getProducerHaloOffset(
           j, producerAsC, consumer_tv->domain(), consumer_tv->definition());
 
