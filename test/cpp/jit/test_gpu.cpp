@@ -14385,8 +14385,33 @@ TEST(NVFuserTest, FusionShiftSplit1_CUDA) {
   fusion.printMath();
   fusion.printKernel();
 
-  // FusionExecutor fe;
-  // fe.compileFusion(&fusion);
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 4;
+    numel_y = 4;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 1;
+  auto t2 = t1.roll(1, 1);
+  t2.index({"...", 0}) = 0;
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t2\n" << t2 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t2.allclose(outputs[0]));
 }
 
 } // namespace jit

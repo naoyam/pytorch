@@ -82,6 +82,7 @@ void IndexLowering::visit(const kir::ForLoop* for_loop) {
       for_loop->start(),
       for_loop->stop(),
       for_loop->step());
+  new_for_loop->setExtent2(for_loop->extent2());
   pushBack(new_for_loop);
 
   active_scope_expr_ = new_for_loop;

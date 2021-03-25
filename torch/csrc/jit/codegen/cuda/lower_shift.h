@@ -24,6 +24,10 @@ class HaloInfo {
     return widths_[pos];
   }
 
+  unsigned int width() const {
+    return std::accumulate(widths_.begin(), widths_.end(), 0);
+  }
+
   const auto& widths() const {
     return widths_;
   }

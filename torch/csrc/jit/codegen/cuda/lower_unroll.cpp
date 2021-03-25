@@ -29,6 +29,7 @@ kir::ForLoop* cloneLoopNest(const kir::ForLoop* for_loop, bool unroll = false) {
       for_loop->start(),
       for_loop->stop(),
       for_loop->step());
+  new_loop->setExtent2(for_loop->extent2());
   for (auto expr : for_loop->body().exprs()) {
     if (auto nested_for_loop = dynamic_cast<kir::ForLoop*>(expr)) {
       expr = cloneLoopNest(nested_for_loop, unroll);

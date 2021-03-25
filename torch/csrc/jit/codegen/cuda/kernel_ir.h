@@ -1254,16 +1254,32 @@ class TORCH_CUDA_CU_API ForLoop final : public Expr {
   bool unrestricted_parallel_extent() const {
     return unrestricted_parallel_extent_;
   }
+  
+  void setExtent2(Val* extent) {
+    extent2_ = extent;
+  }
+
+  Val* extent2() const {
+    if (extent2_ != nullptr) {
+      return extent2_;
+    } else {
+      return iter_domain_->extent();
+    }
+  }
 
  private:
   Val* const index_ = nullptr;
   IterDomain* const iter_domain_;
   Scope body_;
   bool unroll_ = false;
+
   Val* start_ = nullptr;
   Val* stop_ = nullptr;
   Val* step_ = nullptr;
   bool unrestricted_parallel_extent_ = false;
+
+  // Temporary until the misaligned vectorization is merged
+  Val* extent2_ = nullptr;
 };
 
 //! IfThenElse provides scoping for an boolean operator. Exprs placed in its
