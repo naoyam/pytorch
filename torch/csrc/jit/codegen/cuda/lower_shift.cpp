@@ -1,6 +1,7 @@
 #include <torch/csrc/jit/codegen/cuda/index_compute.h>
 #include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_ir_builder.h>
@@ -240,6 +241,13 @@ void HaloMap::build() {
     propagateHaloInfo(expr);
   }
 
+  auto used_vals = DependencyCheck::getAllValsBetween(
+      {fusion->inputs().begin(), fusion->inputs().end()}, fusion->outputs());
+
+  for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
+    propagateFromRootDomain(tv);
+  }
+
   std::cerr << "HaloMap built\n";
 }
 
@@ -306,6 +314,40 @@ void HaloMap::propagateHaloInfo(
       }
     } else {
       p_info.merge(c_info);
+    }
+  }
+}
+
+void HaloMap::propagateFromRootDomain(TensorView* tv) {
+  auto exprs = ExprSort::getExprs(
+      FusionGuard::getCurFusion(),
+      std::vector<Val*>(tv->domain()->domain().begin(), tv->domain()->domain().end()));
+
+  // Splitting merged overlapped IterDomains is not allowed
+  std::unordered_set<IterDomain*> merged_shifted_ids;
+  
+  for (auto expr: exprs) {
+    if (auto split = dynamic_cast<Split*>(expr)) {
+      TORCH_INTERNAL_ASSERT(merged_shifted_ids.find(split->in()) == merged_shifted_ids.end(),
+                            "Splitting IterDomain that is a merged domain of shifted domains is not allowed");
+      auto in_info = get(split->in());
+      if (!in_info.hasHalo()) {
+        continue;
+      }
+      // propagate to inner domain
+      auto& inner_info = findOrCreate(split->inner());
+      inner_info = in_info;
+    } else if (auto merge = dynamic_cast<Merge*>(expr)) {
+      auto inner_info = get(merge->inner());
+      auto outer_info = get(merge->outer());
+      auto& out_info = findOrCreate(merge->out());
+      if (inner_info.hasHalo() || out_info.hasHalo()) {
+        out_info.merge(inner_info);
+        out_info.merge(outer_info);
+        merged_shifted_ids.insert(merge->out());
+      }
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "Unsupported expr: ", expr);
     }
   }
 }

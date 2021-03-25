@@ -14368,6 +14368,27 @@ TEST(NVFuserTest, FusionShift5_1_CUDA) {
 }
 #endif
 
+TEST(NVFuserTest, FusionShiftSplit1_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, 1});
+  fusion.addOutput(tv2);
+
+  tv2->split(-1, 4);
+
+  tv0->computeAt(tv2, -2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  // FusionExecutor fe;
+  // fe.compileFusion(&fusion);
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)

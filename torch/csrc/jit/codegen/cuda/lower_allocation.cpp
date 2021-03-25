@@ -196,6 +196,7 @@ class AllocationInserter : public kir::MutableIrVisitor {
         }
       }
       if (halo_info.hasHalo()) {
+        std::cerr << "Alloc has halo\n";
         if (alloc_extent == nullptr) {
           alloc_extent = ir_builder.create<kir::Int>(1);
         }

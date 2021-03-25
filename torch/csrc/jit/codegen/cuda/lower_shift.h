@@ -74,6 +74,8 @@ class HaloMap {
       TensorView* consumer,
       Expr* expr);
 
+  void propagateFromRootDomain(TensorView* tv);
+
  private:
   std::unordered_map<IterDomain*, HaloInfo> map_;
 };
