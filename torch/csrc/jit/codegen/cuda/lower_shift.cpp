@@ -72,11 +72,14 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     TensorView* producer_fuser_tv = producer->fuserTv();
     TensorView* consumer_fuser_tv = consumer->fuserTv();
 
+    // This is actually not the case. test3 failed.
+#if 0
     // If not fusion input, no predicate should be needed since the
     // buffer is expanded.
     if (!producer_fuser_tv->isFusionInput()) {
       return;
     }
+#endif
 
     TensorDomain* producer_td = producer->fuserTv()->domain();
     TensorDomain* consumer_td = consumer->fuserTv()->domain();
