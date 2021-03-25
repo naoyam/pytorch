@@ -14061,8 +14061,6 @@ TEST(NVFuserTest, FusionShift0_CUDA) {
   int numel_x = 100;
   int numel_y = 101;
 
-  at::manual_seed(0);
-
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({numel_x, numel_y}, options);
   std::vector<IValue> inputs = {t0};
@@ -14077,7 +14075,7 @@ TEST(NVFuserTest, FusionShift0_CUDA) {
   //std::cout << "t0: " << t0 << std::endl;
   //std::cout << "t1: " << t1 << std::endl;
 
-  testValidate(&fusion, outputs, inputs, {t1}, __LINE__, __FILE__);
+  TORCH_CHECK(t1.equal(outputs[0]));
 }
 
 TEST(NVFuserTest, FusionShift1_CUDA) {
@@ -14102,8 +14100,40 @@ TEST(NVFuserTest, FusionShift1_CUDA) {
   fusion.printMath();
   fusion.printKernel();
 
-  //FusionExecutor fe;
-  //fe.compileFusion(&fusion);
+#if 1
+  int numel_x = 100;
+  int numel_y = 101;
+#else
+  int numel_x = 4;
+  int numel_y = 4;
+  std::cout << "t0:\n" << t0 << std::endl;
+#endif
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0.roll(-1, 0);
+  t1.index({-1, "..."}) = 0;
+  TORCH_CHECK(t1.equal(outputs[0]));
+
+  auto t2 = t0.roll(1, 1);
+  t2.index({"...", 0}) = 0;
+  TORCH_CHECK(t2.equal(outputs[1]));
+
+  auto t3 = t0.roll({2, 2}, {0, 1});
+  t3.index({Slice(0, 2), "..."}) = 0;
+  t3.index({"...", Slice(0, 2)}) = 0;
+  TORCH_CHECK(t3.equal(outputs[2]));
+
+  auto t4 = t0.roll({-2, -2}, {0, 1});
+  t4.index({Slice(-2, None), "..."}) = 0;
+  t4.index({"...", Slice(-2, None)}) = 0;
+  TORCH_CHECK(t4.equal(outputs[3]));
 }
 
 TEST(NVFuserTest, FusionShift2_CUDA) {
