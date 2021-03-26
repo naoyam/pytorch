@@ -38,11 +38,11 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     return;
   }
 
-  kir::Bool* makeAndExpr(kir::Bool* lhs, kir::Bool* rhs) {
+  kir::Bool* makeAndExpr(kir::Val* lhs, kir::Val* rhs) {
     if (lhs == nullptr) {
-      return rhs;
+      return rhs->as<kir::Bool>();
     } else if (rhs == nullptr) {
-      return lhs;
+      return lhs->as<kir::Bool>();
     } else {
       kir::IrBuilder ir_builder(GpuLower::current()->kernel());
       return ir_builder.andExpr(lhs, rhs)->as<kir::Bool>();
@@ -82,17 +82,25 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     }
 #endif
 
+    auto fuser_expr = consumer->fuserTv()->definition();
+
+    if (fuser_expr->isA<ShiftOp>() && !producer_fuser_tv->isFusionInput()) {
+      return;
+    }
+
     TensorDomain* producer_td = producer->fuserTv()->domain();
     TensorDomain* consumer_td = consumer->fuserTv()->domain();
 
     const auto num_dims = producer->domain()->rootDomain().size();
 
-    auto pred_inds = Index::getProducerRootPredIndices(
+    auto prod_inds = Index::getProducerRootPredIndices(
         producer->fuserTv(), consumer->fuserTv(), for_loops_);
+    auto pred_contiguity =
+        std::vector<bool>(consumer_td->getRootDomain().size(), true);
+    auto consumer_inds = Index::getConsumerRootPredIndices(
+        consumer, for_loops_, pred_contiguity).first;
 
-    TORCH_INTERNAL_ASSERT(pred_inds.size() == num_dims);
-
-    auto fuser_expr = consumer->fuserTv()->definition();
+    TORCH_INTERNAL_ASSERT(prod_inds.size() == num_dims);
 
     kir::Bool* shift_pred = nullptr;
 
@@ -104,12 +112,23 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
     const HaloMap& halo_map = gpu_lower_->haloMap();
 
+
+    bool has_any_halo = false;
+    for (size_t i = 0; i < num_dims; ++i) {
+      auto consumer_id = consumer_td->getRootDomain()[i];
+      const auto consumer_halo_info = halo_map.get(consumer_id);
+      if (consumer_halo_info.hasHalo()) {
+        has_any_halo = true;
+        break;
+      }
+    }
+
     for (size_t i = 0; i < num_dims; ++i) {
       std::cerr << "idx: " << i << std::endl;
 
       auto producer_id = producer_root[i];
       auto consumer_id_it = p2c.find(producer_id);
-      // If no corresponding consmer id exits, there's nothing to
+      // If no corresponding consmer id exists, there's nothing to
       // predicate.
       if (consumer_id_it == p2c.end()) {
         continue;
@@ -128,13 +147,23 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
         shift_offset = shift_expr->offset(i);
       }
 
+#if 0
       if (offset < 0) {
         shift_pred = makeAndExpr(
             shift_pred,
             ir_builder_.geExpr(pred_inds[i],
                                ir_builder_.create<kir::Int>(-offset))->as<kir::Bool>());
       }
+#else
+      if (consumer_halo_info.width(0) > 0) {
+        shift_pred = makeAndExpr(
+            shift_pred,
+            ir_builder_.geExpr(consumer_inds[i],
+                               ir_builder_.create<kir::Int>(consumer_halo_info.width(0))));
+      }
+#endif
 
+#if 0
       if (producer_halo_info.width(1) < consumer_halo_info.width(1) ||
           shift_offset < 0) {
         shift_pred = makeAndExpr(
@@ -145,6 +174,16 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
                     producer->domain()->rootDomain()[i]->extent())
                 ->as<kir::Bool>());
       }
+#else
+      if (consumer_halo_info.width(1) > 0 || has_any_halo) {
+        shift_pred = makeAndExpr(
+            shift_pred,
+            ir_builder_
+            .ltExpr(
+                makeAddExpr(consumer_inds[i], -consumer_halo_info.width(0)),
+                consumer->domain()->rootDomain()[i]->extent()));
+      }
+#endif
     }
 
     if (shift_pred == nullptr) {
@@ -325,7 +364,7 @@ void HaloMap::propagateFromRootDomain(TensorView* tv) {
 
   // Splitting merged overlapped IterDomains is not allowed
   std::unordered_set<IterDomain*> merged_shifted_ids;
-  
+
   for (auto expr: exprs) {
     if (auto split = dynamic_cast<Split*>(expr)) {
       TORCH_INTERNAL_ASSERT(merged_shifted_ids.find(split->in()) == merged_shifted_ids.end(),
