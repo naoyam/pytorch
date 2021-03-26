@@ -9,6 +9,7 @@
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/lower_shift.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
+#include <torch/csrc/jit/codegen/cuda/arith.h>
 
 namespace torch {
 namespace jit {
@@ -84,6 +85,8 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
     auto fuser_expr = consumer->fuserTv()->definition();
 
+    // Unless the producer is a fusion input, if the expression is a
+    // shift, it should be expanded already, so no prediate is needed.
     if (fuser_expr->isA<ShiftOp>() && !producer_fuser_tv->isFusionInput()) {
       return;
     }
@@ -100,6 +103,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     auto consumer_inds = Index::getConsumerRootPredIndices(
         consumer, for_loops_, pred_contiguity).first;
 
+    TORCH_INTERNAL_ASSERT(consumer_inds.size() == consumer->domain()->rootDomain().size());
     TORCH_INTERNAL_ASSERT(prod_inds.size() == num_dims);
 
     kir::Bool* shift_pred = nullptr;
@@ -116,7 +120,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     bool has_any_halo = false;
     for (size_t i = 0; i < num_dims; ++i) {
       auto consumer_id = consumer_td->getRootDomain()[i];
-      const auto consumer_halo_info = halo_map.get(consumer_id);
+      const auto consumer_halo_info = halo_map.getHalo(consumer_id);
       if (consumer_halo_info.hasHalo()) {
         has_any_halo = true;
         break;
@@ -139,8 +143,8 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
       const int offset =
           Index::getProducerHaloOffset(i, producer_td, consumer_td, fuser_expr);
 
-      const auto producer_halo_info = halo_map.get(producer_id);
-      const auto consumer_halo_info = halo_map.get(consumer_id);
+      const auto producer_halo_info = halo_map.getHalo(producer_id);
+      const auto consumer_halo_info = halo_map.getHalo(consumer_id);
 
       int shift_offset = 0;
       if (auto shift_expr = dynamic_cast<ShiftOp*>(fuser_expr)) {
@@ -155,14 +159,17 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
                                ir_builder_.create<kir::Int>(-offset))->as<kir::Bool>());
       }
 #else
-      if (consumer_halo_info.width(0) > 0) {
+      unsigned left_limit = consumer_halo_info.width(0);
+      if (shift_offset > 0) {
+        left_limit += (unsigned)shift_offset;
+      }
+      if (left_limit > 0) {
         shift_pred = makeAndExpr(
             shift_pred,
             ir_builder_.geExpr(consumer_inds[i],
-                               ir_builder_.create<kir::Int>(consumer_halo_info.width(0))));
+                               ir_builder_.create<kir::Int>(left_limit)));
       }
 #endif
-
 #if 0
       if (producer_halo_info.width(1) < consumer_halo_info.width(1) ||
           shift_offset < 0) {
@@ -175,15 +182,22 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
                 ->as<kir::Bool>());
       }
 #else
-      if (consumer_halo_info.width(1) > 0 || has_any_halo) {
+      auto right_offset = consumer_inds[i];
+      if (shift_offset < 0) {
+        right_offset = makeAddExpr(right_offset, -shift_offset);
+      }
+      if (shift_offset < 0 || has_any_halo) {
         shift_pred = makeAndExpr(
             shift_pred,
             ir_builder_
             .ltExpr(
-                makeAddExpr(consumer_inds[i], -consumer_halo_info.width(0)),
-                consumer->domain()->rootDomain()[i]->extent()));
+                right_offset,
+                makeAddExpr(consumer->domain()->rootDomain()[i]->extent(),
+                            consumer_halo_info.width(0))));
       }
 #endif
+
+
     }
 
     if (shift_pred == nullptr) {
@@ -247,16 +261,16 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 } // namespace
 
 HaloInfo& HaloMap::findOrCreate(IterDomain* id) {
-  auto it = map_.find(id);
-  if (it == map_.end()) {
-    it = map_.insert({id, HaloInfo()}).first;
+  auto it = halo_map_.find(id);
+  if (it == halo_map_.end()) {
+    it = halo_map_.insert({id, HaloInfo()}).first;
   }
   return it->second;
 }
 
-HaloInfo HaloMap::get(IterDomain* id) const {
-  auto it = map_.find(id);
-  if (it == map_.end()) {
+HaloInfo HaloMap::getHalo(IterDomain* id) const {
+  auto it = halo_map_.find(id);
+  if (it == halo_map_.end()) {
     return HaloInfo();
   } else {
     return it->second;
@@ -284,7 +298,7 @@ void HaloMap::build() {
       {fusion->inputs().begin(), fusion->inputs().end()}, fusion->outputs());
 
   for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
-    propagateFromRootDomain(tv);
+    updateExtents(tv);
   }
 
   std::cerr << "HaloMap built\n";
@@ -357,7 +371,20 @@ void HaloMap::propagateHaloInfo(
   }
 }
 
-void HaloMap::propagateFromRootDomain(TensorView* tv) {
+void HaloMap::updateExtents(TensorView* tv) {
+  std::unordered_map<IterDomain*, HaloInfo> inherited_halo;
+
+  for (auto root_axis: tv->getRootDomain()) {
+    auto& halo_info = findOrCreate(root_axis);
+    auto halo_width = halo_info.width();
+    if (halo_width == 0) {
+      continue;
+    }
+    auto expanded_extent = add(root_axis->rawExtent(), new Int(halo_width));
+    extent_map_.insert({root_axis, expanded_extent});
+    inherited_halo.insert({root_axis, halo_info});
+  }
+
   auto exprs = ExprSort::getExprs(
       FusionGuard::getCurFusion(),
       std::vector<Val*>(tv->domain()->domain().begin(), tv->domain()->domain().end()));
@@ -369,21 +396,30 @@ void HaloMap::propagateFromRootDomain(TensorView* tv) {
     if (auto split = dynamic_cast<Split*>(expr)) {
       TORCH_INTERNAL_ASSERT(merged_shifted_ids.find(split->in()) == merged_shifted_ids.end(),
                             "Splitting IterDomain that is a merged domain of shifted domains is not allowed");
-      auto in_info = get(split->in());
-      if (!in_info.hasHalo()) {
+      auto in_id = split->in();
+      if (extent_map_.find(in_id) == extent_map_.end()) {
         continue;
       }
+      TORCH_INTERNAL_ASSERT(inherited_halo.find(in_id) != inherited_halo.end());
+      const auto& halo_info = inherited_halo.at(in_id);
       // propagate to inner domain
-      auto& inner_info = findOrCreate(split->inner());
-      inner_info = in_info;
+      auto out_id = split->inner();
+      auto expanded_extent = add(out_id->rawExtent(), new Int(halo_info.width()));
+      extent_map_.insert({out_id, expanded_extent});
+      inherited_halo.insert({out_id, halo_info});
     } else if (auto merge = dynamic_cast<Merge*>(expr)) {
-      auto inner_info = get(merge->inner());
-      auto outer_info = get(merge->outer());
-      auto& out_info = findOrCreate(merge->out());
-      if (inner_info.hasHalo() || out_info.hasHalo()) {
-        out_info.merge(inner_info);
-        out_info.merge(outer_info);
-        merged_shifted_ids.insert(merge->out());
+      if (extent_map_.find(merge->inner()) != extent_map_.end() ||
+          extent_map_.find(merge->outer()) != extent_map_.end()) {
+        auto inner_extent = getExtent(merge->inner());
+        if (inner_extent == nullptr) {
+          inner_extent = merge->inner()->rawExtent();
+        }
+        auto outer_extent = getExtent(merge->outer());
+        if (outer_extent == nullptr) {
+          outer_extent = merge->outer()->rawExtent();
+        }
+        auto expanded_extent = mul(outer_extent, inner_extent);
+        extent_map_.insert({merge->out(), expanded_extent});
       }
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unsupported expr: ", expr);
@@ -391,11 +427,45 @@ void HaloMap::propagateFromRootDomain(TensorView* tv) {
   }
 }
 
+Val* HaloMap::getExtent(IterDomain* id) const {
+  auto it = extent_map_.find(id);
+  if (it != extent_map_.end()) {
+    return it->second;
+  } else {
+    return nullptr;
+  }
+}
+#if 0
+void HaloMap::buildStartMap(Fusion* fusion) {
+  std::cerr << "Building start map\n";
+
+  auto exprs = fusion->exprs();
+  for (auto it = exprs.begin(); it != exprs.end(); ++it) {
+    auto expr = *it;
+    if (!expr->outputs()[0]->isA<TensorView>()) {
+      continue;
+    }
+
+    std::cerr << "HaloInfoMap expr: " << expr << std::endl;
+    propagateStartInfo(expr);
+  }
+
+  auto used_vals = DependencyCheck::getAllValsBetween(
+      {fusion->inputs().begin(), fusion->inputs().end()}, fusion->outputs());
+
+  for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
+    updateExtents(tv);
+  }
+
+  std::cerr << "HaloMap built\n";
+}
+#endif
+
 std::string HaloMap::toString() const {
   std::stringstream ss;
 
   ss << "HaloMap:\n";
-  for (auto kv : map_) {
+  for (auto kv : halo_map_) {
     ss << "  " << kv.first << " -> (" << kv.second.toString() << ")\n";
   }
 

@@ -40,10 +40,9 @@ kir::ForLoop* openForHelper(kir::ForLoop* scope, IterDomain* id) {
   const auto kir_id = gpu_lower->lowerValue(id)->as<kir::IterDomain>();
   kir::ForLoop* new_scope = ir_builder.create<kir::ForLoop>(
       ir_builder.create<kir::Int>(c10::nullopt), kir_id);
-  auto id_halo_info = gpu_lower->haloMap().get(id);
-  if (id_halo_info.hasHalo()) {
-    new_scope->setExtent2(ir_builder.addExpr(new_scope->extent2(),
-                                             ir_builder.create<kir::Int>(id_halo_info.width())));
+  auto id_expanded_extent = gpu_lower->haloMap().getExtent(id);
+  if (id_expanded_extent) {
+    new_scope->setExtent2(gpu_lower->lowerValue(id_expanded_extent));
   }
   if (scope != nullptr) {
     scope->body().insert(0, new_scope);
@@ -130,7 +129,7 @@ void LoopNestGenerator::handle(const Expr* expr) {
         gpu_lower->caParallelMap().getConcreteMappedID(out_tv->axis(out_i));
     loop_structure.push_back(concrete_id);
     if (out_i < alloc_pos) {
-      auto halo_info = gpu_lower->haloMap().get(out_tv->axis(out_i));
+      auto halo_info = gpu_lower->haloMap().getHalo(out_tv->axis(out_i));
       if (halo_info.hasHalo()) {
         IterDomain* halo_id = new IterDomain(
             new Int(0), new Int(halo_info.width(0) + halo_info.width(1) + 1));

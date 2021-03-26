@@ -66,7 +66,11 @@ class HaloMap {
  public:
   void build();
 
-  HaloInfo get(IterDomain* id) const;
+  HaloInfo getHalo(IterDomain* id) const;
+
+  //! Returns an extent if id is extended for halo. Nullptr is
+  //! returned otherwise.
+  Val* getExtent(IterDomain* id) const;
 
   std::string toString() const;
 
@@ -78,10 +82,20 @@ class HaloMap {
       TensorView* consumer,
       Expr* expr);
 
-  void propagateFromRootDomain(TensorView* tv);
+  void updateExtents(TensorView* tv);
+#if 0
+  void buildStartMap(Fusion* fusion);
+  void propagateStartInfo(Expr* expr);
+  void propagateStartInfo(
+      TensorView* producer,
+      TensorView* consumer,
+      Expr* expr);
+#endif  
 
  private:
-  std::unordered_map<IterDomain*, HaloInfo> map_;
+  std::unordered_map<IterDomain*, HaloInfo> halo_map_;
+  std::unordered_map<IterDomain*, Val*> extent_map_;
+  std::unordered_map<IterDomain*, int> start_map_;
 };
 
 std::vector<kir::ForLoop*> removeHaloLoops(

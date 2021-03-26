@@ -1250,7 +1250,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
           root_ind_j, ir_builder.create<kir::Int>(shift_offset_j));
       }
 
-      auto halo_info_j = gpu_lower->haloMap().get(root_dom[j]);
+      auto halo_info_j = gpu_lower->haloMap().getHalo(root_dom[j]);
 
       std::cerr << "root_ind_j: " << kir::toString(root_ind_j)
                 << ", extent: " << kir::toString(root_ext_j)
@@ -1968,8 +1968,8 @@ int Index::getProducerHaloOffset(
   IterDomain* consumer_id = it->second;
 
   const auto& halo_map = GpuLower::current()->haloMap();
-  const int p_pad = halo_map.get(producer_id).width(0);
-  const int c_pad = halo_map.get(consumer_id).width(0);
+  const int p_pad = halo_map.getHalo(producer_id).width(0);
+  const int c_pad = halo_map.getHalo(consumer_id).width(0);
 
   int offset = p_pad - c_pad;
 

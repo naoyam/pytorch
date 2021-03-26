@@ -1014,6 +1014,10 @@ struct CreateExprConsumer : public OptInDispatch {
     new TransposeOp(consumer_, transpose_expr->in(), transpose_expr->new2old());
   }
 
+  void handle(ShiftOp* shift_expr) final {
+    new ShiftOp(consumer_, shift_expr->in(), shift_expr->offsets());
+  }
+
  private:
   TensorView* consumer_ = nullptr;
 };
@@ -1131,6 +1135,11 @@ struct CreateExprProducer : public OptInDispatch {
   void handle(TransposeOp* transpose_expr) final {
     new TransposeOp(
         transpose_expr->out(), producer_, transpose_expr->new2old());
+  }
+
+  void handle(ShiftOp* shift_expr) final {
+    new ShiftOp(
+        shift_expr->out(), producer_, shift_expr->offsets());
   }
 
  private:

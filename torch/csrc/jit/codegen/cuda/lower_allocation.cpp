@@ -6,6 +6,7 @@
 #include <torch/csrc/jit/codegen/cuda/kernel_ir_printer.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/lower_allocation.h>
+#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
 #include <unordered_set>
 
@@ -170,7 +171,7 @@ class AllocationInserter : public kir::MutableIrVisitor {
       const bool is_thread = isParallelTypeThread(concrete_id->parallelType());
 
       kir::Val* alloc_extent = nullptr;
-      auto halo_info = gpu_lower->haloMap().get(fuser_tv->axis(axis_i));
+      auto halo_extent = gpu_lower->haloMap().getExtent(fuser_tv->axis(axis_i));
       if (axis_i < info.alloc_pos) {
         // Even when the axis is outside the allocation position, if the
         // tensor is shared with respect to the axis, the buffer size
@@ -195,6 +196,7 @@ class AllocationInserter : public kir::MutableIrVisitor {
           alloc_extent = concrete_id->rawExtent();
         }
       }
+#if 0
       if (halo_info.hasHalo()) {
         std::cerr << "Alloc has halo\n";
         if (alloc_extent == nullptr) {
@@ -205,6 +207,16 @@ class AllocationInserter : public kir::MutableIrVisitor {
             ir_builder.create<kir::Int>(
                 halo_info.width(0) + halo_info.width(1)));
       }
+#else
+      if (halo_extent) {
+        std::cerr << "Has halo extent for TV" << fuser_tv->name()
+                  << ": " << halo_extent
+                  << ", " 
+                  << kir::toString(gpu_lower->lowerValue(halo_extent))
+                  << "\n";
+        alloc_extent = gpu_lower->lowerValue(halo_extent);
+      }
+#endif
       if (alloc_extent != nullptr) {
         alloc_dims.push_back(alloc_extent);
       }
