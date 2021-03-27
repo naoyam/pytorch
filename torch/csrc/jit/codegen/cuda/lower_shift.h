@@ -71,6 +71,7 @@ class HaloMap {
   //! Returns an extent if id is extended for halo. Nullptr is
   //! returned otherwise.
   Val* getExtent(IterDomain* id) const;
+  kir::Val* getExtent(kir::IterDomain* id) const;  
 
   std::string toString() const;
 
@@ -95,7 +96,8 @@ class HaloMap {
  private:
   std::unordered_map<IterDomain*, HaloInfo> halo_map_;
   std::unordered_map<IterDomain*, Val*> extent_map_;
-  std::unordered_map<IterDomain*, int> start_map_;
+  std::unordered_map<kir::IterDomain*, kir::Val*> kir_extent_map_;
+  //  std::unordered_map<IterDomain*, int> start_map_;
 };
 
 std::vector<kir::ForLoop*> removeHaloLoops(

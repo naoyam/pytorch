@@ -15,6 +15,8 @@
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
+bool _debug = false;
+
 namespace torch {
 namespace jit {
 namespace fuser {
@@ -277,6 +279,10 @@ void IndexCompute::handle(Split* split) {
   } else {
     index_map_[in_id] = ir_builder.addExpr(
         ir_builder.mulExpr(outer_ind, getExtent(inner_id)), inner_ind);
+    if (_debug) {
+      std::cerr << "idx for " << kir::toString(in_id)
+                << ": " << kir::toString(index_map_[in_id]) << std::endl;
+    }
     if (extent_map_.find(outer_id) != extent_map_.end() ||
         extent_map_.find(inner_id) != extent_map_.end()) {
       extent_map_[in_id] =
@@ -441,6 +447,12 @@ void IndexCompute::run() {
 }
 
 kir::Val* IndexCompute::getExtent(kir::IterDomain* id) {
+#if 0
+  const auto gpu_lower = GpuLower::current();
+  if (auto extent = gpu_lower->haloMap().getExtent(id)) {
+    return extent;
+  }
+#endif
   if (extent_map_.find(id) != extent_map_.end()) {
     return extent_map_.at(id);
   } else {
@@ -455,8 +467,12 @@ bool IndexCompute::hasZeroMerged(kir::IterDomain* id) {
 IndexCompute IndexCompute::updateIndexCompute(
     const TensorDomain* new_td,
     const std::unordered_map<IterDomain*, IterDomain*>& id_map,
-    const std::vector<bool>& root_contiguity) {
-  FUSER_PERF_SCOPE("updateIndexCompute");
+    const std::vector<bool>& root_contiguity,
+    const std::unordered_map<IterDomain*, Val*>& extent_map) {
+
+  if (_debug) {
+    std::cerr << "updateIndexCompute\n";
+  }
 
   const auto gpu_lower = GpuLower::current();
 
@@ -481,6 +497,15 @@ IndexCompute IndexCompute::updateIndexCompute(
     }
   }
 
+  for (auto id_entry : extent_map) {
+    kir::IterDomain* new_id =
+        gpu_lower->lowerValue(id_entry.first)->as<kir::IterDomain>();
+    kir::Val* new_extent =
+        gpu_lower->lowerValue(id_entry.second)->as<kir::Val>();
+
+    updated_extent_map[new_id] = new_extent;
+  }
+
   IndexCompute updated_index_compute(
       new_td,
       updated_index_map,
@@ -489,6 +514,7 @@ IndexCompute IndexCompute::updateIndexCompute(
       root_contiguity);
   updated_index_compute.run();
 
+  if (_debug) std::cerr << "updated_index_compute done\n";
   return updated_index_compute;
 }
 
@@ -983,6 +1009,16 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
 
+  if (producer_tv->name() == 10 &&
+      consumer_tv->name() == 1) {
+    std::cerr << "Enable debug output\n";
+    _debug = true;
+  }
+
+  if (_debug) {
+    std::cerr << "getNonGlobalProducerStridedIndices: TV" << producer_tv->name() << std::endl;
+  }
+
   const auto loops = removeHaloLoops(loops_all);
 
   // Get a reference tensor replayed as existing loop structure
@@ -1043,9 +1079,6 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
   std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_ind_map;
 
   std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_extent_map;
-
-  std::cerr << "getProducerIndex_impl: "
-            << "TV" << producer_tv->name() << std::endl;
 
 #if 0
   // Due to rfactor/initialization reference_domain may be bigger than loop nest
@@ -1139,11 +1172,22 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
     }
   }
 
+  // Extents may be extended for halo
+  std::unordered_map<IterDomain*, Val*> halo_extent_map;
+  for (auto id : producer_tv->domain()->domain()) {
+    auto extent = gpu_lower->haloMap().getExtent(id);
+    if (extent == nullptr) {
+      continue;
+    }
+    halo_extent_map.insert({id, extent});
+  }
+
   // Index into producer using reference indexing
   auto producer_indexing = ref_compute.updateIndexCompute(
       producer_tv->domain(),
       ref_2_producer,
-      producer_tv->domain()->contiguity());
+      producer_tv->domain()->contiguity(),
+      halo_extent_map);
 
   IndexSwizzle index_swizzle(
       producer_tv,
@@ -1207,11 +1251,15 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
     int shift_offset = getProducerHaloOffset(
         i, producerAsC, consumer_tv->domain(), consumer_tv->definition());
 
-    std::cerr << "shift offset for " << i << ": " << shift_offset << std::endl;
-
     if (shift_offset != 0) {
       root_ind_i = ir_builder.addExpr(
           root_ind_i, ir_builder.create<kir::Int>(shift_offset));
+    }
+
+    if (_debug) {
+      std::cerr << "shift offset for " << i << ": " << shift_offset
+                << "; root idx: " << kir::toString(root_ind_i)
+                << std::endl;
     }
 
     if (root_ind_i->isZeroInt()) {
@@ -1250,19 +1298,14 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
           root_ind_j, ir_builder.create<kir::Int>(shift_offset_j));
       }
 
-      auto halo_info_j = gpu_lower->haloMap().getHalo(root_dom[j]);
-
-      std::cerr << "root_ind_j: " << kir::toString(root_ind_j)
-                << ", extent: " << kir::toString(root_ext_j)
-                << ", " << (extent_map.find(kir_root_dom_j) == extent_map.end())
-                << std::endl;
-
-      if (halo_info_j.hasHalo()) {
-        root_ext_j = ir_builder.create<kir::Int>(
-            1 + halo_info_j.width(0) + halo_info_j.width(1));
+      if (_debug) {
+        std::cerr << "root_ind_j: " << kir::toString(root_ind_j)
+                  << ", extent: " << kir::toString(root_ext_j)
+                  << ", " << (extent_map.find(kir_root_dom_j) == extent_map.end())
+                  << std::endl;
       }
 
-      if (!root_ind_j->isZeroInt() || halo_info_j.hasHalo()) {
+      if (!root_ind_j->isZeroInt()) {
         if (stride == nullptr) {
           stride = root_ext_j;
         } else {
@@ -1278,6 +1321,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
     }
   }
 
+  _debug = false;
   return strided_inds;
 }
 
@@ -1529,11 +1573,22 @@ std::vector<kir::Val*> Index::getNonGlobalConsumerStridedIndices(
 
   const auto& ref_2_consumer = replay_consumer_as_ref.getReplay();
 
+  // Extents may be extended for halo
+  std::unordered_map<IterDomain*, Val*> halo_extent_map;
+  for (auto id : consumer_tv->domain()->domain()) {
+    auto extent = gpu_lower->haloMap().getExtent(id);
+    if (extent == nullptr) {
+      continue;
+    }
+    halo_extent_map.insert({id, extent});
+  }
+
   // Index into consumer using reference indexing
   auto consumer_indexing = ref_compute.updateIndexCompute(
       consumer_tv->domain(),
       ref_2_consumer,
-      consumer_tv->domain()->contiguity());
+      consumer_tv->domain()->contiguity(),
+      halo_extent_map);
 
   IndexSwizzle index_swizzle(
       consumer_tv,
@@ -1973,8 +2028,10 @@ int Index::getProducerHaloOffset(
 
   int offset = p_pad - c_pad;
 
-  std::cerr << "halo offset[" << axis << "]: " << offset << ", " << producer_id
-            << std::endl;
+  if (_debug) {
+    std::cerr << "halo offset[" << axis << "]: " << offset << ", " << producer_id
+              << std::endl;
+  }
 
   if (auto shift_op = dynamic_cast<const ShiftOp*>(definition)) {
     offset -= shift_op->offset(axis);

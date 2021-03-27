@@ -140,10 +140,13 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
       auto consumer_id = consumer_id_it->second;
 
+#if 0
       const int offset =
           Index::getProducerHaloOffset(i, producer_td, consumer_td, fuser_expr);
 
       const auto producer_halo_info = halo_map.getHalo(producer_id);
+#endif
+      
       const auto consumer_halo_info = halo_map.getHalo(consumer_id);
 
       int shift_offset = 0;
@@ -374,6 +377,8 @@ void HaloMap::propagateHaloInfo(
 void HaloMap::updateExtents(TensorView* tv) {
   std::unordered_map<IterDomain*, HaloInfo> inherited_halo;
 
+  auto gpu_lower = GpuLower::current();
+  
   for (auto root_axis: tv->getRootDomain()) {
     auto& halo_info = findOrCreate(root_axis);
     auto halo_width = halo_info.width();
@@ -382,6 +387,8 @@ void HaloMap::updateExtents(TensorView* tv) {
     }
     auto expanded_extent = add(root_axis->rawExtent(), new Int(halo_width));
     extent_map_.insert({root_axis, expanded_extent});
+    kir_extent_map_.insert({gpu_lower->lowerValue(root_axis)->as<kir::IterDomain>(),
+        gpu_lower->lowerValue(expanded_extent)});    
     inherited_halo.insert({root_axis, halo_info});
   }
 
@@ -406,6 +413,8 @@ void HaloMap::updateExtents(TensorView* tv) {
       auto out_id = split->inner();
       auto expanded_extent = add(out_id->rawExtent(), new Int(halo_info.width()));
       extent_map_.insert({out_id, expanded_extent});
+      kir_extent_map_.insert({gpu_lower->lowerValue(out_id)->as<kir::IterDomain>(),
+          gpu_lower->lowerValue(expanded_extent)});      
       inherited_halo.insert({out_id, halo_info});
     } else if (auto merge = dynamic_cast<Merge*>(expr)) {
       if (extent_map_.find(merge->inner()) != extent_map_.end() ||
@@ -420,6 +429,8 @@ void HaloMap::updateExtents(TensorView* tv) {
         }
         auto expanded_extent = mul(outer_extent, inner_extent);
         extent_map_.insert({merge->out(), expanded_extent});
+        kir_extent_map_.insert({gpu_lower->lowerValue(merge->out())->as<kir::IterDomain>(),
+            gpu_lower->lowerValue(expanded_extent)});        
       }
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unsupported expr: ", expr);
@@ -435,6 +446,16 @@ Val* HaloMap::getExtent(IterDomain* id) const {
     return nullptr;
   }
 }
+
+kir::Val* HaloMap::getExtent(kir::IterDomain* id) const {
+  auto it = kir_extent_map_.find(id);
+  if (it != kir_extent_map_.end()) {
+    return it->second;
+  } else {
+    return nullptr;
+  }
+}
+
 #if 0
 void HaloMap::buildStartMap(Fusion* fusion) {
   std::cerr << "Building start map\n";

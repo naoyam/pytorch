@@ -129,7 +129,8 @@ class IndexCompute : public BackwardVisitor {
   IndexCompute updateIndexCompute(
       const TensorDomain* new_td,
       const std::unordered_map<IterDomain*, IterDomain*>& id_map,
-      const std::vector<bool>& _root_contiguity);
+      const std::vector<bool>& _root_contiguity,
+      const std::unordered_map<IterDomain*, Val*>& extent_map = {});
 
   virtual void run();
 

@@ -14946,14 +14946,16 @@ TEST(NVFuserTest, FusionShift5ptStencil_CUDA) {
 
   _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
 
-  // 9-pt stencil
+  // 5-pt stencil
   auto tv0 = makeSymbolicTensor(2);
   fusion.addInput(tv0);
+  std::vector<std::vector<int>> offsets = {
+    {-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
   std::vector<TensorView*> tvs;
-  tvs.push_back(shift(tv0, {-1, 0}));
-  tvs.push_back(shift(tv0, {1, 0}));
-  tvs.push_back(shift(tv0, {0, -1}));
-  tvs.push_back(shift(tv0, {0, 1}));
+  for (const auto& offset: offsets) {
+    tvs.push_back(shift(tv0, offset));
+  }
 
   auto tv_out = tv0;
 
@@ -14977,6 +14979,8 @@ TEST(NVFuserTest, FusionShift5ptStencil_CUDA) {
     tv->computeAt(tv_out, -1);
   }
 
+  tv_out->axis(-1)->parallelize(ParallelType::Unswitch);
+
   fusion.printMath();
   fusion.printKernel();
 
@@ -14996,7 +15000,11 @@ TEST(NVFuserTest, FusionShift5ptStencil_CUDA) {
   std::vector<IValue> inputs = {t0};
   auto outputs = fe.runFusion(inputs);
 
-  auto ref = (t0 + shift(t0, {0, -1}) + shift(t0, {0, 1}) + shift(t0, {-1, 0}) + shift(t0, {1, 0})) / 5;
+  auto ref = t0;
+  for (const auto& offset: offsets) {
+    ref = ref + shift(t0, offset);
+  }
+  ref = ref / int(offsets.size() + 1);
 
   if (_shift_debug) {
     std::cout << "t0:\n" << t0 << std::endl;
@@ -15004,7 +15012,7 @@ TEST(NVFuserTest, FusionShift5ptStencil_CUDA) {
     std::cout << "out\n" << outputs[0] << std::endl;
   }
 
-  TORCH_CHECK(ref.allclose(outputs[0]));
+  testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
 }
 
 TEST(NVFuserTest, FusionShift9ptStencil_CUDA) {
@@ -15014,17 +15022,22 @@ TEST(NVFuserTest, FusionShift9ptStencil_CUDA) {
   _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
 
   // 9-pt stencil
+  std::vector<std::vector<int>> offsets;
+  for (int i = -1; i < 2; ++i) {
+    for (int j = -1; j < 2; ++j) {
+      if (i == 0 && j == 0) {
+        continue;
+      }
+      offsets.push_back({i, j});
+    }
+  }
+
   auto tv0 = makeSymbolicTensor(2);
   fusion.addInput(tv0);
   std::vector<TensorView*> tvs;
-  tvs.push_back(shift(tv0, {-1, -1}));
-  tvs.push_back(shift(tv0, {-1, 0}));
-  tvs.push_back(shift(tv0, {-1, 1}));
-  tvs.push_back(shift(tv0, {0, -1}));
-  tvs.push_back(shift(tv0, {0, 1}));
-  tvs.push_back(shift(tv0, {1, -1}));
-  tvs.push_back(shift(tv0, {1, 0}));
-  tvs.push_back(shift(tv0, {1, 1}));
+  for (const auto& offset: offsets) {
+    tvs.push_back(shift(tv0, offset));
+  }
 
   auto tv_out = tv0;
 
@@ -15048,9 +15061,11 @@ TEST(NVFuserTest, FusionShift9ptStencil_CUDA) {
     tv->computeAt(tv_out, -1);
   }
 
+  tv_out->axis(-1)->parallelize(ParallelType::Unswitch);
+
   fusion.printMath();
   fusion.printKernel();
-#if 0
+
   FusionExecutor fe;
   fe.compileFusion(&fusion);
 
@@ -15067,21 +15082,19 @@ TEST(NVFuserTest, FusionShift9ptStencil_CUDA) {
   std::vector<IValue> inputs = {t0};
   auto outputs = fe.runFusion(inputs);
 
-  auto t1 = t0 + 2;
-  auto t3 = shift(t1, {0, -1});
-  auto t4 = shift(t1, {0, 1});
-  auto t5 = t3 + t4;
+  auto ref = t0;
+  for (const auto& offset: offsets) {
+    ref = ref + shift(t0, offset);
+  }
+  ref = ref / int(offsets.size() + 1);
 
   if (_shift_debug) {
     std::cout << "t0:\n" << t0 << std::endl;
-    std::cout << "t3:\n" << t3 << std::endl;
-    std::cout << "t4:\n" << t4 << std::endl;
-    std::cout << "Ref:\n" << t5 << std::endl;
+    std::cout << "Ref:\n" << ref << std::endl;
     std::cout << "out\n" << outputs[0] << std::endl;
   }
 
-  TORCH_CHECK(t5.allclose(outputs[0]));
-#endif
+  TORCH_CHECK(ref.allclose(outputs[0]));
 }
 
 } // namespace jit
