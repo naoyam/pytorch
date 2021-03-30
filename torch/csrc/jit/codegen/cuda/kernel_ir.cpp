@@ -446,15 +446,50 @@ ForLoop::ForLoop(
     Passkey passkey,
     Val* index,
     IterDomain* iter_domain,
-    bool unroll)
+    bool unroll,
+    Val* start,
+    Val* stop,
+    Val* step)
     : Expr(passkey),
       index_{index},
       iter_domain_{iter_domain},
       body_(this),
-      unroll_(unroll) {
+      unroll_(unroll),
+      start_(start),
+      stop_(stop),
+      step_(step) {
   TORCH_INTERNAL_ASSERT(index->dtype() == DataType::Int);
   addInput(index);
   addInput(iter_domain);
+  if (step_ == nullptr) {
+    kir::IrBuilder ir_builder(GpuLower::current()->kernel());
+    step_ = ir_builder.one();
+  }
+}
+
+Val* ForLoop::start() const {
+  if (start_ != nullptr) {
+    return start_;
+  } else {
+    // clang-tidy complains without this
+    TORCH_INTERNAL_ASSERT(iter_domain_ != nullptr);
+    return iter_domain_->start();
+  }
+}
+
+Val* ForLoop::stop() const {
+  if (stop_ != nullptr) {
+    return stop_;
+  } else {
+    // clang-tidy complains without this
+    TORCH_INTERNAL_ASSERT(iter_domain_ != nullptr);
+    return iter_domain_->extent();
+  }
+}
+
+Val* ForLoop::step() const {
+  TORCH_INTERNAL_ASSERT(step_ != nullptr);
+  return step_;
 }
 
 IfThenElse::IfThenElse(Passkey passkey, Bool* cond)

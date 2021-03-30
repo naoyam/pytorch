@@ -1212,7 +1212,10 @@ class TORCH_CUDA_CU_API ForLoop final : public Expr {
       Passkey passkey,
       Val* index,
       IterDomain* iter_domain,
-      bool unroll = false);
+      bool unroll = false,
+      Val* start = nullptr,
+      Val* stop = nullptr,
+      Val* step = nullptr);
 
   void accept(IrVisitor* visitor) const override {
     visitor->visit(this);
@@ -1242,11 +1245,20 @@ class TORCH_CUDA_CU_API ForLoop final : public Expr {
     return unroll_;
   }
 
+  Val* start() const;
+
+  Val* stop() const;
+
+  Val* step() const;
+
  private:
   Val* const index_ = nullptr;
   IterDomain* const iter_domain_;
   Scope body_;
   bool unroll_ = false;
+  Val* start_ = nullptr;
+  Val* stop_ = nullptr;
+  Val* step_ = nullptr;
 };
 
 //! IfThenElse provides scoping for an boolean operator. Exprs placed in its

@@ -878,7 +878,7 @@ class CudaKernelGenerator : private kir::IrVisitor {
       return;
     }
 
-    if (node->iter_domain()->rawExtent()->isOneInt()) {
+    if (node->start()->isZeroInt() && node->stop()->isOneInt()) {
       indent() << "constexpr " << node->index()->dtype() << " "
                << gen(node->index()) << " = 0;\n";
       handleScope(node->body());
@@ -886,14 +886,21 @@ class CudaKernelGenerator : private kir::IrVisitor {
     }
 
     const auto gen_index = gen(node->index());
-    const auto gen_start = genInline(node->iter_domain()->start());
-    const auto gen_extent = genInline(node->iter_domain()->extent());
+    const auto gen_start = genInline(node->start());
+    const auto gen_stop = genInline(node->stop());
+    const auto gen_step = genInline(node->step());
     if (!node->unroll()) {
       indent() << "#pragma unroll 1\n";
     }
+    std::stringstream step_code;
+    if (node->step()->isOneInt()) {
+      step_code << "++" << gen_index;
+    } else {
+      step_code << gen_index << " += " << gen_step;
+    }
     indent() << "for(size_t " << gen_index << " = " << gen_start << "; "
-             << gen_index << " < " << gen_extent << "; ++" << gen_index << ") ";
-
+             << gen_index << " < " << gen_stop << "; " << step_code.str()
+             << ") ";
     startBlock(true);
     handleScope(node->body());
     endBlock();
