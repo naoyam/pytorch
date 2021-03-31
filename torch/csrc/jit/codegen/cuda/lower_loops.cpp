@@ -38,11 +38,16 @@ kir::ForLoop* openForHelper(kir::ForLoop* scope, IterDomain* id) {
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
   const auto kir_id = gpu_lower->lowerValue(id)->as<kir::IterDomain>();
-  kir::ForLoop* new_scope = ir_builder.create<kir::ForLoop>(
-      ir_builder.create<kir::Int>(c10::nullopt), kir_id);
   auto id_expanded_extent = gpu_lower->haloMap().getExtent(id);
+  kir::ForLoop* new_scope = nullptr;
   if (id_expanded_extent) {
-    new_scope->setExtent2(gpu_lower->lowerValue(id_expanded_extent));
+    new_scope = ir_builder.create<kir::ForLoop>(
+        ir_builder.create<kir::Int>(c10::nullopt), kir_id,
+        false, nullptr, gpu_lower->lowerValue(id_expanded_extent),
+        nullptr, true);
+  } else {
+    new_scope = ir_builder.create<kir::ForLoop>(
+        ir_builder.create<kir::Int>(c10::nullopt), kir_id);
   }
   if (scope != nullptr) {
     scope->body().insert(0, new_scope);

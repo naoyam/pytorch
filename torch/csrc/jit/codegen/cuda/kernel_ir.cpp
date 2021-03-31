@@ -449,7 +449,8 @@ ForLoop::ForLoop(
     bool unroll,
     Val* start,
     Val* stop,
-    Val* step)
+    Val* step,
+    bool unrestricted_parallel_extent)
     : Expr(passkey),
       index_{index},
       iter_domain_{iter_domain},
@@ -457,7 +458,8 @@ ForLoop::ForLoop(
       unroll_(unroll),
       start_(start),
       stop_(stop),
-      step_(step) {
+      step_(step),
+      unrestricted_parallel_extent_(unrestricted_parallel_extent) {
   TORCH_INTERNAL_ASSERT(index->dtype() == DataType::Int);
   addInput(index);
   addInput(iter_domain);
