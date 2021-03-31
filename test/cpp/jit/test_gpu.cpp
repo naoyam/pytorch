@@ -14730,7 +14730,6 @@ TEST(NVFuserTest, FusionShiftSplit4_CUDA) {
   TORCH_CHECK(t5.allclose(outputs[0]));
 }
 
-
 TEST(NVFuserTest, FusionShiftSplit5_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -15347,6 +15346,324 @@ TEST(NVFuserTest, FusionShiftMerge1_CUDA) {
   TORCH_CHECK(t2.allclose(outputs[0]));
 }
 
+TEST(NVFuserTest, FusionShiftMerge2_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, -2});
+  fusion.addOutput(tv2);
+
+  tv2->split(-1, 4);
+  tv2->split(0, 4);
+  tv2->reorder({{1, 2}, {2, 1}});
+  tv2->merge(2, 3);
+
+  tv0->computeAt(tv2, 2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 4;
+    numel_y = 4;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 1;
+  auto t2 = shift(t1, {0, -2});
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t2\n" << t2 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t2.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShiftMerge3_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, -1});
+  auto tv3 = shift(tv1, {0, 1});
+  auto tv4 = add(tv2, tv3);
+  fusion.addOutput(tv4);
+
+  tv4->split(-1, 4);
+  tv4->split(0, 4);
+  tv4->reorder({{1, 2}, {2, 1}});
+  tv4->merge(2, 3);
+
+  tv0->computeAt(tv4, -2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 4;
+    numel_y = 4;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 1;
+  auto t2 = shift(t1, {0, -1});
+  auto t3 = shift(t1, {0, 1});
+  auto t4 = t2 + t3;
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t2:\n" << t2 << std::endl;
+    std::cout << "t3:\n" << t3 << std::endl;
+    std::cout << "t4\n" << t4 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t4.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShiftMerge4_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = add(tv1, new Double(1));
+  auto tv3 = shift(tv2, {0, -1});
+  auto tv4 = shift(tv2, {0, 1});
+  auto tv5 = add(tv3, tv4);
+  fusion.addOutput(tv5);
+
+  tv5->split(-1, 4);
+  tv5->split(0, 4);
+  tv5->reorder({{1, 2}, {2, 1}});
+  tv5->merge(2, 3);
+
+  tv0->computeAt(tv5, -2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 4;
+    numel_y = 4;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 2;
+  auto t3 = shift(t1, {0, -1});
+  auto t4 = shift(t1, {0, 1});
+  auto t5 = t3 + t4;
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t3:\n" << t3 << std::endl;
+    std::cout << "t4:\n" << t4 << std::endl;
+    std::cout << "Ref:\n" << t5 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t5.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShiftMerge5_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, 0});
+  fusion.addOutput(tv2);
+
+  tv2->split(-1, 4);
+  tv2->split(0, 4);
+  tv2->reorder({{1, 2}, {2, 1}});
+  tv2->merge(2, 3);
+
+  tv0->computeAt(tv2, -2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 4;
+    numel_y = 4;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t2 = t0 + 1;
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t2:\n" << t2 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t2.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShiftMerge6_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeContigTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, -1});
+  auto tv3 = shift(tv1, {0, 1});
+  auto tv4 = add(tv2, tv3);
+  fusion.addOutput(tv4);
+
+  tv4->split(-1, 4);
+  tv4->split(0, 4);
+  tv4->reorder({{1, 2}, {2, 1}});
+  tv4->merge(2, 3);
+
+  tv0->computeAt(tv4, -2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 4;
+    numel_y = 4;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 1;
+  auto t3 = shift(t1, {0, -1});
+  auto t4 = shift(t1, {0, 1});
+  auto t5 = t3 + t4;
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t3:\n" << t3 << std::endl;
+    std::cout << "t4:\n" << t4 << std::endl;
+    std::cout << "Ref:\n" << t5 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t5.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShiftMerge7_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {1, 0});
+  fusion.addOutput(tv2);
+
+  tv2->split(1, 4);
+  tv2->split(0, 4);
+  tv2->reorder({{1, 2}, {2, 1}});
+  tv2->merge(2, 3);
+
+  tv0->computeAt(tv2, 2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 99;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 8;
+    numel_y = 8;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 1;
+  auto t2 = shift(t1, {1, 0});
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t2:\n" << t2 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t2.allclose(outputs[0]));
+}
+
 TEST(NVFuserTest, FusionShift5ptStencilParallel1DThreadBlock_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -15381,7 +15698,7 @@ TEST(NVFuserTest, FusionShift5ptStencilParallel1DThreadBlock_CUDA) {
   auto tv0_cache = tv0->cache_after();
 
   tv_out->merge(-2, -1);
-  
+
   tv0->computeAt(tv_out, 2);
 
   for (auto tv: tvs) {
