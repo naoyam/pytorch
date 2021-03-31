@@ -15116,6 +15116,8 @@ TEST(NVFuserTest, FusionShiftParallel1_CUDA) {
   tv1->axis(-1)->parallelize(ParallelType::TIDx);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
 
+  tv1->setMemoryType(MemoryType::Shared);
+
   fusion.printMath();
   fusion.printKernel();
 
@@ -15145,6 +15147,154 @@ TEST(NVFuserTest, FusionShiftParallel1_CUDA) {
   }
 
   TORCH_CHECK(t2.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShift3ptStencilParallel_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  // 3-pt stencil
+  auto tv0 = makeSymbolicTensor(1);
+  fusion.addInput(tv0);
+  std::vector<TensorView*> tvs;
+  tvs.push_back(shift(tv0, {-1}));
+  tvs.push_back(shift(tv0, {1}));
+
+  auto tv_out = tv0;
+
+  for (auto tv: tvs) {
+    tv_out = add(tv_out, tv);
+  }
+
+  tv_out = div(tv_out, new Double(tvs.size() + 1));
+
+  fusion.addOutput(tv_out);
+
+  tv_out->split(0, 4);
+  tv_out->axis(-1)->parallelize(ParallelType::Unswitch);
+
+  auto tv0_cache = tv0->cache_after();
+
+  tv0->computeAt(tv_out, 1);
+
+  for (auto tv: tvs) {
+    tv->computeAt(tv_out, -1);
+  }
+
+  tv0_cache->setMemoryType(MemoryType::Shared);
+  tv_out->axis(-1)->parallelize(ParallelType::TIDx);
+  tv0_cache->axis(-1)->parallelize(ParallelType::TIDx);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 99;
+
+  if (_shift_debug) {
+    numel_x = 8;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto ref = (t0 + shift(t0, {-1}) + shift(t0, {1})) / 3;
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "Ref:\n" << ref << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(ref.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShift5ptStencilParallel_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  // 5-pt stencil
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  std::vector<std::vector<int>> offsets = {
+    {-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
+  std::vector<TensorView*> tvs;
+  for (const auto& offset: offsets) {
+    tvs.push_back(shift(tv0, offset));
+  }
+
+  auto tv_out = tv0;
+
+  for (auto tv: tvs) {
+    tv_out = add(tv_out, tv);
+  }
+
+  tv_out = div(tv_out, new Double(tvs.size() + 1));
+
+  fusion.addOutput(tv_out);
+
+  tv_out->split(-1, 4);
+  tv_out->split(0, 4);
+  tv_out->reorder({{1, 2}, {2, 1}});
+
+  auto tv0_cache = tv0->cache_after();
+
+  tv0->computeAt(tv_out, 2);
+
+  for (auto tv: tvs) {
+    tv->computeAt(tv_out, -1);
+  }
+
+  tv_out->axis(-1)->parallelize(ParallelType::TIDx);
+  tv_out->axis(-2)->parallelize(ParallelType::TIDy);
+  tv_out->axis(-3)->parallelize(ParallelType::BIDx);
+  tv_out->axis(-4)->parallelize(ParallelType::BIDy);
+
+  tv0_cache->setMemoryType(MemoryType::Shared);
+  tv0_cache->axis(-1)->parallelize(ParallelType::TIDx);
+  tv0_cache->axis(-2)->parallelize(ParallelType::TIDy);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 99;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 8;
+    numel_y = 8;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto ref = t0;
+  for (const auto& offset: offsets) {
+    ref = ref + shift(t0, offset);
+  }
+  ref = ref / int(offsets.size() + 1);
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "Ref:\n" << ref << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
 }
 
 } // namespace jit
