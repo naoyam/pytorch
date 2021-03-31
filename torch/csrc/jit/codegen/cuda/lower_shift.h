@@ -66,12 +66,18 @@ class HaloMap {
  public:
   void build();
 
+  void updateExtents(TensorView* tv);
+
   HaloInfo getHalo(IterDomain* id) const;
 
   //! Returns an extent if id is extended for halo. Nullptr is
   //! returned otherwise.
   Val* getExtent(IterDomain* id) const;
-  kir::Val* getExtent(kir::IterDomain* id) const;  
+  kir::Val* getExtent(kir::IterDomain* id) const;
+
+  const auto& getExtentMap() const {
+    return extent_map_;
+  }
 
   std::string toString() const;
 
@@ -83,7 +89,6 @@ class HaloMap {
       TensorView* consumer,
       Expr* expr);
 
-  void updateExtents(TensorView* tv);
 #if 0
   void buildStartMap(Fusion* fusion);
   void propagateStartInfo(Expr* expr);
@@ -91,7 +96,7 @@ class HaloMap {
       TensorView* producer,
       TensorView* consumer,
       Expr* expr);
-#endif  
+#endif
 
  private:
   std::unordered_map<IterDomain*, HaloInfo> halo_map_;

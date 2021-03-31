@@ -15297,6 +15297,144 @@ TEST(NVFuserTest, FusionShift5ptStencilParallel_CUDA) {
   testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
 }
 
+TEST(NVFuserTest, FusionShiftMerge1_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, 1});
+  fusion.addOutput(tv2);
+
+  tv2->split(-1, 4);
+  tv2->split(0, 4);
+  tv2->reorder({{1, 2}, {2, 1}});
+  tv2->merge(2, 3);
+
+  tv0->computeAt(tv2, 2);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 4;
+    numel_y = 4;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 1;
+  auto t2 = shift(t1, {0, 1});
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "t2\n" << t2 << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(t2.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShift5ptStencilParallel1DThreadBlock_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  // 5-pt stencil
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  std::vector<std::vector<int>> offsets = {
+    {-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
+  std::vector<TensorView*> tvs;
+  for (const auto& offset: offsets) {
+    tvs.push_back(shift(tv0, offset));
+  }
+
+  auto tv_out = tv0;
+
+  for (auto tv: tvs) {
+    tv_out = add(tv_out, tv);
+  }
+
+  tv_out = div(tv_out, new Double(tvs.size() + 1));
+
+  fusion.addOutput(tv_out);
+
+  tv_out->split(-1, 4);
+  tv_out->split(0, 4);
+  tv_out->reorder({{1, 2}, {2, 1}});
+
+  auto tv0_cache = tv0->cache_after();
+
+  tv_out->merge(-2, -1);
+  
+  tv0->computeAt(tv_out, 2);
+
+  for (auto tv: tvs) {
+    tv->computeAt(tv_out, -1);
+  }
+
+  tv0_cache->merge(-2, -1);
+
+  tv_out->axis(-1)->parallelize(ParallelType::TIDx);
+  //tv_out->axis(-2)->parallelize(ParallelType::TIDy);
+#if 0
+  tv_out->axis(1)->parallelize(ParallelType::BIDx);
+  tv_out->axis(0)->parallelize(ParallelType::BIDy);
+#endif
+
+  tv0_cache->setMemoryType(MemoryType::Shared);
+  tv0_cache->axis(-1)->parallelize(ParallelType::TIDx);
+  //tv0_cache->axis(-2)->parallelize(ParallelType::TIDy);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 99;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 8;
+    numel_y = 8;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto ref = t0;
+  for (const auto& offset: offsets) {
+    ref = ref + shift(t0, offset);
+  }
+  ref = ref / int(offsets.size() + 1);
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "Ref:\n" << ref << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)

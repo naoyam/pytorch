@@ -128,7 +128,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     }
 
     for (size_t i = 0; i < num_dims; ++i) {
-      std::cerr << "idx: " << i << std::endl;
+      // std::cerr << "idx: " << i << std::endl;
 
       auto producer_id = producer_root[i];
       auto consumer_id_it = p2c.find(producer_id);
@@ -146,7 +146,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
       const auto producer_halo_info = halo_map.getHalo(producer_id);
 #endif
-      
+
       const auto consumer_halo_info = halo_map.getHalo(consumer_id);
 
       int shift_offset = 0;
@@ -378,7 +378,7 @@ void HaloMap::updateExtents(TensorView* tv) {
   std::unordered_map<IterDomain*, HaloInfo> inherited_halo;
 
   auto gpu_lower = GpuLower::current();
-  
+
   for (auto root_axis: tv->getRootDomain()) {
     auto& halo_info = findOrCreate(root_axis);
     auto halo_width = halo_info.width();
@@ -388,7 +388,7 @@ void HaloMap::updateExtents(TensorView* tv) {
     auto expanded_extent = add(root_axis->rawExtent(), new Int(halo_width));
     extent_map_.insert({root_axis, expanded_extent});
     kir_extent_map_.insert({gpu_lower->lowerValue(root_axis)->as<kir::IterDomain>(),
-        gpu_lower->lowerValue(expanded_extent)});    
+        gpu_lower->lowerValue(expanded_extent)});
     inherited_halo.insert({root_axis, halo_info});
   }
 
@@ -414,7 +414,7 @@ void HaloMap::updateExtents(TensorView* tv) {
       auto expanded_extent = add(out_id->rawExtent(), new Int(halo_info.width()));
       extent_map_.insert({out_id, expanded_extent});
       kir_extent_map_.insert({gpu_lower->lowerValue(out_id)->as<kir::IterDomain>(),
-          gpu_lower->lowerValue(expanded_extent)});      
+          gpu_lower->lowerValue(expanded_extent)});
       inherited_halo.insert({out_id, halo_info});
     } else if (auto merge = dynamic_cast<Merge*>(expr)) {
       if (extent_map_.find(merge->inner()) != extent_map_.end() ||
@@ -430,7 +430,12 @@ void HaloMap::updateExtents(TensorView* tv) {
         auto expanded_extent = mul(outer_extent, inner_extent);
         extent_map_.insert({merge->out(), expanded_extent});
         kir_extent_map_.insert({gpu_lower->lowerValue(merge->out())->as<kir::IterDomain>(),
-            gpu_lower->lowerValue(expanded_extent)});        
+            gpu_lower->lowerValue(expanded_extent)});
+
+        std::cerr << "Merged extent: "
+                  << kir::toString(gpu_lower->lowerValue(expanded_extent))
+                  << std::endl;
+
       }
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unsupported expr: ", expr);

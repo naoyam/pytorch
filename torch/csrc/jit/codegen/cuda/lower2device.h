@@ -61,6 +61,10 @@ class TORCH_CUDA_CU_API GpuLower {
     return halo_map_;
   }
 
+  HaloMap& haloMap() {
+    return halo_map_;
+  }
+
   auto& haloIterMap() {
     return halo_iter_map_;
   }
