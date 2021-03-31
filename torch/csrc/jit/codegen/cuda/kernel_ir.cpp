@@ -461,9 +461,21 @@ ForLoop::ForLoop(
   TORCH_INTERNAL_ASSERT(index->dtype() == DataType::Int);
   addInput(index);
   addInput(iter_domain);
+  if (start_ == nullptr && iter_domain->isThread()) {
+    start_ =
+        IrBuilder(GpuLower::current()->kernel())
+            .create<kir::NamedScalar>(
+                stringifyThread(iter_domain->parallelType()), DataType::Int);
+  }
   if (step_ == nullptr) {
-    kir::IrBuilder ir_builder(GpuLower::current()->kernel());
-    step_ = ir_builder.one();
+    if (iter_domain->isThread()) {
+      step_ = IrBuilder(GpuLower::current()->kernel())
+                  .create<kir::NamedScalar>(
+                      stringifyThreadSize(iter_domain->parallelType()),
+                      DataType::Int);
+    } else {
+      step_ = IrBuilder(GpuLower::current()->kernel()).one();
+    }
   }
 }
 

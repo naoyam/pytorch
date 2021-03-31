@@ -1251,6 +1251,10 @@ class TORCH_CUDA_CU_API ForLoop final : public Expr {
 
   Val* step() const;
 
+  bool unrestricted_parallel_extent() const {
+    return unrestricted_parallel_extent_;
+  }
+
  private:
   Val* const index_ = nullptr;
   IterDomain* const iter_domain_;
@@ -1259,6 +1263,7 @@ class TORCH_CUDA_CU_API ForLoop final : public Expr {
   Val* start_ = nullptr;
   Val* stop_ = nullptr;
   Val* step_ = nullptr;
+  bool unrestricted_parallel_extent_ = false;
 };
 
 //! IfThenElse provides scoping for an boolean operator. Exprs placed in its

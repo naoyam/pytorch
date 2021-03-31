@@ -3,6 +3,7 @@
 #include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir_printer.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
 #include <torch/csrc/jit/codegen/cuda/utils.h>
 
@@ -199,6 +200,10 @@ class CudaKernelGenerator : private kir::IrVisitor {
   std::string gen(const kir::Node* node) {
     std::stringstream tmp_code;
     std::swap(tmp_code, code_);
+    auto replacement = replacement_map_.find(node);
+    if (replacement != replacement_map_.end()) {
+      node = replacement->second;
+    }
     node->accept(this);
     std::swap(tmp_code, code_);
     return tmp_code.str();
@@ -872,9 +877,17 @@ class CudaKernelGenerator : private kir::IrVisitor {
 
   void visit(const kir::ForLoop* node) final {
     // TODO(kir): handle this during lowering
-    if (node->iter_domain()->isThread() || node->iter_domain()->isBroadcast() ||
+    if (node->iter_domain()->isBroadcast() ||
         node->iter_domain()->parallelType() == ParallelType::Vectorize) {
       handleScope(node->body());
+      return;
+    }
+
+    if (!node->unrestricted_parallel_extent() &&
+        node->iter_domain()->isThread()) {
+      replacement_map_.insert({node->index(), node->start()});
+      handleScope(node->body());
+      replacement_map_.erase(node->index());
       return;
     }
 
@@ -988,6 +1001,8 @@ class CudaKernelGenerator : private kir::IrVisitor {
 
   // TODO(kir): replace with explicit assignment statements
   bool print_inline_ = false;
+
+  std::unordered_map<const kir::Node*, const kir::Node*> replacement_map_;
 };
 
 } // namespace

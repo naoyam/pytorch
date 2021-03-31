@@ -1619,9 +1619,13 @@ std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
         within_unswitch = true;
       }
 
-      if (within_unswitch && !loop->iter_domain()->isThread()) {
-        loop_to_ind_map[loop] =
-            ir_builder.subExpr(loop->iter_domain()->extent(), one);
+      if (within_unswitch) {
+        if (loop->iter_domain()->isThread()) {
+          loop_to_ind_map[loop] = loop->start();
+        } else {
+          loop_to_ind_map[loop] =
+              ir_builder.subExpr(loop->iter_domain()->extent(), one);
+        }
       }
     }
   }
