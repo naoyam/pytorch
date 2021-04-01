@@ -103,6 +103,14 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     auto consumer_inds = Index::getConsumerRootPredIndices(
         consumer, for_loops_, pred_contiguity).first;
 
+    if (consumer->name() == 10) {
+      std::stringstream ss;
+      for (auto v : consumer_inds) {
+        ss << kir::toString(v) << ", ";
+      }
+      std::cerr << "Consumer root pred inds: " << ss.str() << std::endl;
+    }
+
     TORCH_INTERNAL_ASSERT(consumer_inds.size() == consumer->domain()->rootDomain().size());
     TORCH_INTERNAL_ASSERT(prod_inds.size() == num_dims);
 
@@ -375,14 +383,20 @@ void HaloMap::propagateHaloInfo(
 }
 
 void HaloMap::updateExtents(TensorView* tv) {
+  updateExtents(tv->domain());
+}
+
+void HaloMap::updateExtents(TensorDomain* td) {
   std::unordered_map<IterDomain*, HaloInfo> inherited_halo;
 
   auto gpu_lower = GpuLower::current();
 
-  for (auto root_axis: tv->getRootDomain()) {
+  for (auto root_axis: td->getRootDomain()) {
+    std::cerr << "root axis: " << root_axis << std::endl;
     auto& halo_info = findOrCreate(root_axis);
     auto halo_width = halo_info.width();
     if (halo_width == 0) {
+      std::cerr << "root axis has zero halo\n";
       continue;
     }
     auto expanded_extent = add(root_axis->rawExtent(), new Int(halo_width));
@@ -394,18 +408,25 @@ void HaloMap::updateExtents(TensorView* tv) {
 
   auto exprs = ExprSort::getExprs(
       FusionGuard::getCurFusion(),
-      std::vector<Val*>(tv->domain()->domain().begin(), tv->domain()->domain().end()));
+      std::vector<Val*>(td->domain().begin(), td->domain().end()));
 
   // Splitting merged overlapped IterDomains is not allowed
   std::unordered_set<IterDomain*> merged_shifted_ids;
 
   for (auto expr: exprs) {
+    std::cerr << "Visiting expr: " << expr << std::endl;
     if (auto split = dynamic_cast<Split*>(expr)) {
       TORCH_INTERNAL_ASSERT(merged_shifted_ids.find(split->in()) == merged_shifted_ids.end(),
                             "Splitting IterDomain that is a merged domain of shifted domains is not allowed");
       auto in_id = split->in();
       if (extent_map_.find(in_id) == extent_map_.end()) {
         continue;
+      }
+      if (inherited_halo.find(in_id) == inherited_halo.end()) {
+        std::cerr << "inherited halo:\n";
+        for (auto kv: inherited_halo) {
+          std::cerr << "Inherited: " << kv.first << " -> " << kv.second.toString() << std::endl;
+        }
       }
       TORCH_INTERNAL_ASSERT(inherited_halo.find(in_id) != inherited_halo.end());
       const auto& halo_info = inherited_halo.at(in_id);

@@ -219,6 +219,34 @@ class ContigIDs : public OptInDispatch {
   }
 };
 
+std::unordered_map<kir::IterDomain*, kir::Val*> createMergedShiftMap(
+    const std::unordered_map<IterDomain*, IterDomain*>& c2p_map) {
+  const auto gpu_lower = GpuLower::current();
+  
+  std::unordered_map<kir::IterDomain*, kir::Val*> merged_shift_map;
+  
+  for (auto kv: c2p_map) {
+    auto c_id = kv.first;
+    auto p_id = kv.second;
+    auto merge = dynamic_cast<Merge*>(c_id->definition());
+    if (merge == nullptr) {
+      continue;
+    }
+    for (size_t i = 0; i < 2; ++i) {
+      auto merge_input = merge->inputs()[i];
+      auto merge_input_kir = gpu_lower->lowerValue(merge_input)->as<kir::IterDomain>();
+      auto halo_extent = gpu_lower->haloMap().getExtent(merge_input_kir);
+      if (halo_extent == nullptr) {
+        continue;
+      }
+      auto c_merge_input = p_id->definition()->as<Merge>()->inputs()[i];
+      merged_shift_map[gpu_lower->lowerValue(c_merge_input)->as<kir::IterDomain>()] = halo_extent;
+    }
+  }
+
+  return merged_shift_map;
+}
+
 } // namespace
 
 void IndexCompute::handle(Split* split) {
@@ -345,7 +373,15 @@ void IndexCompute::handle(Merge* merge) {
     return;
   }
 
-  const auto inner_extent = getExtent(inner_id);
+  //const auto inner_extent = getExtent(inner_id);
+  auto inner_extent = getExtent(inner_id);
+  // When a shifted axis of a consumer is merged, that extent needs to
+  // be used to index the producer
+  if (merged_shift_extent_map_.find(inner_id) != merged_shift_extent_map_.end()) {
+    inner_extent = merged_shift_extent_map_[inner_id];
+  }
+  // TODO: Is the outer extent needed to be updated with the
+  // propagated halo extent?
   const auto outer_extent = getExtent(outer_id);
 
   if (inner_id->isBroadcast() && inner_extent->isOneInt()) {
@@ -424,12 +460,14 @@ IndexCompute::IndexCompute(
     std::unordered_map<kir::IterDomain*, kir::Val*> extent_map,
     std::unordered_set<kir::IterDomain*> zero_merged_in,
     const std::vector<bool>& root_contiguity,
-    std::unordered_set<kir::IterDomain*> preferred_paths)
+    std::unordered_set<kir::IterDomain*> preferred_paths,
+    std::unordered_map<kir::IterDomain*, kir::Val*> _merged_shift_extent_map)
     : td_(_td),
       index_map_(std::move(initial_index_map)),
       extent_map_(std::move(extent_map)),
       zero_merged_in_(std::move(zero_merged_in)),
-      preferred_paths_(std::move(preferred_paths)) {
+      preferred_paths_(std::move(preferred_paths)),
+      merged_shift_extent_map_(std::move(_merged_shift_extent_map)) {
   FUSER_PERF_SCOPE("IndexCompute::IndexCompute");
 
   // Make sure we recompute any indices we can that map to a contiguous access
@@ -462,6 +500,7 @@ void IndexCompute::run() {
 
 kir::Val* IndexCompute::getExtent(kir::IterDomain* id) {
   if (_debug) std::cerr << "getExtent: " << kir::toString(id) << std::endl;
+  //const auto gpu_lower = GpuLower::current();
   if (extent_map_.find(id) != extent_map_.end()) {
     if (_debug) {
       std::cerr << "extent_map  : "
@@ -469,6 +508,8 @@ kir::Val* IndexCompute::getExtent(kir::IterDomain* id) {
                 << std::endl;
     }
     return extent_map_.at(id);
+    //  } else if (gpu_lower->haloMap().getExtent(id)) {
+    //return gpu_lower->haloMap().getExtent(id);
   } else {
     if (_debug) {
       std::cerr << "id extent: "
@@ -487,7 +528,8 @@ IndexCompute IndexCompute::updateIndexCompute(
     const TensorDomain* new_td,
     const std::unordered_map<IterDomain*, IterDomain*>& id_map,
     const std::vector<bool>& root_contiguity,
-    const std::unordered_map<IterDomain*, Val*>& extent_map) {
+    const std::unordered_map<IterDomain*, Val*>& extent_map,
+    const std::unordered_map<kir::IterDomain*, kir::Val*>& merged_shift_extent_map) {
 
   if (_debug) {
     std::cerr << "updateIndexCompute\n";
@@ -498,6 +540,7 @@ IndexCompute IndexCompute::updateIndexCompute(
   std::unordered_map<kir::IterDomain*, kir::Val*> updated_index_map;
   std::unordered_map<kir::IterDomain*, kir::Val*> updated_extent_map;
   std::unordered_set<kir::IterDomain*> updated_zero_merged_in;
+  //std::unordered_map<kir::IterDomain*, kir::Val*> merged_shift_map;
 
   for (auto id_entry : id_map) {
     kir::IterDomain* prev_id =
@@ -514,6 +557,17 @@ IndexCompute IndexCompute::updateIndexCompute(
     if (zero_merged_in_.find(prev_id) != zero_merged_in_.end()) {
       updated_zero_merged_in.emplace(new_id);
     }
+
+    // If an ID is merged, propagate the halo extent
+#if 0    
+    const auto& prev_uses = id_entry.first->uses();
+    if (prev_uses.size() == 1 && prev_uses[0]->isA<Merge>()) {
+      auto halo_extent = gpu_lower->haloMap().getExtent(prev_id);
+      if (halo_extent != nullptr) {
+        merged_shift_map[new_id] = halo_extent;
+      }
+    }
+#endif
   }
 
   for (auto id_entry : extent_map) {
@@ -530,7 +584,9 @@ IndexCompute IndexCompute::updateIndexCompute(
       updated_index_map,
       updated_extent_map,
       updated_zero_merged_in,
-      root_contiguity);
+      root_contiguity,
+      {},
+      merged_shift_extent_map);
   updated_index_compute.run();
 
   if (_debug) std::cerr << "updated_index_compute done\n";
@@ -796,10 +852,23 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
 
   const auto loops = removeHaloLoops(loops_all);
 
+  if (producer_tv->name() == 0 && consumer_tv->name() == 10) {
+    std::cerr << "getGlobalProducerIndex\n";
+    _debug = true;
+  }
+
   // Get a reference tensor replayed as existing loop structure
   auto reference = IndexReferenceReplay::getReference(loops);
   auto reference_domain = reference.domain;
   auto reference_id_map = reference.concrete_to_id;
+
+  if (_debug) {
+    std::cerr << "Reference domain: " << reference_domain << std::endl;
+    std::cerr << "Consumer TV: " << consumer_tv << std::endl;
+    for (auto kv: reference_id_map) {
+      std::cerr << "ref map: " << kv.first << " -> " << kv.second << std::endl;
+    }
+  }
 
   // Replay producer to look like consumer so we can index on producer since our
   // loop nests look like consumer
@@ -821,10 +890,21 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
       root_ref_to_producer[ref_id_it->second] = p_root;
     }
   }
-
+#if 0
+  for (auto c_root : consumer_tv->getRootDomain()) {
+    auto concrete_id = gpu_lower->caIndexMap().getConcreteMappedID(c_root);
+    auto ref_id_it = reference_id_map.find(concrete_id);
+    if (ref_id_it != reference_id_map.end()) {
+      auto c_root_halo_info = gpu_lower->haloMap().getHalo(c_root);
+      auto& ref_info = gpu_lower->haloMap().findOrCreate(ref_id_it->second);
+      ref_info = c_root_halo_info;
+    }
+  }
+  gpu_lower->haloMap().updateExtents(reference_domain);
+#endif
   // Index into the reference tensor. Reference indexing will handle vectorized
   // dims where index should be set to 0
-  auto ref_compute = getReferenceIndexing(loops_all, reference_domain);
+  auto ref_compute = getReferenceIndexing(loops_all, reference);
 
   // Replay producer as reference to get reference to producer ID map
   BestEffortReplay replay_producer_as_ref(
@@ -844,11 +924,29 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
     }
   }
 
+  auto c2p_root_map = pairwiseMap.mapConsumerToProducer(
+      consumer_tv->domain(), producer_tv->domain());
+
+  BestEffortReplay replay_PasC(
+      producer_tv->domain()->domain(),
+      consumer_tv->domain()->domain(),
+      c2p_root_map,
+      true);
+
+  auto c2p_map = replay_PasC.getReplay();
+
+  const auto merged_shift_map = createMergedShiftMap(c2p_map);
+
   // Index into producer using reference indexing
+  // TODO: this is done twice in the non-global case. Once for
+  // indices and another for extents. Is that also necessary for the
+  // global case? If a global tensor does not have halo, it's probably
+  // not necessary to do twice.
   auto producer_indexing = ref_compute.updateIndexCompute(
       producer_tv->domain(),
       ref_2_producer,
-      producer_tv->domain()->contiguity());
+      producer_tv->domain()->contiguity(),
+      {}, merged_shift_map);
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
@@ -962,6 +1060,11 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
     }
   }
 
+  if (_debug) {
+    std::cerr << "getGlobalProducerIndex done\n";
+  }
+  _debug = false;
+
   return strided_inds;
 }
 
@@ -1031,7 +1134,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
   if (producer_tv->name() == 10 &&
       consumer_tv->name() == 1) {
     std::cerr << "Enable debug output\n";
-    _debug = true;
+    //_debug = true;
   }
 
   if (_debug) {
@@ -1200,34 +1303,35 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
 
   // Extents may be extended for halo
   std::unordered_map<IterDomain*, Val*> halo_extent_map;
-#if 0
-  for (auto id : producer_tv->domain()->domain()) {
-    auto extent = gpu_lower->haloMap().getExtent(id);
-    if (extent == nullptr) {
-      continue;
-    }
-    std::cerr << "Extent map: " << id << " -> " << extent << std::endl;
-    halo_extent_map.insert({id, extent});
-  }
-#else
   for (auto kv: gpu_lower->haloMap().getExtentMap()) {
     auto id = kv.first;
     auto extent = kv.second;
     halo_extent_map.insert({id, extent});
   }
-#endif
 
   // Index into producer using reference indexing
+
+  // indexing is done without the halo extent map
+  // extent is separately computed with the halo extent map
+  
+  // TODO: what if the producer has halo? Doesn't it need to use the
+  // halo extent for indices as well?
+
+  const auto merged_shift_map = createMergedShiftMap(c2p_map);
+  
   auto producer_indexing = ref_compute.updateIndexCompute(
       producer_tv->domain(),
       ref_2_producer,
-      producer_tv->domain()->contiguity());
+      producer_tv->domain()->contiguity(),
+      {}, merged_shift_map);
+
 
   auto producer_extent = ref_compute.updateIndexCompute(
       producer_tv->domain(),
       ref_2_producer,
       producer_tv->domain()->contiguity(),
-      halo_extent_map);
+      halo_extent_map,
+      merged_shift_map);
 
   IndexSwizzle index_swizzle(
       producer_tv,
@@ -1403,7 +1507,7 @@ std::vector<kir::Val*> Index::getGlobalConsumerStridedIndices(
 
   // Index into the reference tensor. Reference indexing will handle vectorized
   // dims where index should be set to 0
-  auto ref_compute = getReferenceIndexing(loops, reference_domain);
+  auto ref_compute = getReferenceIndexing(loops, reference);
 
   // Index into consumer using reference indexing
   auto consumer_indexing = ref_compute.updateIndexCompute(
@@ -1619,6 +1723,7 @@ std::vector<kir::Val*> Index::getNonGlobalConsumerStridedIndices(
 
   // Extents may be extended for halo
   std::unordered_map<IterDomain*, Val*> halo_extent_map;
+#if 0
   for (auto id : consumer_tv->domain()->domain()) {
     auto extent = gpu_lower->haloMap().getExtent(id);
     if (extent == nullptr) {
@@ -1626,6 +1731,13 @@ std::vector<kir::Val*> Index::getNonGlobalConsumerStridedIndices(
     }
     halo_extent_map.insert({id, extent});
   }
+#else
+  for (auto kv: gpu_lower->haloMap().getExtentMap()) {
+    auto id = kv.first;
+    auto extent = kv.second;
+    halo_extent_map.insert({id, extent});
+  }
+#endif
 
   // Index into consumer using reference indexing
   auto consumer_indexing = ref_compute.updateIndexCompute(
@@ -1866,7 +1978,7 @@ std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
 
   std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_ind_map;
 
-#if 0
+#if 1
   // Due to rfactor/initialization reference_domain may be bigger than loop nest
   // structure
   TORCH_INTERNAL_ASSERT(loops.size() <= reference_domain->nDims());
@@ -1903,14 +2015,48 @@ std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
     }
   }
 #endif
-
+  
   // Index into the reference tensor
   auto ref_compute =
       getReferenceIndexing(loops, reference_domain, ref_id_to_ind_map, {});
 
+  // Extents may be extended for halo
+  // Halo extent should not be used as it is indexing to the logical
+  // domain
+#if 0  
+  std::unordered_map<IterDomain*, Val*> halo_extent_map;
+  for (auto kv: gpu_lower->haloMap().getExtentMap()) {
+    auto id = kv.first;
+    auto extent = kv.second;
+    halo_extent_map.insert({id, extent});
+  }
+#endif
+
+  std::unordered_map<kir::IterDomain*, kir::Val*> merged_shift_map;
+  auto exprs = ExprSort::getExprs(
+      FusionGuard::getCurFusion(),
+      std::vector<Val*>(consumer_tv->domain()->domain().begin(),
+                        consumer_tv->domain()->domain().end()));
+
+  for (auto expr: exprs) {
+    auto merge = dynamic_cast<Merge*>(expr);
+    if (merge == nullptr) {
+      continue;
+    }
+    for (auto in_id : merge->inputs()) {
+      auto halo_extent = gpu_lower->haloMap().getExtent(in_id->as<IterDomain>());
+      if (halo_extent == nullptr) {
+        continue;
+      }
+      merged_shift_map[gpu_lower->lowerValue(in_id)->as<kir::IterDomain>()] =
+          gpu_lower->lowerValue(halo_extent);
+    }
+  }
+
   // Index into consumer using reference indexing
   auto consumer_indexing = ref_compute.updateIndexCompute(
-      consumer_tv->domain(), ref_2_consumer, root_contiguity);
+      consumer_tv->domain(), ref_2_consumer, root_contiguity,
+      {}, merged_shift_map);
 
   // Indices should now be mapped onto IterDomains in consumer, so just grab
   // and use them.
@@ -1995,7 +2141,7 @@ std::vector<kir::Val*> Index::getProducerRootPredIndices(
 
   // Index into the reference tensor. Reference indexing will handle vectorized
   // dims where index should be set to 0
-  auto ref_compute = getReferenceIndexing(loops_all, reference_domain);
+  auto ref_compute = getReferenceIndexing(loops_all, reference);
 
   // Replay producer as reference to get reference to producer ID map
   BestEffortReplay replay_producer_as_ref(
@@ -2015,9 +2161,18 @@ std::vector<kir::Val*> Index::getProducerRootPredIndices(
     }
   }
 
+  // Extents may be extended for halo
+  std::unordered_map<IterDomain*, Val*> halo_extent_map;
+  for (auto kv: gpu_lower->haloMap().getExtentMap()) {
+    auto id = kv.first;
+    auto extent = kv.second;
+    halo_extent_map.insert({id, extent});
+  }
+
   // Index into producer using reference indexing
   auto producer_indexing = ref_compute.updateIndexCompute(
-      producerAsC, ref_2_producer, producerAsC->contiguity());
+      producerAsC, ref_2_producer, producerAsC->contiguity(),
+      halo_extent_map);
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.

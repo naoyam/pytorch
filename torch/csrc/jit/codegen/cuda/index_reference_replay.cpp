@@ -248,9 +248,11 @@ TensorDomain* IndexReferenceReplay::computeReplay() {
 
 IndexCompute getReferenceIndexing(
     const std::vector<kir::ForLoop*>& loop_structure,
-    TensorDomain* reference_tensor) {
+    const ReferenceTensor& reference) {
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
+
+  auto reference_tensor = reference.domain;
 
   // Create a simple index maspping from loop iter domains to their local index.
   // This is only applicable to global memory buffers.
@@ -290,10 +292,26 @@ IndexCompute getReferenceIndexing(
     }
   }
 
+  std::unordered_map<kir::IterDomain*, kir::Val*> initial_extent_map;  
+#if 0
+  std::cerr << "Building extent map\n";
+  for (auto& kv : reference.concrete_to_id) {
+    std::cerr << "Concrete ID: " << kv.first << std::endl;
+    auto halo_extent = gpu_lower->haloMap().getExtent(kv.first);
+    if (halo_extent != nullptr) {
+      std::cerr << "Propagating halo extent to reference: "
+                << kv.second << " -> " << halo_extent << std::endl;
+      initial_extent_map.insert({gpu_lower->lowerValue(kv.second)->as<kir::IterDomain>(),
+          gpu_lower->lowerValue(halo_extent)->as<kir::Val>()});
+    }
+  }
+
+  std::cerr << "Building extent map done\n";  
+#endif
   // Send to the other version of reference indexing that directly takes the
   // index map
   return getReferenceIndexing(
-      non_halo_loops, reference_tensor, initial_index_map, {});
+      non_halo_loops, reference_tensor, initial_index_map, {}, initial_extent_map);
 }
 
 IndexCompute getReferenceIndexing(

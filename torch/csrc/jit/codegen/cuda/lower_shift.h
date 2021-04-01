@@ -62,11 +62,13 @@ class HaloInfo {
   std::array<unsigned int, 2> widths_;
 };
 
+
 class HaloMap {
  public:
   void build();
 
   void updateExtents(TensorView* tv);
+  void updateExtents(TensorDomain* td);
 
   HaloInfo getHalo(IterDomain* id) const;
 
@@ -81,8 +83,9 @@ class HaloMap {
 
   std::string toString() const;
 
- private:
   HaloInfo& findOrCreate(IterDomain* id);
+  
+ private:  
   void propagateHaloInfo(Expr* expr);
   void propagateHaloInfo(
       TensorView* producer,
