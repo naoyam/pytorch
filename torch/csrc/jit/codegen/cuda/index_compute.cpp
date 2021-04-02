@@ -1650,7 +1650,7 @@ std::vector<kir::Val*> Index::getNonGlobalConsumerStridedIndices(
   // Due to rfactor/initialization reference_domain may be bigger than loop nest
   // structure, ignore IterDomains that aren't present in the loop nest when
   // indexing reference.
-#if 0
+#if 1
   TORCH_INTERNAL_ASSERT(loops.size() <= reference_domain->nDims());
   for (size_t loop_i = 0; loop_i < loops.size(); loop_i++) {
     auto ref_axis = gpu_lower->lowerValue(reference_domain->axis(loop_i))

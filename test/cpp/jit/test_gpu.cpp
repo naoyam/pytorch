@@ -15694,16 +15694,27 @@ TEST(NVFuserTest, FusionShiftMerge8_CUDA) {
   out->split(0, 32);
   out->split(1, 4);
   out->reorder({{3, 1}, {1, 2}, {4, 3}, {2, 4}});
-  //tv4->merge(2, 3);
+  out->merge(2, 3);
+  out->merge(2, 3);
+  out->merge(2, 3);
+  out->merge(0, 1);
 
-  tv0->computeAt(out, 2);
+  tv0->computeAt(out, 1);
 
   fusion.printMath();
+
+  out->axis(0)->parallelize(ParallelType::BIDx);
+  out->axis(1)->parallelize(ParallelType::TIDx);
 
   for (auto tv: {tv1, tv2}) {
     tv->split(-2, 4);
     tv->split(-1, 4);
     tv->reorder({{-3, -2}, {-2, -3}});
+    tv->merge(1, 2);
+    tv->merge(1, 2);
+    tv->merge(1, 2);
+    tv->axis(1)->parallelize(ParallelType::TIDx);
+    tv->setMemoryType(MemoryType::Shared);
   }
 
   fusion.printMath();
@@ -15712,8 +15723,8 @@ TEST(NVFuserTest, FusionShiftMerge8_CUDA) {
   FusionExecutor fe;
   fe.compileFusion(&fusion);
 
-  int numel_x = 99;
-  int numel_y = 101;
+  int numel_x = 301;
+  int numel_y = 401;
 
   if (_shift_debug) {
     numel_x = 8;
