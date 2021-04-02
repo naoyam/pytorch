@@ -65,7 +65,7 @@ class HaloInfo {
 
 class HaloMap {
  public:
-  void build();
+  void build(Fusion* fusion);
 
   void updateExtents(TensorView* tv);
   void updateExtents(TensorDomain* td);
@@ -91,6 +91,9 @@ class HaloMap {
       TensorView* producer,
       TensorView* consumer,
       Expr* expr);
+
+  //! Validate shift usage
+  void validate(TensorView* td) const;
 
  private:
   std::unordered_map<IterDomain*, HaloInfo> halo_map_;

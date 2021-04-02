@@ -14340,7 +14340,6 @@ TEST(NVFuserTest, FusionShift2_CUDA) {
 }
 #endif
 
-#if 0
 TEST(NVFuserTest, FusionShift3_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -14357,40 +14356,10 @@ TEST(NVFuserTest, FusionShift3_CUDA) {
 
   tv0->computeAt(tv4, -1);
 
-  fusion.printMath();
-  fusion.printKernel();
-
-  FusionExecutor fe;
-  fe.compileFusion(&fusion);
-
-  int numel_x = 100;
-  int numel_y = 101;
-
-  if (_shift_debug) {
-    numel_x = 4;
-    numel_y = 4;
-  }
-
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
-  std::vector<IValue> inputs = {t0};
-  auto outputs = fe.runFusion(inputs);
-
-  auto t2 = t0 + 2;
-  auto t3 = t2.roll(-1, 0);
-  t3.index({-1, "..."}) = 0;
-
-  auto t4 = t3 + 1;
-
-  if (_shift_debug) {
-    std::cout << "t0:\n" << t0 << std::endl;
-    std::cout << "t4\n" << t4 << std::endl;
-    std::cout << "out\n" << outputs[0] << std::endl;
-  }
-
-  TORCH_CHECK(t4.allclose(outputs[0]));
+  // Lowering should trigger an assertion failure as a shifted axis is
+  // found inside an allocation position.
+  ASSERT_ANY_THROW(fusion.printKernel());
 }
-#endif
 
 #if 0
 TEST(NVFuserTest, FusionShift4_CUDA) {

@@ -133,8 +133,8 @@ void GpuLower::lower() {
 
   validateParallelize(fusion_);
 
-  halo_map_.build();
-  std::cerr << "HaloMap: " << halo_map_.toString() << std::endl;
+  halo_map_.build(fusion_);
+  //std::cerr << "HaloMap: " << halo_map_.toString() << std::endl;
 
   // Compute thread predicates
   ThreadPredicateMap preds(fusion_);

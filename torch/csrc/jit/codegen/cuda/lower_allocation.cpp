@@ -170,7 +170,7 @@ class AllocationInserter : public kir::MutableIrVisitor {
           isParallelTypeThreadDim(concrete_id->parallelType());
       const bool is_thread = isParallelTypeThread(concrete_id->parallelType());
 
-      kir::Val* alloc_extent = nullptr;
+      kir::Val* alloc_extent = concrete_id->rawExtent();
       auto halo_extent = gpu_lower->haloMap().getExtent(fuser_tv->axis(axis_i));
       if (axis_i < info.alloc_pos) {
         // Even when the axis is outside the allocation position, if the
@@ -181,8 +181,9 @@ class AllocationInserter : public kir::MutableIrVisitor {
         // with the axis parallelized by TIDs or BIDs.
         if (!((memory_type == MemoryType::Shared && is_thread_dim) ||
               (memory_type == MemoryType::Global && is_thread))) {
-        } else {
-          alloc_extent = concrete_id->rawExtent();
+          TORCH_CHECK(halo_extent == nullptr,
+                      "Halo-extended axis not allowed outside allocation position");
+          continue;
         }
       } else {
         if (
@@ -191,32 +192,18 @@ class AllocationInserter : public kir::MutableIrVisitor {
             // If local memory, don't use any IDs bound to a grid or block
             // dimension
             (memory_type == MemoryType::Local && is_thread)) {
-          // continue;
-        } else {
-          alloc_extent = concrete_id->rawExtent();
+          // This should not occure as there's validation at the shift
+          // analysis pass.
+          TORCH_CHECK(halo_extent == nullptr,
+                      "Halo-extended axis not allowed.");
+           continue;
         }
       }
-#if 0
-      if (halo_info.hasHalo()) {
-        std::cerr << "Alloc has halo\n";
-        if (alloc_extent == nullptr) {
-          alloc_extent = ir_builder.create<kir::Int>(1);
-        }
-        alloc_extent = ir_builder.addExpr(
-            alloc_extent,
-            ir_builder.create<kir::Int>(
-                halo_info.width(0) + halo_info.width(1)));
-      }
-#else
+
       if (halo_extent) {
-        std::cerr << "Has halo extent for TV" << fuser_tv->name()
-                  << ": " << halo_extent
-                  << ", " 
-                  << kir::toString(gpu_lower->lowerValue(halo_extent))
-                  << "\n";
         alloc_extent = gpu_lower->lowerValue(halo_extent);
       }
-#endif
+
       if (alloc_extent != nullptr) {
         alloc_dims.push_back(alloc_extent);
       }

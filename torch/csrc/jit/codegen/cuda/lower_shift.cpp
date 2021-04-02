@@ -239,11 +239,8 @@ HaloInfo HaloMap::getHalo(IterDomain* id) const {
   }
 }
 
-void HaloMap::build() {
+void HaloMap::build(Fusion* fusion) {
   std::cerr << "Building HaloMap\n";
-
-  Fusion* fusion = FusionGuard::getCurFusion();
-  TORCH_INTERNAL_ASSERT(fusion != nullptr);
 
   auto exprs = fusion->exprs();
   for (auto it = exprs.rbegin(); it != exprs.rend(); ++it) {
@@ -325,6 +322,7 @@ void HaloMap::propagateHaloInfo(
 
 void HaloMap::updateExtents(TensorView* tv) {
   updateExtents(tv->domain());
+  validate(tv);
 }
 
 void HaloMap::updateExtents(TensorDomain* td) {
@@ -348,7 +346,7 @@ void HaloMap::updateExtents(TensorDomain* td) {
   }
 
   auto exprs = ExprSort::getExprs(
-      FusionGuard::getCurFusion(),
+      td->fusion(),
       std::vector<Val*>(td->domain().begin(), td->domain().end()));
 
   // Splitting merged overlapped IterDomains is not allowed
@@ -403,6 +401,54 @@ void HaloMap::updateExtents(TensorDomain* td) {
       TORCH_INTERNAL_ASSERT(false, "Unsupported expr: ", expr);
     }
   }
+}
+
+//! Restriction 1: Allocation must be outside of any shifted
+//! axes. For now, shifted axes always mean expanded allocations,
+//! so those axes must have actual allocations. This is a temporary
+//! restriction and should be removed in the future.
+//! This restriction is validated at the allocation lowering pass.
+//!
+//! Restriction 2: If an expanded axis is parallelized, its memory
+//! must be accessible by all other threads. More specifically:
+//! - TIDx: It must be on shared memory. May want to consider
+//! utilizing the shuffle instructions as well.
+//! - BIDx: Not supported. If on global memory, Cooperative Launch
+//! may be used to support it, however, it's unclear in what
+//! situations block-level parallelization should be used.
+//!
+//! Other types of parallelization should be supported except for
+//! vectorization. Vectorization should be eventually supported but
+//! needs further work.
+void HaloMap::validate(TensorView* tv) const {
+  const auto& par_map = GpuLower::current()->caParallelMap();
+  const auto mem_type = tv->getMemoryType();
+
+  for (auto axis : tv->domain()->domain()) {
+    auto halo_extent = getExtent(axis);
+    // If no halo extent is associated with this axis, it means the
+    // axis is not extended.
+    if (halo_extent == nullptr) {
+      continue;
+    }
+
+    // Enforce restrictions on parallelization and memory type
+    const auto ptype = par_map.getConcreteMappedID(axis)->getParallelType();
+    if (isParallelTypeThreadDim(ptype)) {
+      TORCH_CHECK(mem_type == MemoryType::Shared,
+                  "As a halo-extended axis is parallelized by ", ptype,
+                  ", it must be allocated on shared memory.");
+    } else if (isParallelTypeBlockDim(ptype)) {
+      TORCH_CHECK(false,
+                  "Block-based parallelization of a halo-extended axis is not supported: ",
+                  axis);
+    } else if (ptype == ParallelType::Vectorize) {
+      TORCH_CHECK(false,
+                  "Vectorization of a halo-extended axis is not supported: ",
+                  axis);
+    }
+  }
+  return;
 }
 
 Val* HaloMap::getExtent(IterDomain* id) const {
