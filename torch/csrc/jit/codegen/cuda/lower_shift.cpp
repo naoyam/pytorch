@@ -74,15 +74,6 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     TensorView* producer_fuser_tv = producer->fuserTv();
     TensorView* consumer_fuser_tv = consumer->fuserTv();
 
-    // This is actually not the case. test3 failed.
-#if 0
-    // If not fusion input, no predicate should be needed since the
-    // buffer is expanded.
-    if (!producer_fuser_tv->isFusionInput()) {
-      return;
-    }
-#endif
-
     auto fuser_expr = consumer->fuserTv()->definition();
 
     // Unless the producer is a fusion input, if the expression is a
@@ -102,14 +93,6 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
         std::vector<bool>(consumer_td->getRootDomain().size(), true);
     auto consumer_inds = Index::getConsumerRootPredIndices(
         consumer, for_loops_, pred_contiguity).first;
-
-    if (consumer->name() == 10) {
-      std::stringstream ss;
-      for (auto v : consumer_inds) {
-        ss << kir::toString(v) << ", ";
-      }
-      std::cerr << "Consumer root pred inds: " << ss.str() << std::endl;
-    }
 
     TORCH_INTERNAL_ASSERT(consumer_inds.size() == consumer->domain()->rootDomain().size());
     TORCH_INTERNAL_ASSERT(prod_inds.size() == num_dims);
@@ -136,8 +119,6 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     }
 
     for (size_t i = 0; i < num_dims; ++i) {
-      // std::cerr << "idx: " << i << std::endl;
-
       auto producer_id = producer_root[i];
       auto consumer_id_it = p2c.find(producer_id);
       // If no corresponding consmer id exists, there's nothing to
@@ -148,13 +129,6 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
       auto consumer_id = consumer_id_it->second;
 
-#if 0
-      const int offset =
-          Index::getProducerHaloOffset(i, producer_td, consumer_td, fuser_expr);
-
-      const auto producer_halo_info = halo_map.getHalo(producer_id);
-#endif
-
       const auto consumer_halo_info = halo_map.getHalo(consumer_id);
 
       int shift_offset = 0;
@@ -162,14 +136,6 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
         shift_offset = shift_expr->offset(i);
       }
 
-#if 0
-      if (offset < 0) {
-        shift_pred = makeAndExpr(
-            shift_pred,
-            ir_builder_.geExpr(pred_inds[i],
-                               ir_builder_.create<kir::Int>(-offset))->as<kir::Bool>());
-      }
-#else
       unsigned left_limit = consumer_halo_info.width(0);
       if (shift_offset > 0) {
         left_limit += (unsigned)shift_offset;
@@ -180,19 +146,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
             ir_builder_.geExpr(consumer_inds[i],
                                ir_builder_.create<kir::Int>(left_limit)));
       }
-#endif
-#if 0
-      if (producer_halo_info.width(1) < consumer_halo_info.width(1) ||
-          shift_offset < 0) {
-        shift_pred = makeAndExpr(
-            shift_pred,
-            ir_builder_
-                .ltExpr(
-                    makeAddExpr(pred_inds[i], offset),
-                    producer->domain()->rootDomain()[i]->extent())
-                ->as<kir::Bool>());
-      }
-#else
+
       auto right_offset = consumer_inds[i];
       if (shift_offset < 0) {
         right_offset = makeAddExpr(right_offset, -shift_offset);
@@ -206,9 +160,6 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
                 makeAddExpr(consumer->domain()->rootDomain()[i]->extent(),
                             consumer_halo_info.width(0))));
       }
-#endif
-
-
     }
 
     if (shift_pred == nullptr) {
@@ -345,8 +296,6 @@ void HaloMap::propagateHaloInfo(
 
   const auto& c_root = consumer->getRootDomain();
 
-  //auto producer_alloc_point = loop_utils::getAllocPoint(producer);
-
   for (size_t i = 0; i < c_root.size(); ++i) {
     auto c_id = c_root[i];
     auto it = c2p.find(c_id);
@@ -357,14 +306,6 @@ void HaloMap::propagateHaloInfo(
 
     auto p_id = it->second;
 
-#if 0
-    if (std::find(
-            producer->domain()->domain().begin() + producer_alloc_point,
-            producer->domain()->domain().end(),
-            p_id) != producer->domain()->domain().end()) {
-      continue;
-    }
-#endif
     auto& c_info = findOrCreate(c_id);
     auto& p_info = findOrCreate(p_id);
 
@@ -481,32 +422,6 @@ kir::Val* HaloMap::getExtent(kir::IterDomain* id) const {
     return nullptr;
   }
 }
-
-#if 0
-void HaloMap::buildStartMap(Fusion* fusion) {
-  std::cerr << "Building start map\n";
-
-  auto exprs = fusion->exprs();
-  for (auto it = exprs.begin(); it != exprs.end(); ++it) {
-    auto expr = *it;
-    if (!expr->outputs()[0]->isA<TensorView>()) {
-      continue;
-    }
-
-    std::cerr << "HaloInfoMap expr: " << expr << std::endl;
-    propagateStartInfo(expr);
-  }
-
-  auto used_vals = DependencyCheck::getAllValsBetween(
-      {fusion->inputs().begin(), fusion->inputs().end()}, fusion->outputs());
-
-  for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
-    updateExtents(tv);
-  }
-
-  std::cerr << "HaloMap built\n";
-}
-#endif
 
 std::string HaloMap::toString() const {
   std::stringstream ss;

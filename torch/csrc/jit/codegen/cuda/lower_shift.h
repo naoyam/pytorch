@@ -84,22 +84,13 @@ class HaloMap {
   std::string toString() const;
 
   HaloInfo& findOrCreate(IterDomain* id);
-  
- private:  
+
+ private:
   void propagateHaloInfo(Expr* expr);
   void propagateHaloInfo(
       TensorView* producer,
       TensorView* consumer,
       Expr* expr);
-
-#if 0
-  void buildStartMap(Fusion* fusion);
-  void propagateStartInfo(Expr* expr);
-  void propagateStartInfo(
-      TensorView* producer,
-      TensorView* consumer,
-      Expr* expr);
-#endif
 
  private:
   std::unordered_map<IterDomain*, HaloInfo> halo_map_;
