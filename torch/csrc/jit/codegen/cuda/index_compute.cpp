@@ -220,11 +220,12 @@ class ContigIDs : public OptInDispatch {
 };
 
 std::unordered_map<kir::IterDomain*, kir::Val*> createMergedShiftMap(
-    const std::unordered_map<IterDomain*, IterDomain*>& c2p_map) {
+    const std::unordered_map<IterDomain*, IterDomain*>& c2p_map,
+    const std::unordered_map<kir::IterDomain*, kir::Val*>& extent_map) {
   const auto gpu_lower = GpuLower::current();
-  
+
   std::unordered_map<kir::IterDomain*, kir::Val*> merged_shift_map;
-  
+
   for (auto kv: c2p_map) {
     auto c_id = kv.first;
     auto p_id = kv.second;
@@ -235,12 +236,17 @@ std::unordered_map<kir::IterDomain*, kir::Val*> createMergedShiftMap(
     for (size_t i = 0; i < 2; ++i) {
       auto merge_input = merge->inputs()[i];
       auto merge_input_kir = gpu_lower->lowerValue(merge_input)->as<kir::IterDomain>();
-      auto halo_extent = gpu_lower->haloMap().getExtent(merge_input_kir);
-      if (halo_extent == nullptr) {
-        continue;
+      auto extent = gpu_lower->haloMap().getExtent(merge_input_kir);
+      if (extent == nullptr) {
+        auto extent_it = extent_map.find(merge_input_kir);
+        if (extent_it != extent_map.end()) {
+          extent = extent_it->second;
+        } else {
+          extent = merge_input_kir->extent();
+        }
       }
       auto c_merge_input = p_id->definition()->as<Merge>()->inputs()[i];
-      merged_shift_map[gpu_lower->lowerValue(c_merge_input)->as<kir::IterDomain>()] = halo_extent;
+      merged_shift_map[gpu_lower->lowerValue(c_merge_input)->as<kir::IterDomain>()] = extent;
     }
   }
 
@@ -379,7 +385,12 @@ void IndexCompute::handle(Merge* merge) {
   // be used to index the producer
   if (merged_shift_extent_map_.find(inner_id) != merged_shift_extent_map_.end()) {
     inner_extent = merged_shift_extent_map_[inner_id];
+    if (_debug) {
+      std::cerr << "IndexCompute: Merged shifted extent found for " << kir::toString(inner_id)
+                << ": " << kir::toString(inner_extent) << std::endl;
+    }
   }
+
   // TODO: Is the outer extent needed to be updated with the
   // propagated halo extent?
   const auto outer_extent = getExtent(outer_id);
@@ -434,9 +445,13 @@ void IndexCompute::handle(Merge* merge) {
     zero_merged_in_.emplace(inner_id);
     zero_merged_in_.emplace(outer_id);
   } else {
-    //std::cerr << "merge prop inner_extent: " << kir::toString(inner_extent) << std::endl;
+    if (_debug) std::cerr << "merge prop inner_extent: " << kir::toString(inner_extent) << std::endl;
     index_map_[outer_id] = ir_builder.divExpr(out_ind, inner_extent);
     index_map_[inner_id] = ir_builder.modExpr(out_ind, inner_extent);
+  }
+
+  if (_debug) {
+    std::cerr << "inner idx: " << kir::toString(index_map_[inner_id]) << std::endl;
   }
 }
 
@@ -559,7 +574,7 @@ IndexCompute IndexCompute::updateIndexCompute(
     }
 
     // If an ID is merged, propagate the halo extent
-#if 0    
+#if 0
     const auto& prev_uses = id_entry.first->uses();
     if (prev_uses.size() == 1 && prev_uses[0]->isA<Merge>()) {
       auto halo_extent = gpu_lower->haloMap().getExtent(prev_id);
@@ -854,7 +869,7 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
 
   if (producer_tv->name() == 0 && consumer_tv->name() == 10) {
     std::cerr << "getGlobalProducerIndex\n";
-    _debug = true;
+    // _debug = true;
   }
 
   // Get a reference tensor replayed as existing loop structure
@@ -935,7 +950,8 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
 
   auto c2p_map = replay_PasC.getReplay();
 
-  const auto merged_shift_map = createMergedShiftMap(c2p_map);
+  const auto merged_shift_map = createMergedShiftMap(c2p_map,
+                                                     ref_compute.extentMap());
 
   // Index into producer using reference indexing
   // TODO: this is done twice in the non-global case. Once for
@@ -1134,7 +1150,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
   if (producer_tv->name() == 10 &&
       consumer_tv->name() == 1) {
     std::cerr << "Enable debug output\n";
-    //_debug = true;
+    _debug = true;
   }
 
   if (_debug) {
@@ -1310,28 +1326,14 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
   }
 
   // Index into producer using reference indexing
+  const auto merged_shift_map = createMergedShiftMap(c2p_map,
+                                                     ref_compute.extentMap());
 
-  // indexing is done without the halo extent map
-  // extent is separately computed with the halo extent map
-  
-  // TODO: what if the producer has halo? Doesn't it need to use the
-  // halo extent for indices as well?
-
-  const auto merged_shift_map = createMergedShiftMap(c2p_map);
-  
   auto producer_indexing = ref_compute.updateIndexCompute(
       producer_tv->domain(),
       ref_2_producer,
       producer_tv->domain()->contiguity(),
-      {}, merged_shift_map);
-
-
-  auto producer_extent = ref_compute.updateIndexCompute(
-      producer_tv->domain(),
-      ref_2_producer,
-      producer_tv->domain()->contiguity(),
-      halo_extent_map,
-      merged_shift_map);
+      halo_extent_map, merged_shift_map);
 
   IndexSwizzle index_swizzle(
       producer_tv,
@@ -1342,7 +1344,7 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
   index_swizzle.run();
 
   auto index_map = index_swizzle.indexMap();
-  auto extent_map = producer_extent.extentMap();
+  auto extent_map = producer_indexing.extentMap();
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
@@ -2015,7 +2017,7 @@ std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
     }
   }
 #endif
-  
+
   // Index into the reference tensor
   auto ref_compute =
       getReferenceIndexing(loops, reference_domain, ref_id_to_ind_map, {});
@@ -2023,7 +2025,7 @@ std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
   // Extents may be extended for halo
   // Halo extent should not be used as it is indexing to the logical
   // domain
-#if 0  
+#if 0
   std::unordered_map<IterDomain*, Val*> halo_extent_map;
   for (auto kv: gpu_lower->haloMap().getExtentMap()) {
     auto id = kv.first;
