@@ -1225,7 +1225,6 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
 
   std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_extent_map;
 
-#if 1
   // Due to rfactor/initialization reference_domain may be bigger than loop nest
   // structure, ignore IterDomains that aren't present in the loop nest when
   // indexing reference.
@@ -1235,38 +1234,6 @@ std::vector<kir::Val*> Index::getNonGlobalProducerStridedIndices(
                         ->as<kir::IterDomain>();
     ref_id_to_ind_map[ref_axis] = loop_to_ind_map[loops[loop_i]];
   }
-#else
-  const auto& halo_iter_map = GpuLower::current()->haloIterMap();
-  size_t non_halo_loop_i = 0;
-  for (size_t loop_i = 0; loop_i < loops_all.size(); loop_i++) {
-    auto halo_idx = loop_to_ind_map[loops_all[loop_i]];
-    auto it = halo_iter_map.find(loops_all[loop_i]->iter_domain());
-    if (it != halo_iter_map.end()) {
-      kir::IterDomain* expanded_axis =
-          gpu_lower->lowerValue(it->second)->as<kir::IterDomain>();
-      bool expanded_axis_found = false;
-      for (auto kv : ref_id_to_ind_map) {
-        if (gpu_lower->caLoopMap().areMapped(kv.first, expanded_axis)) {
-          auto actual_idx = ir_builder.addExpr(kv.second, halo_idx);
-          ref_id_to_ind_map[kv.first] = actual_idx;
-          ref_id_to_extent_map[kv.first] = loops_all[loop_i]->iter_domain()->rawExtent();
-          expanded_axis_found = true;
-          std::cerr << "Actual idx: " << kir::toString(actual_idx)
-                    << ", extent: " << kir::toString(ref_id_to_extent_map[kv.first])
-                    << ", TV" << producer_tv->name() << std::endl;
-          break;
-        }
-      }
-      TORCH_INTERNAL_ASSERT(expanded_axis_found);
-    } else {
-      auto ref_axis =
-          gpu_lower->lowerValue(reference_domain->axis(non_halo_loop_i))
-              ->as<kir::IterDomain>();
-      ref_id_to_ind_map[ref_axis] = loop_to_ind_map[loops_all[loop_i]];
-      ++non_halo_loop_i;
-    }
-  }
-#endif
 
   // Map reference tensor to producer
   std::unordered_map<IterDomain*, IterDomain*> root_ref_to_producer;
@@ -1650,42 +1617,12 @@ std::vector<kir::Val*> Index::getNonGlobalConsumerStridedIndices(
   // Due to rfactor/initialization reference_domain may be bigger than loop nest
   // structure, ignore IterDomains that aren't present in the loop nest when
   // indexing reference.
-#if 1
   TORCH_INTERNAL_ASSERT(loops.size() <= reference_domain->nDims());
   for (size_t loop_i = 0; loop_i < loops.size(); loop_i++) {
     auto ref_axis = gpu_lower->lowerValue(reference_domain->axis(loop_i))
                         ->as<kir::IterDomain>();
     ref_id_to_ind_map[ref_axis] = loop_to_ind_map[loops[loop_i]];
   }
-#else
-  const auto& halo_iter_map = GpuLower::current()->haloIterMap();
-  size_t non_halo_loop_i = 0;
-  for (size_t loop_i = 0; loop_i < loops_all.size(); loop_i++) {
-    auto halo_idx = loop_to_ind_map[loops_all[loop_i]];
-    auto it = halo_iter_map.find(loops_all[loop_i]->iter_domain());
-    if (it != halo_iter_map.end()) {
-      kir::IterDomain* expanded_axis =
-          gpu_lower->lowerValue(it->second)->as<kir::IterDomain>();
-      bool expanded_axis_found = false;
-      for (auto kv : ref_id_to_ind_map) {
-        if (gpu_lower->caLoopMap().areMapped(kv.first, expanded_axis)) {
-          auto actual_idx = ir_builder.addExpr(kv.second, halo_idx);
-          ref_id_to_ind_map[kv.first] = actual_idx;
-          ref_id_to_extent_map[kv.first] = loops_all[loop_i]->iter_domain()->rawExtent();
-          expanded_axis_found = true;
-          break;
-        }
-      }
-      TORCH_INTERNAL_ASSERT(expanded_axis_found);
-    } else {
-      auto ref_axis =
-          gpu_lower->lowerValue(reference_domain->axis(non_halo_loop_i))
-              ->as<kir::IterDomain>();
-      ref_id_to_ind_map[ref_axis] = loop_to_ind_map[loops_all[loop_i]];
-      ++non_halo_loop_i;
-    }
-  }
-#endif
 
   // Map reference tensor to consumer
   std::unordered_map<IterDomain*, IterDomain*> root_ref_to_consumer;
@@ -1980,7 +1917,6 @@ std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
 
   std::unordered_map<kir::IterDomain*, kir::Val*> ref_id_to_ind_map;
 
-#if 1
   // Due to rfactor/initialization reference_domain may be bigger than loop nest
   // structure
   TORCH_INTERNAL_ASSERT(loops.size() <= reference_domain->nDims());
@@ -1989,34 +1925,6 @@ std::pair<std::vector<kir::Val*>, bool> Index::getConsumerRootPredIndices(
                         ->as<kir::IterDomain>();
     ref_id_to_ind_map[ref_axis] = loop_to_ind_map[loops[loop_i]];
   }
-#else
-  const auto& halo_iter_map = GpuLower::current()->haloIterMap();
-  size_t non_halo_loop_i = 0;
-  for (size_t loop_i = 0; loop_i < loops_all.size(); loop_i++) {
-    auto halo_idx = loop_to_ind_map[loops_all[loop_i]];
-    auto it = halo_iter_map.find(loops_all[loop_i]->iter_domain());
-    if (it != halo_iter_map.end()) {
-      kir::IterDomain* expanded_axis =
-          gpu_lower->lowerValue(it->second)->as<kir::IterDomain>();
-      bool expanded_axis_found = false;
-      for (auto kv : ref_id_to_ind_map) {
-        if (gpu_lower->caLoopMap().areMapped(kv.first, expanded_axis)) {
-          auto actual_idx = ir_builder.addExpr(kv.second, halo_idx);
-          ref_id_to_ind_map[kv.first] = actual_idx;
-          expanded_axis_found = true;
-          break;
-        }
-      }
-      TORCH_INTERNAL_ASSERT(expanded_axis_found);
-    } else {
-      auto ref_axis =
-          gpu_lower->lowerValue(reference_domain->axis(non_halo_loop_i))
-              ->as<kir::IterDomain>();
-      ref_id_to_ind_map[ref_axis] = loop_to_ind_map[loops_all[loop_i]];
-      ++non_halo_loop_i;
-    }
-  }
-#endif
 
   // Index into the reference tensor
   auto ref_compute =
