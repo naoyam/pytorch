@@ -76,12 +76,6 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
     auto fuser_expr = consumer->fuserTv()->definition();
 
-    // Unless the producer is a fusion input, if the expression is a
-    // shift, it should be expanded already, so no prediate is needed.
-    if (fuser_expr->isA<ShiftOp>() && !producer_fuser_tv->isFusionInput()) {
-      return;
-    }
-
     TensorDomain* producer_td = producer->fuserTv()->domain();
     TensorDomain* consumer_td = consumer->fuserTv()->domain();
 
@@ -98,6 +92,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     TORCH_INTERNAL_ASSERT(prod_inds.size() == num_dims);
 
     kir::Bool* shift_pred = nullptr;
+    kir::Bool* bounds_pred = nullptr;
 
     TORCH_INTERNAL_ASSERT(!producer_td->hasRFactor());
     const auto& producer_root = producer_td->getRootDomain();
@@ -107,13 +102,18 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
     const HaloMap& halo_map = gpu_lower_->haloMap();
 
+    auto shift_expr = dynamic_cast<ShiftOp*>(fuser_expr);
 
-    bool has_any_halo = false;
+    bool needs_shift_predicate = false;
     for (size_t i = 0; i < num_dims; ++i) {
       auto consumer_id = consumer_td->getRootDomain()[i];
       const auto consumer_halo_info = halo_map.getHalo(consumer_id);
       if (consumer_halo_info.hasHalo()) {
-        has_any_halo = true;
+        needs_shift_predicate = true;
+        break;
+      }
+      if (shift_expr != nullptr && shift_expr->offset(i) != 0) {
+        needs_shift_predicate = true;
         break;
       }
     }
@@ -151,7 +151,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
       if (shift_offset < 0) {
         right_offset = makeAddExpr(right_offset, -shift_offset);
       }
-      if (shift_offset < 0 || has_any_halo) {
+      if (needs_shift_predicate) {
         shift_pred = makeAndExpr(
             shift_pred,
             ir_builder_
@@ -159,6 +159,13 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
                 right_offset,
                 makeAddExpr(consumer->domain()->rootDomain()[i]->extent(),
                             consumer_halo_info.width(0))));
+
+        bounds_pred = makeAndExpr(
+            bounds_pred,
+            ir_builder_.ltExpr(
+                consumer_inds[i],
+                makeAddExpr(consumer->domain()->rootDomain()[i]->extent(),
+                            consumer_halo_info.width())));
       }
     }
 
@@ -166,7 +173,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
       return;
     }
 
-    std::cerr << "Shift pred:" << kir::toString(shift_pred) << std::endl;
+    //std::cerr << "Shift pred:" << kir::toString(shift_pred) << std::endl;
     auto shift_ite = ir_builder_.create<kir::IfThenElse>(shift_pred);
 
     auto& scope = for_loops_.back()->body();
@@ -180,10 +187,13 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     // Place the expr inside the if statement
     shift_ite->thenBody().push_back(definition);
 
-    // Pads by zero for the ouf-of-bound accesses
+    // Pads by zero
+    auto bounds_ite = ir_builder_.create<kir::IfThenElse>(bounds_pred);
     auto pad_expr = ir_builder_.create<kir::UnaryOp>(
         UnaryOpType::Set, consumer, ir_builder_.create<kir::Int>(0));
-    shift_ite->elseBody().push_back(pad_expr);
+    bounds_ite->thenBody().push_back(pad_expr);
+
+    shift_ite->elseBody().push_back(bounds_ite);
   }
 
   void visit(kir::ForLoop* fl) final {
@@ -249,7 +259,6 @@ void HaloMap::build(Fusion* fusion) {
       continue;
     }
 
-    std::cerr << "HaloInfoMap expr: " << expr << std::endl;
     propagateHaloInfo(expr);
   }
 
@@ -331,11 +340,11 @@ void HaloMap::updateExtents(TensorDomain* td) {
   auto gpu_lower = GpuLower::current();
 
   for (auto root_axis: td->getRootDomain()) {
-    std::cerr << "root axis: " << root_axis << std::endl;
+    //std::cerr << "root axis: " << root_axis << std::endl;
     auto& halo_info = findOrCreate(root_axis);
     auto halo_width = halo_info.width();
     if (halo_width == 0) {
-      std::cerr << "root axis has zero halo\n";
+      //std::cerr << "root axis has zero halo\n";
       continue;
     }
     auto expanded_extent = add(root_axis->rawExtent(), new Int(halo_width));
@@ -353,7 +362,7 @@ void HaloMap::updateExtents(TensorDomain* td) {
   std::unordered_set<IterDomain*> merged_shifted_ids;
 
   for (auto expr: exprs) {
-    std::cerr << "Visiting expr: " << expr << std::endl;
+    //std::cerr << "Visiting expr: " << expr << std::endl;
     if (auto split = dynamic_cast<Split*>(expr)) {
       TORCH_INTERNAL_ASSERT(merged_shifted_ids.find(split->in()) == merged_shifted_ids.end(),
                             "Splitting IterDomain that is a merged domain of shifted domains is not allowed");
@@ -391,11 +400,6 @@ void HaloMap::updateExtents(TensorDomain* td) {
         extent_map_.insert({merge->out(), expanded_extent});
         kir_extent_map_.insert({gpu_lower->lowerValue(merge->out())->as<kir::IterDomain>(),
             gpu_lower->lowerValue(expanded_extent)});
-
-        std::cerr << "Merged extent: "
-                  << kir::toString(gpu_lower->lowerValue(expanded_extent))
-                  << std::endl;
-
       }
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unsupported expr: ", expr);
