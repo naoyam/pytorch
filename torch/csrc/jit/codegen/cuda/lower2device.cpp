@@ -120,6 +120,10 @@ void GpuLower::lower() {
   ca_parallel_map_ = ComputeAtMap(ComputeAtMap::MappingMode::PARALLEL);
   ca_parallel_map_.build(fusion_, current());
 
+  std::cerr << "Parallel map:\n"
+            << ca_parallel_map_.toString()
+            << std::endl;
+
   // Want to run this after parallel map is created
   validateVectorize(fusion_);
 

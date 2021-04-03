@@ -298,6 +298,13 @@ void ComputeAtMap::build(Fusion* fusion, GpuLower* gpu_lower) {
               right_of_ca_point.find(p_id) != right_of_ca_point.end()) {
             continue;
           }
+#if 1
+          // Don't map non-leaf axes
+          if (mapping_mode_ == MappingMode::PARALLEL &&
+              !(p_id->uses().empty() && c_id->uses().empty())) {
+            continue;
+          }
+#endif
           // Map the id's together
           mapIds(p_id, c_id);
         }

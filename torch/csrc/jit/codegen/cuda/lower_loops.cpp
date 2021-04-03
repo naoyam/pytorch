@@ -38,12 +38,12 @@ kir::ForLoop* openForHelper(kir::ForLoop* scope, IterDomain* id) {
   const auto gpu_lower = GpuLower::current();
   kir::IrBuilder ir_builder(gpu_lower->kernel());
   const auto kir_id = gpu_lower->lowerValue(id)->as<kir::IterDomain>();
-  auto id_expanded_extent = gpu_lower->haloMap().getExtent(id);
+  auto id_expanded_extent = gpu_lower->haloMap().getExtent(kir_id);
   kir::ForLoop* new_scope = nullptr;
   if (id_expanded_extent) {
     new_scope = ir_builder.create<kir::ForLoop>(
         ir_builder.create<kir::Int>(c10::nullopt), kir_id,
-        false, nullptr, gpu_lower->lowerValue(id_expanded_extent),
+        false, nullptr, id_expanded_extent,
         nullptr, true);
   } else {
     new_scope = ir_builder.create<kir::ForLoop>(
@@ -115,9 +115,6 @@ void LoopNestGenerator::handle(const Expr* expr) {
 
   // Figure out what the entire loop structure should look like.
   std::deque<IterDomain*> loop_structure;
-  std::deque<IterDomain*> loop_structure_halo;
-
-  auto alloc_pos = loop_utils::getAllocPoint(out_tv);
 
   // Fill the entire loop structure by Looking at each axis
   // individually in out's domain
@@ -133,22 +130,6 @@ void LoopNestGenerator::handle(const Expr* expr) {
     auto concrete_id =
         gpu_lower->caParallelMap().getConcreteMappedID(out_tv->axis(out_i));
     loop_structure.push_back(concrete_id);
-    if (out_i < alloc_pos) {
-      auto halo_info = gpu_lower->haloMap().getHalo(out_tv->axis(out_i));
-      if (halo_info.hasHalo()) {
-        IterDomain* halo_id = new IterDomain(
-            new Int(0), new Int(halo_info.width(0) + halo_info.width(1) + 1));
-        loop_structure_halo.push_back(halo_id);
-        gpu_lower->haloIterMap().insert(
-            {gpu_lower->lowerValue(halo_id)->as<kir::IterDomain>(),
-             concrete_id});
-      }
-    }
-  }
-
-  for (auto halo_id : loop_structure_halo) {
-    loop_structure.insert(
-        loop_structure.begin() + out_tv->getComputeAtPosition(), halo_id);
   }
 
   auto loop_structure_it = loop_structure.begin();

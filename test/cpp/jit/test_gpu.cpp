@@ -15934,11 +15934,18 @@ TEST(NVFuserTest, FusionShiftChain4_CUDA) {
 
   fusion.addOutput(tv_out);
 
+  fusion.printMath();
+
   tv_out->split(-1, 4);
   tv_out->split(0, 4);
   tv_out->reorder({{1, 2}, {2, 1}});
 
   tv0->computeAt(tv_out, 2);
+
+  tv1->merge(-2, -1);
+  tv2->merge(-2, -1);
+  tv3->merge(-2, -1);
+  //tv4->merge(-2, -1);
 
   fusion.printMath();
   fusion.printKernel();
@@ -15972,6 +15979,145 @@ TEST(NVFuserTest, FusionShiftChain4_CUDA) {
   }
 
   TORCH_CHECK(ref.allclose(outputs[0]));
+}
+
+TEST(NVFuserTest, FusionShift5ptStencilChain_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  // 5-pt stencil
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  std::vector<std::vector<int>> offsets = {
+    {-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+
+  // First stencil: 5pt stencil
+  // stencil1 = (tv0 + tv0[+1][0] + tv0[-1][0] + tv0[0][+1] + tv0[0][-1]) / 5
+  std::vector<TensorView*> tv_stencil1_shifts;
+  for (const auto& offset: offsets) {
+    tv_stencil1_shifts.push_back(shift(tv0, offset));
+  }
+
+  auto tv_stencil1 = tv0;
+  for (auto tv: tv_stencil1_shifts) {
+    tv_stencil1 = add(tv_stencil1, tv);
+  }
+
+  tv_stencil1 = div(tv_stencil1, new Double(tv_stencil1_shifts.size() + 1));
+
+  // Second stencil: Same 5pt stencil
+  std::vector<TensorView*> tv_stencil2_shifts;
+  for (const auto& offset: offsets) {
+    tv_stencil2_shifts.push_back(shift(tv_stencil1, offset));
+  }
+
+  auto tv_stencil2 = tv_stencil1;
+  for (auto tv: tv_stencil2_shifts) {
+    tv_stencil2 = add(tv_stencil2, tv);
+  }
+
+  tv_stencil2 = div(tv_stencil2, new Double(tv_stencil2_shifts.size() + 1));
+
+  auto tv_out = tv_stencil2;
+
+  fusion.addOutput(tv_out);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  tv_out->split(-1, 4);
+  tv_out->split(0, 4);
+  tv_out->reorder({{1, 2}, {2, 1}});
+  //tv_out->merge(-2, -1);
+
+  //auto tv0_cache = tv0->cache_after();
+
+  tv0->computeAt(tv_out, 2);
+
+#if 0
+  for (auto tv: tv_stencil1_shifts) {
+    tv->computeAt(tv_stencil1, -1);
+  }
+#endif
+
+  for (auto tv: tv_stencil2_shifts) {
+    tv->computeAt(tv_stencil2, -1);
+  }
+
+  //tv0_cache->merge(-2, -1);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+#if 0
+  tv_out->axis(-1)->parallelize(ParallelType::TIDx);
+  tv_out->axis(1)->parallelize(ParallelType::BIDx);
+  tv_out->axis(0)->parallelize(ParallelType::BIDy);
+
+  tv0_cache->setMemoryType(MemoryType::Shared);
+  tv0_cache->axis(-1)->parallelize(ParallelType::TIDx);
+#endif
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 99;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 8;
+    numel_y = 8;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto stencil1 = t0;
+  for (const auto& offset: offsets) {
+    stencil1 = stencil1 + shift(t0, offset);
+  }
+  stencil1 = stencil1 / int(offsets.size() + 1);
+  auto stencil2 = stencil1;
+  for (const auto& offset: offsets) {
+    stencil2 = stencil2 + shift(stencil1, offset);
+  }
+  stencil2 = stencil2 / int(offsets.size() + 1);
+  auto ref = stencil2;
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "Ref:\n" << ref << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
+}
+
+TEST(NVFuserTest, FusionParMapDebug_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(1);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(0));
+  auto tv2 = add(tv1, new Double(0));
+  fusion.addOutput(tv2);
+
+  fusion.printMath();
+
+  tv2->split(-1, 4);
+  tv0->computeAt(tv2, 1);
+  tv1->split(-1, 8);
+
+  fusion.printMath();
+  fusion.printKernel();
+
 }
 
 } // namespace jit

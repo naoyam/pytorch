@@ -20,18 +20,10 @@ namespace {
 
 class ShiftPredicateInserter : public kir::MutableIrVisitor {
   void handle(kir::Expr* expr) {
-    for (auto output : expr->outputs()) {
-      auto out_tv = dynamic_cast<kir::TensorView*>(output);
-      if (out_tv == nullptr) {
-        continue;
-      }
-      for (auto input : expr->inputs()) {
-        auto in_tv = dynamic_cast<kir::TensorView*>(input);
-        if (in_tv == nullptr) {
-          continue;
-        }
-
-        insertProducerPredicate(expr, in_tv, out_tv);
+    if (expr->outputs().size() > 0) {
+      auto out_tv = dynamic_cast<kir::TensorView*>(expr->outputs()[0]);
+      if (out_tv != nullptr) {
+        insertProducerPredicate(expr, out_tv);
       }
     }
 
@@ -65,40 +57,29 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
 
   void insertProducerPredicate(
       kir::Expr* definition,
-      kir::TensorView* producer,
       kir::TensorView* consumer) {
-    std::cerr << "InsertProducerPred: "
-              << "prod: TV" << producer->name() << ", cons: TV"
+#if 0
+    std::cerr << "InsertProducerPred: TV"
               << consumer->name() << std::endl;
+#endif
 
-    TensorView* producer_fuser_tv = producer->fuserTv();
     TensorView* consumer_fuser_tv = consumer->fuserTv();
 
     auto fuser_expr = consumer->fuserTv()->definition();
 
-    TensorDomain* producer_td = producer->fuserTv()->domain();
     TensorDomain* consumer_td = consumer->fuserTv()->domain();
 
-    const auto num_dims = producer->domain()->rootDomain().size();
+    const auto num_dims = consumer->domain()->rootDomain().size();
 
-    auto prod_inds = Index::getProducerRootPredIndices(
-        producer->fuserTv(), consumer->fuserTv(), for_loops_);
     auto pred_contiguity =
         std::vector<bool>(consumer_td->getRootDomain().size(), true);
     auto consumer_inds = Index::getConsumerRootPredIndices(
         consumer, for_loops_, pred_contiguity).first;
 
     TORCH_INTERNAL_ASSERT(consumer_inds.size() == consumer->domain()->rootDomain().size());
-    TORCH_INTERNAL_ASSERT(prod_inds.size() == num_dims);
 
     kir::Bool* shift_pred = nullptr;
     kir::Bool* bounds_pred = nullptr;
-
-    TORCH_INTERNAL_ASSERT(!producer_td->hasRFactor());
-    const auto& producer_root = producer_td->getRootDomain();
-
-    auto p2c = PairwiseRootDomainMap(producer_fuser_tv, consumer_fuser_tv)
-                   .mapProducerToConsumer(producer_td, consumer_td);
 
     const HaloMap& halo_map = gpu_lower_->haloMap();
 
@@ -119,15 +100,7 @@ class ShiftPredicateInserter : public kir::MutableIrVisitor {
     }
 
     for (size_t i = 0; i < num_dims; ++i) {
-      auto producer_id = producer_root[i];
-      auto consumer_id_it = p2c.find(producer_id);
-      // If no corresponding consmer id exists, there's nothing to
-      // predicate.
-      if (consumer_id_it == p2c.end()) {
-        continue;
-      }
-
-      auto consumer_id = consumer_id_it->second;
+      auto consumer_id = consumer_fuser_tv->getRootDomain()[i];
 
       const auto consumer_halo_info = halo_map.getHalo(consumer_id);
 
@@ -330,6 +303,7 @@ void HaloMap::propagateHaloInfo(
 }
 
 void HaloMap::updateExtents(TensorView* tv) {
+  //std::cerr << "updateExtents: " << tv << std::endl;
   updateExtents(tv->domain());
   validate(tv);
 }
@@ -368,6 +342,7 @@ void HaloMap::updateExtents(TensorDomain* td) {
                             "Splitting IterDomain that is a merged domain of shifted domains is not allowed");
       auto in_id = split->in();
       if (extent_map_.find(in_id) == extent_map_.end()) {
+        //std::cerr << "Skipping\n";
         continue;
       }
       if (inherited_halo.find(in_id) == inherited_halo.end()) {
