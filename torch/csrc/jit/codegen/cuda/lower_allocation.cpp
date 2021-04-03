@@ -181,6 +181,17 @@ class AllocationInserter : public kir::MutableIrVisitor {
         // with the axis parallelized by TIDs or BIDs.
         if (!((memory_type == MemoryType::Shared && is_thread_dim) ||
               (memory_type == MemoryType::Global && is_thread))) {
+          auto fuser_local_id = fuser_tv->axis(axis_i);
+          auto fuser_concrete_id = gpu_lower->caParallelMap().getConcreteMappedID(
+              fuser_tv->axis(axis_i));
+          if (gpu_lower->haloMap().extentLe(fuser_local_id, fuser_concrete_id)) {
+            std::cerr << "axis extent guaranteed smaller than concrete axis. "
+                      << "axis: " << fuser_local_id
+                      << ", concrete axis: " << fuser_concrete_id
+                      << std::endl;
+            continue;
+          }
+
           TORCH_CHECK(halo_extent == nullptr,
                       "Halo-extended axis not allowed outside allocation position");
           continue;

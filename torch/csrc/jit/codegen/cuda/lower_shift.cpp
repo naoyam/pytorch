@@ -319,6 +319,7 @@ void HaloMap::updateExtents(TensorDomain* td) {
     auto halo_width = halo_info.width();
     if (halo_width == 0) {
       //std::cerr << "root axis has zero halo\n";
+      halo_extent_map_.insert({root_axis, 0});
       continue;
     }
     auto expanded_extent = add(root_axis->rawExtent(), new Int(halo_width));
@@ -326,6 +327,7 @@ void HaloMap::updateExtents(TensorDomain* td) {
     kir_extent_map_.insert({gpu_lower->lowerValue(root_axis)->as<kir::IterDomain>(),
         gpu_lower->lowerValue(expanded_extent)});
     inherited_halo.insert({root_axis, halo_info});
+    halo_extent_map_.insert({root_axis, halo_width});
   }
 
   auto exprs = ExprSort::getExprs(
@@ -343,6 +345,8 @@ void HaloMap::updateExtents(TensorDomain* td) {
       auto in_id = split->in();
       if (extent_map_.find(in_id) == extent_map_.end()) {
         //std::cerr << "Skipping\n";
+        halo_extent_map_.insert({split->outer(), 0});
+        halo_extent_map_.insert({split->inner(), 0});
         continue;
       }
       if (inherited_halo.find(in_id) == inherited_halo.end()) {
@@ -360,6 +364,8 @@ void HaloMap::updateExtents(TensorDomain* td) {
       kir_extent_map_.insert({gpu_lower->lowerValue(out_id)->as<kir::IterDomain>(),
           gpu_lower->lowerValue(expanded_extent)});
       inherited_halo.insert({out_id, halo_info});
+      halo_extent_map_.insert({split->outer(), 0});
+      halo_extent_map_.insert({split->inner(), halo_info.width()});
     } else if (auto merge = dynamic_cast<Merge*>(expr)) {
       if (extent_map_.find(merge->inner()) != extent_map_.end() ||
           extent_map_.find(merge->outer()) != extent_map_.end()) {
@@ -375,6 +381,9 @@ void HaloMap::updateExtents(TensorDomain* td) {
         extent_map_.insert({merge->out(), expanded_extent});
         kir_extent_map_.insert({gpu_lower->lowerValue(merge->out())->as<kir::IterDomain>(),
             gpu_lower->lowerValue(expanded_extent)});
+        merged_shifted_ids.insert(merge->out());
+        // Note that halo_extent_map_ is not updated as no halo is
+        // meaningfully defined for a merged axis.
       }
     } else {
       TORCH_INTERNAL_ASSERT(false, "Unsupported expr: ", expr);
@@ -382,11 +391,12 @@ void HaloMap::updateExtents(TensorDomain* td) {
   }
 }
 
-//! Restriction 1: Allocation must be outside of any shifted
-//! axes. For now, shifted axes always mean expanded allocations,
-//! so those axes must have actual allocations. This is a temporary
-//! restriction and should be removed in the future.
-//! This restriction is validated at the allocation lowering pass.
+//! Restriction 1: When allocation is outside of a shifted
+//! axis, the shifted axis must be guarantted to have a smaller extent
+//! than the concrete axis. For now, shifted axes always mean expanded
+//! allocations when the axis is located inside the allocation
+//! point. This restriction is validated at the allocation lowering
+//! pass.
 //!
 //! Restriction 2: If an expanded axis is parallelized, its memory
 //! must be accessible by all other threads. More specifically:
@@ -414,9 +424,8 @@ void HaloMap::validate(TensorView* tv) const {
     // Enforce restrictions on parallelization and memory type
     const auto ptype = par_map.getConcreteMappedID(axis)->getParallelType();
     if (isParallelTypeThreadDim(ptype)) {
-      TORCH_CHECK(mem_type == MemoryType::Shared,
-                  "As a halo-extended axis is parallelized by ", ptype,
-                  ", it must be allocated on shared memory.");
+      //TORCH_CHECK(mem_type == MemoryType::Shared,
+      //"TV", tv->name(), " must be allocated on shared memory as its halo-extended axis is parallelized by ", ptype);
     } else if (isParallelTypeBlockDim(ptype)) {
       TORCH_CHECK(false,
                   "Block-based parallelization of a halo-extended axis is not supported: ",
@@ -445,6 +454,36 @@ kir::Val* HaloMap::getExtent(kir::IterDomain* id) const {
     return it->second;
   } else {
     return nullptr;
+  }
+}
+
+unsigned HaloMap::getHaloExtent(IterDomain* id) const {
+  auto it = halo_extent_map_.find(id);
+  TORCH_INTERNAL_ASSERT(it != halo_extent_map_.end());
+  return it->second;
+}
+
+bool HaloMap::extentLe(IterDomain* id1, IterDomain* id2) const {
+  auto gpu_lower = GpuLower::current();
+  TORCH_INTERNAL_ASSERT(gpu_lower->caLoopMap().areMapped(id1, id2),
+                        "Invalid axes to compare");
+
+  auto it1 = halo_extent_map_.find(id1);
+  auto it2 = halo_extent_map_.find(id2);
+
+  if (it1 != halo_extent_map_.end()) {
+    TORCH_INTERNAL_ASSERT(it2 != halo_extent_map_.end());
+    return it1->second <= it2->second;
+  } else {
+    TORCH_INTERNAL_ASSERT(it2 == halo_extent_map_.end());
+    // Both must be an output of a merge
+    auto merge1 = dynamic_cast<Merge*>(id1->definition());
+    TORCH_INTERNAL_ASSERT(merge1 != nullptr);
+    auto merge2 = dynamic_cast<Merge*>(id2->definition());
+    TORCH_INTERNAL_ASSERT(merge2 != nullptr);
+    auto inner_le = extentLe(merge1->inner(), merge2->inner());
+    auto outer_le = extentLe(merge1->outer(), merge2->outer());
+    return inner_le && outer_le;
   }
 }
 

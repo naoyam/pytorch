@@ -16025,18 +16025,17 @@ TEST(NVFuserTest, FusionShift5ptStencilChain_CUDA) {
   fusion.addOutput(tv_out);
 
   fusion.printMath();
-  fusion.printKernel();
+
+  auto tv0_cache = tv0->cache_after();
 
   tv_out->split(-1, 4);
   tv_out->split(0, 4);
   tv_out->reorder({{1, 2}, {2, 1}});
   //tv_out->merge(-2, -1);
 
-  //auto tv0_cache = tv0->cache_after();
-
   tv0->computeAt(tv_out, 2);
 
-#if 0
+#if 1
   for (auto tv: tv_stencil1_shifts) {
     tv->computeAt(tv_stencil1, -1);
   }
@@ -16051,14 +16050,22 @@ TEST(NVFuserTest, FusionShift5ptStencilChain_CUDA) {
   fusion.printMath();
   fusion.printKernel();
 
-#if 0
-  tv_out->axis(-1)->parallelize(ParallelType::TIDx);
+#if 1
   tv_out->axis(1)->parallelize(ParallelType::BIDx);
   tv_out->axis(0)->parallelize(ParallelType::BIDy);
 
+  auto all_values = DependencyCheck::getAllValsBetween(
+      {fusion.inputs().begin(), fusion.inputs().end()}, fusion.outputs());
+  for (auto tv: ir_utils::filterByType<TensorView>(all_values)) {
+    tv->axis(-1)->parallelize(ParallelType::TIDx);
+    tv->axis(-2)->parallelize(ParallelType::TIDy);
+  }
+
   tv0_cache->setMemoryType(MemoryType::Shared);
-  tv0_cache->axis(-1)->parallelize(ParallelType::TIDx);
+  tv_stencil1->setMemoryType(MemoryType::Shared);
 #endif
+
+  fusion.printKernel();
 
   FusionExecutor fe;
   fe.compileFusion(&fusion);
