@@ -16031,26 +16031,17 @@ TEST(NVFuserTest, FusionShift5ptStencilChain_CUDA) {
   tv_out->split(-1, 4);
   tv_out->split(0, 4);
   tv_out->reorder({{1, 2}, {2, 1}});
-  //tv_out->merge(-2, -1);
 
   tv0->computeAt(tv_out, 2);
 
-#if 1
   for (auto tv: tv_stencil1_shifts) {
     tv->computeAt(tv_stencil1, -1);
   }
-#endif
 
   for (auto tv: tv_stencil2_shifts) {
     tv->computeAt(tv_stencil2, -1);
   }
 
-  //tv0_cache->merge(-2, -1);
-
-  fusion.printMath();
-  fusion.printKernel();
-
-#if 1
   tv_out->axis(1)->parallelize(ParallelType::BIDx);
   tv_out->axis(0)->parallelize(ParallelType::BIDy);
 
@@ -16063,7 +16054,6 @@ TEST(NVFuserTest, FusionShift5ptStencilChain_CUDA) {
 
   tv0_cache->setMemoryType(MemoryType::Shared);
   tv_stencil1->setMemoryType(MemoryType::Shared);
-#endif
 
   fusion.printKernel();
 
@@ -16102,29 +16092,6 @@ TEST(NVFuserTest, FusionShift5ptStencilChain_CUDA) {
   }
 
   testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
-}
-
-TEST(NVFuserTest, FusionParMapDebug_CUDA) {
-  Fusion fusion;
-  FusionGuard fg(&fusion);
-
-  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
-
-  auto tv0 = makeSymbolicTensor(1);
-  fusion.addInput(tv0);
-  auto tv1 = add(tv0, new Double(0));
-  auto tv2 = add(tv1, new Double(0));
-  fusion.addOutput(tv2);
-
-  fusion.printMath();
-
-  tv2->split(-1, 4);
-  tv0->computeAt(tv2, 1);
-  tv1->split(-1, 8);
-
-  fusion.printMath();
-  fusion.printKernel();
-
 }
 
 } // namespace jit

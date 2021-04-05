@@ -11,6 +11,8 @@
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 
+#include <functional>
+
 namespace torch {
 namespace jit {
 namespace fuser {
@@ -223,8 +225,6 @@ HaloInfo HaloMap::getHalo(IterDomain* id) const {
 }
 
 void HaloMap::build(Fusion* fusion) {
-  std::cerr << "Building HaloMap\n";
-
   auto exprs = fusion->exprs();
   for (auto it = exprs.rbegin(); it != exprs.rend(); ++it) {
     auto expr = *it;
@@ -242,7 +242,10 @@ void HaloMap::build(Fusion* fusion) {
     updateExtents(tv);
   }
 
-  std::cerr << "HaloMap built\n";
+  // Note that validation requires consumer halo info
+  for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
+    validate(tv);
+  }
 }
 
 void HaloMap::propagateHaloInfo(Expr* expr) {
@@ -303,9 +306,7 @@ void HaloMap::propagateHaloInfo(
 }
 
 void HaloMap::updateExtents(TensorView* tv) {
-  //std::cerr << "updateExtents: " << tv << std::endl;
   updateExtents(tv->domain());
-  validate(tv);
 }
 
 void HaloMap::updateExtents(TensorDomain* td) {
@@ -411,6 +412,7 @@ void HaloMap::updateExtents(TensorDomain* td) {
 //! needs further work.
 void HaloMap::validate(TensorView* tv) const {
   const auto& par_map = GpuLower::current()->caParallelMap();
+  const auto& loop_map = GpuLower::current()->caLoopMap();
   const auto mem_type = tv->getMemoryType();
 
   for (auto axis : tv->domain()->domain()) {
@@ -423,16 +425,56 @@ void HaloMap::validate(TensorView* tv) const {
 
     // Enforce restrictions on parallelization and memory type
     const auto ptype = par_map.getConcreteMappedID(axis)->getParallelType();
+
+    if (ptype == ParallelType::Serial) {
+      continue;
+    }
+
+    // Only threading parallelism is considered for now
+    TORCH_CHECK(isParallelTypeThread(ptype),
+                "Unsupported parallel type: ", ptype);
+
+    bool shared_mem_needed = false;
+    for (auto use: tv->uses()) {
+      if (!ir_utils::isTVOp(use)) {
+        continue;
+      }
+      if (use->isA<ShiftOp>()) {
+        shared_mem_needed = true;
+        break;
+      }
+      auto consumer = use->outputs()[0]->as<TensorView>();
+      // Find the corresponding axis in the consumer
+      auto it = std::find_if(
+          consumer->domain()->domain().begin(),
+          consumer->domain()->domain().end(),
+          [&](IterDomain* consumer_axis) {
+            return loop_map.areMapped(axis, consumer_axis);
+          });
+      if (it == consumer->domain()->domain().end()) {
+        continue;
+      }
+      if (!extentEqual(axis, *it)) {
+        shared_mem_needed = true;
+        break;
+      }
+    }
+
+    if (!shared_mem_needed) {
+      continue;
+    }
+
     if (isParallelTypeThreadDim(ptype)) {
-      //TORCH_CHECK(mem_type == MemoryType::Shared,
-      //"TV", tv->name(), " must be allocated on shared memory as its halo-extended axis is parallelized by ", ptype);
+      // If all the consumers have the same extent and none of the
+      //expressions is shift, any memory should be fine. Otherwise, it
+      //must be accessible by all threads involved in the
+      //parallelization.
+      TORCH_CHECK(mem_type == MemoryType::Shared,
+                  "TV", tv->name(), " must be allocated on shared memory as its halo-extended axis is parallelized by ", ptype);
+
     } else if (isParallelTypeBlockDim(ptype)) {
       TORCH_CHECK(false,
                   "Block-based parallelization of a halo-extended axis is not supported: ",
-                  axis);
-    } else if (ptype == ParallelType::Vectorize) {
-      TORCH_CHECK(false,
-                  "Vectorization of a halo-extended axis is not supported: ",
                   axis);
     }
   }
@@ -463,28 +505,44 @@ unsigned HaloMap::getHaloExtent(IterDomain* id) const {
   return it->second;
 }
 
-bool HaloMap::extentLe(IterDomain* id1, IterDomain* id2) const {
+bool HaloMap::hasHaloExtent(IterDomain* id) const {
+  return halo_extent_map_.find(id) != halo_extent_map_.end();
+}
+
+namespace {
+
+template <typename Cmp>
+bool extentCompare(const HaloMap& halo_map, IterDomain* id1, IterDomain* id2,
+                   Cmp cmp) {
   auto gpu_lower = GpuLower::current();
   TORCH_INTERNAL_ASSERT(gpu_lower->caLoopMap().areMapped(id1, id2),
                         "Invalid axes to compare");
 
-  auto it1 = halo_extent_map_.find(id1);
-  auto it2 = halo_extent_map_.find(id2);
-
-  if (it1 != halo_extent_map_.end()) {
-    TORCH_INTERNAL_ASSERT(it2 != halo_extent_map_.end());
-    return it1->second <= it2->second;
+  if (halo_map.hasHaloExtent(id1)) {
+    TORCH_INTERNAL_ASSERT(halo_map.hasHaloExtent(id2),
+                          "Comparing ", id1, " and ", id2, " is invalid.");
+    return cmp(halo_map.getHaloExtent(id1), halo_map.getHaloExtent(id2));
   } else {
-    TORCH_INTERNAL_ASSERT(it2 == halo_extent_map_.end());
+    TORCH_INTERNAL_ASSERT(!halo_map.hasHaloExtent(id2));
     // Both must be an output of a merge
     auto merge1 = dynamic_cast<Merge*>(id1->definition());
     TORCH_INTERNAL_ASSERT(merge1 != nullptr);
     auto merge2 = dynamic_cast<Merge*>(id2->definition());
     TORCH_INTERNAL_ASSERT(merge2 != nullptr);
-    auto inner_le = extentLe(merge1->inner(), merge2->inner());
-    auto outer_le = extentLe(merge1->outer(), merge2->outer());
+    auto inner_le = extentCompare(halo_map, merge1->inner(), merge2->inner(), cmp);
+    auto outer_le = extentCompare(halo_map, merge1->outer(), merge2->outer(), cmp);
     return inner_le && outer_le;
   }
+}
+
+} // namespace
+
+bool HaloMap::extentLessEqual(IterDomain* id1, IterDomain* id2) const {
+  return extentCompare(*this, id1, id2, std::less_equal<unsigned>());
+}
+
+bool HaloMap::extentEqual(IterDomain* id1, IterDomain* id2) const {
+  return extentCompare(*this, id1, id2, std::equal_to<unsigned>());
 }
 
 std::string HaloMap::toString() const {

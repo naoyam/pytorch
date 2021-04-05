@@ -77,6 +77,7 @@ class HaloMap {
   Val* getExtent(IterDomain* id) const;
   kir::Val* getExtent(kir::IterDomain* id) const;
 
+  bool hasHaloExtent(IterDomain* id) const;
   unsigned getHaloExtent(IterDomain* id) const;
 
   const auto& getExtentMap() const {
@@ -87,7 +88,8 @@ class HaloMap {
 
   HaloInfo& findOrCreate(IterDomain* id);
 
-  bool extentLe(IterDomain* id1, IterDomain* id2) const;
+  bool extentLessEqual(IterDomain* id1, IterDomain* id2) const;
+  bool extentEqual(IterDomain* id1, IterDomain* id2) const;
 
  private:
   void propagateHaloInfo(Expr* expr);
