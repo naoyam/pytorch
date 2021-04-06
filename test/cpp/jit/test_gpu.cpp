@@ -16178,6 +16178,56 @@ TEST(NVFuserTest, FusionShiftGlobal1_CUDA) {
   testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
 }
 
+TEST(NVFuserTest, FusionShiftSplit8_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = add(tv1, new Double(2));
+  auto tv3 = shift(tv2, {0, 1});
+  fusion.addOutput(tv3);
+
+  tv3->split(-1, 8);
+
+  tv0->computeAt(tv3, -2);
+
+  tv1->split(-1, 4);
+
+  fusion.printMath();
+  fusion.printKernel();
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  int numel_x = 99;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 8;
+    numel_y = 8;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 2;
+  auto ref = shift(t1, {0, 1});
+
+  if (_shift_debug) {
+    std::cout << "t0:\n" << t0 << std::endl;
+    std::cout << "ref:\n" << ref << std::endl;
+    std::cout << "out\n" << outputs[0] << std::endl;
+  }
+
+  TORCH_CHECK(ref.allclose(outputs[0]));
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)
