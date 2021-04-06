@@ -524,29 +524,46 @@ Allocate::Allocate(
     Passkey passkey,
     Val* buffer,
     MemoryType memory_type,
-    Val* size,
+    std::vector<Val*> sizes,
     bool zero_init)
     : Expr(passkey),
       buffer_(buffer),
       memory_type_(memory_type),
-      size_(size),
+      sizes_(sizes),
       zero_init_(zero_init) {
-  if (size_ != nullptr) {
-    TORCH_INTERNAL_ASSERT(size_->isOneInt() || buffer_->isA<TensorView>());
+  kir::IrBuilder ir_builder(GpuLower::current()->kernel());
+  if (!sizes.empty()) {
+    TORCH_INTERNAL_ASSERT((sizes_.size() == 1 && sizes_[0]->isOneInt()) || buffer_->isA<TensorView>());
   } else {
     TORCH_INTERNAL_ASSERT(buffer_->isA<TensorView>());
     TORCH_INTERNAL_ASSERT(
         buffer_->as<TensorView>()->memoryType() == memory_type_);
-    kir::IrBuilder ir_builder(GpuLower::current()->kernel());
     const auto domain = buffer_->as<TensorView>()->domain();
-    size_ = domain->nDims() == 0 ? ir_builder.create<Int>(1)
-                                 : domain->axis(0)->extent();
+    sizes_.push_back(domain->nDims() == 0 ? ir_builder.create<Int>(1)
+                     : domain->axis(0)->extent());
     for (size_t i = 1; i < domain->nDims(); i++) {
-      size_ = ir_builder.mulExpr(size_, domain->axis(i)->extent());
+      sizes_.push_back(domain->axis(i)->extent());
     }
   }
+
+  for (auto s: sizes_) {
+    if (size_ == nullptr) {
+      size_ = s;
+    } else {
+      size_ = ir_builder.mulExpr(size_, s);
+    }
+  }
+
   addInput(size_);
 }
+
+Allocate::Allocate(
+    Passkey passkey,
+    Val* buffer,
+    MemoryType memory_type,
+    Val* size,
+    bool zero_init)
+    : Allocate(passkey, buffer, memory_type, std::vector<Val*>{size}, zero_init) {}
 
 GridReduction::GridReduction(Passkey passkey, ReductionOp* reduction_op)
     : Expr(passkey), reduction_op_(reduction_op) {

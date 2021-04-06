@@ -175,7 +175,7 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
 namespace {
 
 at::Tensor inferAndAlloc(
-    const kir::TensorView* tv,
+    const kir::Allocate* alloc,
     kir::ExpressionEvaluator& expr_eval,
     const CompileOptions& options,
     bool zero_init = false) {
@@ -183,26 +183,25 @@ at::Tensor inferAndAlloc(
 
   std::vector<int64_t> sizes;
 
+  const auto tv = alloc->buffer()->as<kir::TensorView>();
   const auto domain = tv->domain();
   const auto maybe_rfactor_domain =
       domain->hasRFactor() ? domain->rfactorDomain() : domain->rootDomain();
 
-  for (const auto id : maybe_rfactor_domain) {
-    if (id->isReduction() ||
-        id->iterType() == IterType::BroadcastWithoutStride) {
-      continue;
-    }
-    const auto inferred_val = expr_eval.evaluate(id->rawExtent());
+  for (const auto size: alloc->sizes()) {
+    const auto inferred_val = expr_eval.evaluate(size);
     TORCH_INTERNAL_ASSERT(
         inferred_val.has_value(),
         "Could not launch kernel as program could not infer ",
-        kir::toString(id->rawExtent()),
+        kir::toString(size),
         " for the buffer ",
         kir::toString(tv));
     sizes.push_back(inferred_val.value());
   }
 
   const auto at_type = data_type_to_aten(tv->dtype());
+
+  std::cerr << "TV" << tv->name() << " gmem alloc: " << sizes << std::endl;
 
   if (zero_init) {
     const auto tensor_options =
@@ -367,17 +366,22 @@ FusionExecutor::GlobalBuffers FusionExecutor::allocGlobalVals(
     kir::ExpressionEvaluator& expr_eval) {
   FUSER_PERF_SCOPE("allocGlobalVals");
   GlobalBuffers global_buffers;
+  const auto kernel = lowered_.kernel();
   const auto& kernel_summary = lowered_.kernel()->summary();
   for (auto alloc : kernel_summary.global_allocations) {
     TORCH_INTERNAL_ASSERT(
         alloc->buffer()->isA<kir::TensorView>(),
         "Cannot allocate global buffers that are not tensors.");
+    auto tv = alloc->buffer()->as<kir::TensorView>();
+    if (kernel->isOutput(tv)) {
+      continue;
+    }
     if (!alloc->zeroInit()) {
       global_buffers.empty_buffers.push_back(inferAndAlloc(
-          alloc->buffer()->as<kir::TensorView>(), expr_eval, options_, false));
+          alloc, expr_eval, options_, false));
     } else {
       global_buffers.zero_buffers.push_back(inferAndAlloc(
-          alloc->buffer()->as<kir::TensorView>(), expr_eval, options_, true));
+          alloc, expr_eval, options_, true));
     }
   }
 
@@ -388,13 +392,19 @@ std::vector<at::Tensor> FusionExecutor::allocOutputs(
     kir::ExpressionEvaluator& expr_eval) {
   FUSER_PERF_SCOPE("allocOutputs");
   const auto kernel = lowered_.kernel();
+  const auto& kernel_summary = lowered_.kernel()->summary();
   std::vector<at::Tensor> outputs;
-  for (auto output : kernel->outputs()) {
+  std::cerr << "AllocOutputs\n";
+  for (auto alloc : kernel_summary.global_allocations) {
     TORCH_INTERNAL_ASSERT(
-        output->isA<kir::TensorView>(),
-        "Cannot allocate outputs that are not tensors.");
+        alloc->buffer()->isA<kir::TensorView>(),
+        "Cannot allocate global buffers that are not tensors.");
+    auto tv = alloc->buffer()->as<kir::TensorView>();
+    if (!kernel->isOutput(tv)) {
+      continue;
+    }
     outputs.push_back(inferAndAlloc(
-        output->as<kir::TensorView>(), expr_eval, options_, false));
+        alloc, expr_eval, options_, false));
   }
   return outputs;
 }

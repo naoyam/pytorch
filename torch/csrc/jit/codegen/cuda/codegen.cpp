@@ -78,6 +78,9 @@ class CudaKernelGenerator : private kir::IrVisitor {
     for (auto allocate : kernel_summary.global_allocations) {
       TORCH_INTERNAL_ASSERT(allocate->buffer()->isA<kir::TensorView>());
       const auto tv = allocate->buffer()->as<kir::TensorView>();
+      if (kernel_->isOutput(tv)) {
+        continue;
+      }
       const auto& maybe_rfactor_domain = tv->domain()->hasRFactor()
           ? tv->domain()->rfactorDomain()
           : tv->domain()->rootDomain();

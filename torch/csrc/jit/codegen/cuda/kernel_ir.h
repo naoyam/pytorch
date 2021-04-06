@@ -1059,7 +1059,14 @@ class TORCH_CUDA_CU_API Allocate final : public Expr {
       Passkey passkey,
       Val* buffer,
       MemoryType memory_type = MemoryType::Local,
-      Val* size = nullptr,
+      std::vector<Val*> sizes = {},
+      bool zero_init = false);
+
+  explicit Allocate(
+      Passkey passkey,
+      Val* buffer,
+      MemoryType memory_type,
+      Val* size,
       bool zero_init = false);
 
   void accept(IrVisitor* visitor) const override {
@@ -1082,6 +1089,10 @@ class TORCH_CUDA_CU_API Allocate final : public Expr {
     return size_;
   }
 
+  const std::vector<Val*>& sizes() const {
+    return sizes_;
+  }
+
   bool zeroInit() const {
     return zero_init_;
   }
@@ -1099,8 +1110,10 @@ class TORCH_CUDA_CU_API Allocate final : public Expr {
  private:
   Val* buffer_ = nullptr;
   MemoryType memory_type_ = MemoryType::Local;
-  Val* size_ = nullptr;
+  std::vector<Val*> sizes_;
   bool zero_init_ = false;
+
+  Val* size_ = nullptr;
 
   // This alias tracks the next Allocate node in a linked chain of aliases
   // If the alias is nullptr, then the Allocate node uses memory in the kernel

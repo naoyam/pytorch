@@ -549,8 +549,23 @@ std::string HaloMap::toString() const {
   std::stringstream ss;
 
   ss << "HaloMap:\n";
-  for (auto kv : halo_map_) {
-    ss << "  " << kv.first << " -> (" << kv.second.toString() << ")\n";
+
+  if (halo_map_.empty()) {
+    return ss.str();
+  }
+
+  Fusion* fusion = halo_map_.begin()->first->fusion();
+
+  auto used_vals = DependencyCheck::getAllValsBetween(
+      {fusion->inputs().begin(), fusion->inputs().end()}, fusion->outputs());
+
+  for (auto tv : ir_utils::filterByType<TensorView>(used_vals)) {
+    const auto& root = tv->getRootDomain();
+    ss << "TV" << tv->name() << ": ";
+    for (auto axis: root) {
+      ss << axis << " -> " << getHalo(axis).toString() << ", ";
+    }
+    ss << "\n";
   }
 
   return ss.str();

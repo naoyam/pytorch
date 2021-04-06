@@ -14237,24 +14237,19 @@ TEST(NVFuserTest, FusionShift1_CUDA) {
   fe.compileFusion(&fusion);
   auto outputs = fe.runFusion(inputs);
 
-  auto t1 = t0.roll(-1, 0);
-  t1.index({-1, "..."}) = 0;
+  auto t1 = shift(t0, {-1, 0});
   TORCH_CHECK(t1.equal(outputs[0]));
 
-  auto t2 = t0.roll(1, 1);
-  t2.index({"...", 0}) = 0;
+  auto t2 = shift(t0, {0, 1});
   TORCH_CHECK(t2.equal(outputs[1]));
 
-  auto t3 = t0.roll({2, 2}, {0, 1});
-  t3.index({Slice(0, 2), "..."}) = 0;
-  t3.index({"...", Slice(0, 2)}) = 0;
+  auto t3 = shift(t0, {2, 2});
   TORCH_CHECK(t3.equal(outputs[2]));
 
-  auto t4 = t0.roll({-2, -2}, {0, 1});
-  t4.index({Slice(-2, None), "..."}) = 0;
-  t4.index({"...", Slice(-2, None)}) = 0;
+  auto t4 = shift(t0, {-2, -2});
   TORCH_CHECK(t4.equal(outputs[3]));
 }
+
 // Not working
 #if 0
 TEST(NVFuserTest, FusionShift2_CUDA) {
@@ -16090,6 +16085,95 @@ TEST(NVFuserTest, FusionShift5ptStencilChain_CUDA) {
     std::cout << "Ref:\n" << ref << std::endl;
     std::cout << "out\n" << outputs[0] << std::endl;
   }
+
+  testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
+}
+
+TEST(NVFuserTest, TMP) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = add(tv1, new Double(2));
+  auto tv3 = broadcast(tv1, {false, false, true});
+  auto tv4 = makeSymbolicTensor(3);
+  fusion.addInput(tv4);
+  auto tv5 = add(tv3, tv4);
+  fusion.addOutput(tv5);
+
+  tv0->computeAt(tv5, 1);
+
+  auto all_values = DependencyCheck::getAllValsBetween(
+      {fusion.inputs().begin(), fusion.inputs().end()}, fusion.outputs());
+  for (auto tv: ir_utils::filterByType<TensorView>(all_values)) {
+    tv->setMemoryType(MemoryType::Global);
+  }
+
+  fusion.printKernel();
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  at::Tensor t4 = at::randn({numel_x, numel_y, numel_y}, options);
+  std::vector<IValue> inputs = {t0, t4};
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(inputs);
+}
+
+
+TEST(NVFuserTest, FusionShiftGlobal1_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  _shift_debug = std::getenv("SHIFT_DEBUG") != nullptr;
+
+  auto tv0 = makeSymbolicTensor(2);
+  fusion.addInput(tv0);
+
+  auto tv1 = add(tv0, new Double(1));
+  auto tv2 = shift(tv1, {0, 1});
+  auto tv3 = shift(tv1, {-1, 0});
+  auto tv4 = add(tv2, tv3);
+  fusion.addOutput(tv4);
+
+  fusion.printMath();
+
+  tv1->setMemoryType(MemoryType::Global);
+  tv2->setMemoryType(MemoryType::Global);
+  tv3->setMemoryType(MemoryType::Global);
+
+  fusion.printKernel();
+
+  int numel_x = 100;
+  int numel_y = 101;
+
+  if (_shift_debug) {
+    numel_x = 8;
+    numel_y = 8;
+  }
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({numel_x, numel_y}, options);
+  std::vector<IValue> inputs = {t0};
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(inputs);
+
+  auto t1 = t0 + 1;
+  auto t2 = shift(t1, {0, 1});
+  auto t3 = shift(t1, {-1, 0});
+  auto t4 = t2 + t3;
+  auto ref = t4;
 
   testValidate(&fusion, outputs, inputs, {ref}, __LINE__, __FILE__);
 }

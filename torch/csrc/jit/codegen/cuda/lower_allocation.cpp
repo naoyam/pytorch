@@ -135,83 +135,106 @@ class AllocationInserter : public kir::MutableIrVisitor {
     info.init_expr = init_expr;
   }
 
-  void createAllocExpr(AllocationInformation& info, bool is_output) {
-    if (is_output) {
-      info.alloc_expr = nullptr;
-      return;
+  std::vector<kir::Val*> analyzeGlobalAllocationSizes(kir::TensorView* tv) {
+    const auto& domain = tv->domain();
+    const auto& maybe_rfactor_domain =
+      domain->hasRFactor() ? domain->rfactorDomain() : domain->rootDomain();
+
+    std::vector<kir::Val*> alloc_dims;
+
+    for (const auto id : maybe_rfactor_domain) {
+      if (id->isReduction() ||
+          id->iterType() == IterType::BroadcastWithoutStride) {
+        continue;
+      }
+      auto extent = id->rawExtent();
+      auto halo_extent = gpu_lower->haloMap().getExtent(id);
+      if (halo_extent != nullptr) {
+        extent = halo_extent;
+      }
+      alloc_dims.push_back(extent);
     }
 
+    return alloc_dims;
+  }
+
+  void createAllocExpr(AllocationInformation& info, bool is_output) {
     auto fuser_tv = info.buffer->fuserTv();
 
     std::vector<kir::Val*> alloc_dims;
     const MemoryType memory_type = info.buffer->memoryType();
-    for (size_t axis_i = 0; axis_i < fuser_tv->nDims(); axis_i++) {
-      const auto local_id =
-          gpu_lower->lowerValue(fuser_tv->axis(axis_i))->as<kir::IterDomain>();
 
-      if (
-          // If we're reducing this dimension, don't use it in the allocation
-          // computation
-          local_id->isReduction() ||
-          // If this is a broadcast dimension, don't use it in the allocation
-          // computation
-          local_id->isBroadcast()) {
-        continue;
-      }
+    if (memory_type == MemoryType::Global) {
+      alloc_dims = analyzeGlobalAllocationSizes(info.buffer);
+    } else {
+      for (size_t axis_i = 0; axis_i < fuser_tv->nDims(); axis_i++) {
+        const auto local_id =
+            gpu_lower->lowerValue(fuser_tv->axis(axis_i))->as<kir::IterDomain>();
 
-      auto concrete_id =
-          gpu_lower
-              ->lowerValue(gpu_lower->caParallelMap().getConcreteMappedID(
-                  fuser_tv->axis(axis_i)))
-              ->as<kir::IterDomain>();
-      const bool is_block_dim =
-          isParallelTypeBlockDim(concrete_id->parallelType());
-      const bool is_thread_dim =
-          isParallelTypeThreadDim(concrete_id->parallelType());
-      const bool is_thread = isParallelTypeThread(concrete_id->parallelType());
+        if (
+                // If we're reducing this dimension, don't use it in the allocation
+                // computation
+                local_id->isReduction() ||
+                // If this is a broadcast dimension, don't use it in the allocation
+                // computation
+                local_id->isBroadcast()) {
+          continue;
+        }
 
-      kir::Val* alloc_extent = concrete_id->rawExtent();
-      auto halo_extent = gpu_lower->haloMap().getExtent(fuser_tv->axis(axis_i));
-      if (axis_i < info.alloc_pos) {
-        // Even when the axis is outside the allocation position, if the
-        // tensor is shared with respect to the axis, the buffer size
-        // needs to be expanded for the axis. Sharing occurs in two
-        // cases: 1) the tensor is on shared memory with the axis
-        // parallelized by TIDs, and 2) the tensor is on global memory
-        // with the axis parallelized by TIDs or BIDs.
-        if (!((memory_type == MemoryType::Shared && is_thread_dim) ||
-              (memory_type == MemoryType::Global && is_thread))) {
+        auto concrete_id =
+            gpu_lower
+            ->lowerValue(gpu_lower->caParallelMap().getConcreteMappedID(
+                fuser_tv->axis(axis_i)))
+            ->as<kir::IterDomain>();
+        const bool is_block_dim =
+            isParallelTypeBlockDim(concrete_id->parallelType());
+        const bool is_thread_dim =
+            isParallelTypeThreadDim(concrete_id->parallelType());
+        const bool is_thread = isParallelTypeThread(concrete_id->parallelType());
+
+        kir::Val* alloc_extent = concrete_id->rawExtent();
+        auto halo_extent = gpu_lower->haloMap().getExtent(fuser_tv->axis(axis_i));
+        if (axis_i < info.alloc_pos) {
           auto fuser_local_id = fuser_tv->axis(axis_i);
           auto fuser_concrete_id = gpu_lower->caParallelMap().getConcreteMappedID(
               fuser_tv->axis(axis_i));
-          if (gpu_lower->haloMap().extentLessEqual(fuser_local_id, fuser_concrete_id)) {
+          // The extent is assumed to be the same
+          TORCH_INTERNAL_ASSERT(gpu_lower->haloMap().extentEqual(fuser_local_id, fuser_concrete_id),
+                                "Axis does not have the same exact size with its concrete ID due to halo extension.",
+                                " Axis: ", fuser_local_id, ", concrete ID: ", fuser_concrete_id);
+
+          // Even when the axis is outside the allocation position, if the
+          // tensor is shared with respect to the axis, the buffer size
+          // needs to be expanded for the axis. Sharing occurs in two
+          // cases: 1) the tensor is on shared memory with the axis
+          // parallelized by TIDs, and 2) the tensor is on global memory
+          // with the axis parallelized by TIDs or BIDs.
+          if (!((memory_type == MemoryType::Shared && is_thread_dim) ||
+                (memory_type == MemoryType::Global && is_thread))) {
             continue;
           }
-          TORCH_CHECK(halo_extent == nullptr,
-                      "Halo-extended axis not allowed outside allocation position");
-          continue;
+        } else {
+          if (
+                  // If shared memory, don't use any IDs bound to a grid dimension
+                  (memory_type == MemoryType::Shared && is_block_dim) ||
+                  // If local memory, don't use any IDs bound to a grid or block
+                  // dimension
+                  (memory_type == MemoryType::Local && is_thread)) {
+            // This should not occure as there's validation at the shift
+            // analysis pass.
+            TORCH_CHECK(halo_extent == nullptr,
+                        "Halo-extended axis not allowed.");
+            continue;
+          }
         }
-      } else {
-        if (
-            // If shared memory, don't use any IDs bound to a grid dimension
-            (memory_type == MemoryType::Shared && is_block_dim) ||
-            // If local memory, don't use any IDs bound to a grid or block
-            // dimension
-            (memory_type == MemoryType::Local && is_thread)) {
-          // This should not occure as there's validation at the shift
-          // analysis pass.
-          TORCH_CHECK(halo_extent == nullptr,
-                      "Halo-extended axis not allowed.");
-           continue;
+
+        if (halo_extent) {
+          alloc_extent = gpu_lower->lowerValue(halo_extent);
         }
-      }
 
-      if (halo_extent) {
-        alloc_extent = gpu_lower->lowerValue(halo_extent);
-      }
-
-      if (alloc_extent != nullptr) {
-        alloc_dims.push_back(alloc_extent);
+        if (alloc_extent != nullptr) {
+          alloc_dims.push_back(alloc_extent);
+        }
       }
     }
 
@@ -227,9 +250,13 @@ class AllocationInserter : public kir::MutableIrVisitor {
       }
     }
 
+    if (alloc_dims.size() == 0) {
+      alloc_dims.push_back(ir_builder.create<kir::Int>(1));
+    }
+
     // Create the allocation node
     info.alloc_expr = ir_builder.create<kir::Allocate>(
-        info.buffer, info.buffer->memoryType(), size);
+        info.buffer, info.buffer->memoryType(), alloc_dims);
   }
 
   void handle(kir::Expr* expr) {
@@ -274,9 +301,11 @@ class AllocationInserter : public kir::MutableIrVisitor {
 
       // Don't need to alloc outputs, and if we don't need to initialize we're
       // done.
+#if 0
       if (is_output && init == nullptr) {
         continue;
       }
+#endif
 
       AllocationInformation allocation;
       allocation.buffer = out_tv;

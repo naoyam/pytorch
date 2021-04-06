@@ -948,21 +948,25 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
       c2p_root_map,
       true);
 
+  // Extents may be extended for halo
+  std::unordered_map<IterDomain*, Val*> halo_extent_map;
+  for (auto kv: gpu_lower->haloMap().getExtentMap()) {
+    auto id = kv.first;
+    auto extent = kv.second;
+    halo_extent_map.insert({id, extent});
+  }
+
   auto c2p_map = replay_PasC.getReplay();
 
   const auto merged_shift_map = createMergedShiftMap(c2p_map,
                                                      ref_compute.extentMap());
 
   // Index into producer using reference indexing
-  // TODO: this is done twice in the non-global case. Once for
-  // indices and another for extents. Is that also necessary for the
-  // global case? If a global tensor does not have halo, it's probably
-  // not necessary to do twice.
   auto producer_indexing = ref_compute.updateIndexCompute(
       producer_tv->domain(),
       ref_2_producer,
       producer_tv->domain()->contiguity(),
-      {}, merged_shift_map);
+      halo_extent_map, merged_shift_map);
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
@@ -1024,8 +1028,12 @@ std::vector<kir::Val*> Index::getGlobalProducerStridedIndices(
         strides[dim] = cur_contig_stride;
         // Prepare for the next dimension which may also be contiguous, multiply
         // by extent of this dimension
+        auto root_dim_extent = root_dom[dim]->extent();
+        if (gpu_lower->haloMap().getExtent(root_dom[dim])) {
+          root_dim_extent = gpu_lower->haloMap().getExtent(root_dom[dim]);
+        }
         cur_contig_stride = ir_builder.mulExpr(
-            cur_contig_stride, gpu_lower->lowerValue(root_dom[dim]->extent()));
+            cur_contig_stride, gpu_lower->lowerValue(root_dim_extent));
       } else {
         // If non contiguous dimension, keep local stride information, set cur
         // stride to local stride * local raw extent
@@ -1478,11 +1486,20 @@ std::vector<kir::Val*> Index::getGlobalConsumerStridedIndices(
   // dims where index should be set to 0
   auto ref_compute = getReferenceIndexing(loops, reference);
 
+  // Extents may be extended for halo
+  std::unordered_map<IterDomain*, Val*> halo_extent_map;
+  for (auto kv: gpu_lower->haloMap().getExtentMap()) {
+    auto id = kv.first;
+    auto extent = kv.second;
+    halo_extent_map.insert({id, extent});
+  }
+
   // Index into consumer using reference indexing
   auto consumer_indexing = ref_compute.updateIndexCompute(
       consumer_tv->domain(),
       ref_2_consumer,
-      consumer_tv->domain()->contiguity());
+      consumer_tv->domain()->contiguity(),
+      halo_extent_map);
 
   // Indices should now be mapped onto IterDomains in consumer, so just grab
   // and use them.
@@ -1544,8 +1561,12 @@ std::vector<kir::Val*> Index::getGlobalConsumerStridedIndices(
         strides[dim] = cur_contig_stride;
         // Prepare for the next dimension which may also be contiguous, multiply
         // by extent of this dimension
+        auto root_dim_extent = root_dom[dim]->extent();
+        if (gpu_lower->haloMap().getExtent(root_dom[dim])) {
+          root_dim_extent = gpu_lower->haloMap().getExtent(root_dom[dim]);
+        }
         cur_contig_stride = ir_builder.mulExpr(
-            cur_contig_stride, gpu_lower->lowerValue(root_dom[dim]->extent()));
+            cur_contig_stride, gpu_lower->lowerValue(root_dim_extent));
       } else {
         // If non contiguous dimension, keep local stride information, set cur
         // stride to local stride * local raw extent
